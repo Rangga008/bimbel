@@ -1,0 +1,89 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bimbel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bimbel_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-bimbel}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bimbel}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-bimbel}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-bimbel_secret}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      CORS_ORIGIN: http://localhost:3001
+      DATABASE_URL: postgresql://${POSTGRES_USER:-bimbel}:${POSTGRES_PASSWORD:-bimbel_secret}@postgres:5432/${POSTGRES_DB:-bimbel}?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me}
+      JWT_ACCESS_TTL_SECONDS: "900"
+      JWT_REFRESH_TTL_DAYS: "7"
+      THROTTLE_TTL_MS: "60000"
+      THROTTLE_LIMIT: "100"
+    ports:
+      - "3000:3000"
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:3000/api
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "3001:3000"
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

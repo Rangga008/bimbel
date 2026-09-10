@@ -1,0 +1,59 @@
+# === Dependencies ===
+node_modules/
+.pnp
+.pnp.js
+
+# === Build output ===
+.next/
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# === Env & secrets ===
+.env
+.env.local
+.env.*.local
+*.pem
+
+# === Logs ===
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# === Prisma ===
+prisma/migrations/dev.db*
+
+# === Testing / coverage ===
+coverage/
+.nyc_output/
+
+# === OS / editor ===
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/settings.json
+.idea/
+
+# === Docker volumes lokal ===
+docker-data/
+postgres-data/
+redis-data/
+minio-data/
+
+# === Upload & seed besar (jangan commit file besar ke repo) ===
+uploads/
+storage/
+*.xlsx.bak
+seed-data/*.csv
+seed-data/*.xlsx
+
+# === Referensi visual mentah (screenshot demo, dsb — simpan di luar repo/di docs eksternal) ===
+docs/_screenshots-raw/
+
+# === Catatan efisiensi agent context ===
+# Folder/berkas di atas sengaja diexclude supaya Copilot Agent tidak
+# ikut mengindeks/mem-parsing file besar & tidak relevan saat auto-context,
+# sehingga token per request tetap efisien.
