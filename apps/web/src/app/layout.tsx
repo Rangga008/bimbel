@@ -43,6 +43,9 @@ export async function generateMetadata(): Promise<Metadata> {
 	try {
 		const res = await fetch(`${API_INTERNAL}/public/branding`, {
 			next: { revalidate: 60 },
+			// Batasi 5s — saat `next build` (Railway/Docker) API belum tentu bisa
+			// dijangkau; fetch yang menggantung >60s menggagalkan static generation.
+			signal: AbortSignal.timeout(5000),
 		});
 		if (res.ok) {
 			const data = (await res.json()) as {
