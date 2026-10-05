@@ -6,8 +6,7 @@ COPY package.json package-lock.json ./
 # (paket yang sudah terunduh tidak diulang saat build di-retry), dan opsi mirror
 # registry via build-arg NPM_REGISTRY (mis. https://registry.npmmirror.com).
 ARG NPM_REGISTRY=
-RUN --mount=type=cache,target=/root/.npm \
-    if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi && \
+RUN if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi && \
     npm config set fetch-retries 5 && \
     npm config set fetch-retry-mintimeout 15000 && \
     npm config set fetch-retry-maxtimeout 120000 && \
