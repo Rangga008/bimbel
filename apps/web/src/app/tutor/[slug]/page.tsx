@@ -8,6 +8,7 @@ import { MaterialsManager } from "@/components/phase3a/materials-manager";
 import { QuestionsManager } from "@/components/phase3a/questions-manager";
 import { LatsolPage } from "@/components/phase3b/latsol-page";
 import { ExamsManager } from "@/components/phase3c/exams-manager";
+import { ProctoringHubPage } from "@/components/phase3d/proctoring-hub-page";
 import { PembahasanManager } from "@/components/phase3e/pembahasan-manager";
 import { MediaLibraryManager } from "@/components/shared/media-library-manager";
 import { TutorGroupGrades } from "@/components/phase4a/tutor-group-grades";
@@ -53,7 +54,9 @@ export default async function TutorMenuPage({
 	if (slug === "materi") return <MaterialsManager canManage={false} />;
 	if (slug === "soal") return <QuestionsManager canManage basePath="/tutor/soal" />;
 	if (slug === "latsol") return <LatsolPage canManage basePath="/tutor/latsol" />;
-	if (slug === "ujian") return <ExamsManager canManage={false} />;
+	if (slug === "ujian") return <ExamsManager canManage={false} basePath="/tutor/ujian" />;
+	if (slug === "proctoring")
+		return <ProctoringHubPage examBasePath="/tutor/ujian" />;
 	if (slug === "nilai") return <TutorGroupGrades />;
 	if (slug === "ranking") return <TutorRankingPage />;
 	if (slug === "notifikasi") return <NotificationsInbox />;

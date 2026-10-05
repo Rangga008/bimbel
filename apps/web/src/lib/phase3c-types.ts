@@ -4,6 +4,8 @@ export enum ExamStatus {
   DRAFT = 'DRAFT',
   PUBLISHED = 'PUBLISHED',
   LOCKED = 'LOCKED',
+  /// Diakhiri manual oleh admin — semua attempt IN_PROGRESS auto-submit.
+  ENDED = 'ENDED',
 }
 
 export enum ExamAttemptStatus {

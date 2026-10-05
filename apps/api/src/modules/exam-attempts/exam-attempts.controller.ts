@@ -101,6 +101,26 @@ export class ExamAttemptsController {
     return this.attempts.getExamAttempts(examId);
   }
 
+  @Post('exams/:id/end')
+  @RequirePermissions(PERMISSION_CODES.EXAM_MANAGE)
+  async endExam(
+    @Param('id') examId: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const result = await this.attempts.endExam(examId);
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'EXAM_ENDED',
+      entity: 'Exam',
+      entityId: examId,
+      newData: result,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return result;
+  }
+
   @Post('exam-auto-submit/trigger')
   @RequirePermissions(PERMISSION_CODES.EXAM_MANAGE)
   async triggerAutoSubmit(

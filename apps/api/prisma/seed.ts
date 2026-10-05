@@ -894,8 +894,12 @@ async function main() {
         });
         continue;
       }
-      const invoice = await prisma.invoice.create({
-        data: {
+      // Upsert by nomor (unik) — seed harus idempotent: bila invoice sudah
+      // ada (mis. enrollment pernah dihapus), pakai ulang, jangan create ulang.
+      const invoice = await prisma.invoice.upsert({
+        where: { number: `INV-${ym}-SEED-${i + 1}` },
+        update: {},
+        create: {
           number: `INV-${ym}-SEED-${i + 1}`,
           studentId: student.id,
           status: 'ISSUED',
@@ -920,6 +924,18 @@ async function main() {
           },
         },
       });
+      // Invoice lama bisa sudah menempel ke enrollment lain (invoiceId unik) —
+      // perbarui yang ada daripada create ulang agar seed tetap idempotent.
+      const linkedEnr = await prisma.enrollment.findUnique({
+        where: { invoiceId: invoice.id },
+      });
+      if (linkedEnr) {
+        await prisma.enrollment.update({
+          where: { id: linkedEnr.id },
+          data: { status: 'PLACED', groupId: demoGroup.id, levelId: sd5LevelId },
+        });
+        continue;
+      }
       await prisma.enrollment.create({
         data: {
           parentId: seedParent.id,

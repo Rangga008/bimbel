@@ -74,18 +74,18 @@ export function GroupEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Edit Kelompok</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="ge-name">Nama Kelompok *</Label>
-            <Input id="ge-name" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input id="ge-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Contoh: Kelas Reguler SD-5 A" />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="ge-code">Kode (opsional)</Label>
-            <Input id="ge-code" value={code} onChange={(e) => setCode(e.target.value)} />
+            <Input id="ge-code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Contoh: REG-SD5A" />
           </div>
           <Phase1aSelectField
             id="ge-program"
@@ -108,6 +108,7 @@ export function GroupEditDialog({
               type="number"
               min={1}
               className={INPUT_CLS}
+              placeholder="Contoh: 8"
               value={capacity}
               onChange={(e) => setCapacity(e.target.value)}
             />

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { CalendarClock, CircleAlert, FileCheck2, FileQuestion, Pencil, Plus, Settings2, Star, Trash2, Users } from 'lucide-react';
+import { CalendarClock, CircleAlert, FileCheck2, FileQuestion, MonitorCheck, Pencil, Plus, Send, Settings2, Star, StopCircle, Trash2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,7 +14,6 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { ExamRow, ExamStatus } from '@/lib/phase3c-types';
 import { useAuthStore } from '@/stores/auth-store';
-import { ProctorUnlockPanel } from '@/components/phase3d/proctor-unlock-manager';
 import { ContentDrilldown, DrillBreadcrumb, useContentCategories, useContentLevels } from '@/components/shared/content-drilldown';
 import { ContentCategoriesManager } from '@/components/shared/content-categories-manager';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
@@ -58,6 +57,28 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
   const [manageCats, setManageCats] = useState(false);
   const levels = levelsQ.data;
 
+  const publishM = useMutation({
+    mutationFn: (id: string) => apiFetch(`/exams/${id}/publish`, { method: 'POST' }),
+    onSuccess: () => {
+      toast.success('Ujian dipublikasikan — siswa bisa mulai mengerjakan sesuai jadwal.');
+      qc.invalidateQueries({ queryKey: ['exams'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal mempublikasikan ujian.')),
+  });
+
+  const endM = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<{ autoSubmitted: number }>(`/exams/${id}/end`, { method: 'POST' }),
+    onSuccess: (r) => {
+      toast.success(
+        `Ujian diakhiri.${r.autoSubmitted ? ` ${r.autoSubmitted} attempt di-auto-submit.` : ''}`,
+      );
+      qc.invalidateQueries({ queryKey: ['exams'] });
+      qc.invalidateQueries({ queryKey: ['exam-proctoring-overview'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal mengakhiri ujian.')),
+  });
+
   const deleteM = useMutation({
     mutationFn: (id: string) => apiFetch(`/exams/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
@@ -68,18 +89,22 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
   });
 
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [publishTarget, setPublishTarget] = useState<ExamRow | null>(null);
+  const [endTarget, setEndTarget] = useState<ExamRow | null>(null);
   const handleDelete = (id: string) => {
     if (!canManage) return;
     setDeleteTarget(id);
   };
 
   const getStatusBadge = (status: ExamStatus) => {
-    const variants = {
-      DRAFT: 'secondary',
-      PUBLISHED: 'default',
-      LOCKED: 'destructive',
+    const cfg = {
+      DRAFT: { variant: 'secondary', label: 'Draft' },
+      PUBLISHED: { variant: 'default', label: 'Dipublikasi' },
+      LOCKED: { variant: 'destructive', label: 'Terkunci' },
+      ENDED: { variant: 'outline', label: 'Berakhir' },
     } as const;
-    return <Badge variant={variants[status]}>{status}</Badge>;
+    const c = cfg[status] ?? { variant: 'secondary' as const, label: status };
+    return <Badge variant={c.variant}>{c.label}</Badge>;
   };
 
   if (examsQ.isLoading) {
@@ -126,13 +151,6 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
             </Button>
           )}
         </div>
-        {canUnlockProctoring && (
-          <Card>
-            <CardContent className="pt-6">
-              <ProctorUnlockPanel />
-            </CardContent>
-          </Card>
-        )}
         <ContentDrilldown
           items={allExams}
           levels={levels}
@@ -160,14 +178,6 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
           </Button>
         )}
       </div>
-
-      {canUnlockProctoring && (
-        <Card>
-          <CardContent className="pt-6">
-            <ProctorUnlockPanel />
-          </CardContent>
-        </Card>
-      )}
 
       <div className="w-full sm:w-52">
         <Phase1aSelectField
@@ -213,21 +223,40 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
                     )}
                   </div>
                 </div>
-                {canManage && exam.status === 'DRAFT' && (
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => router.push(`${basePath}/${exam.id}/edit`)}>
-                      <Pencil /> Edit
+                <div className="flex flex-wrap gap-2">
+                  {(canManage || canUnlockProctoring) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => router.push(`${basePath}/${exam.id}/proctoring`)}
+                    >
+                      <MonitorCheck /> Proctoring
                     </Button>
-                    <Button size="sm" variant="destructive" onClick={() => handleDelete(exam.id)}>
-                      <Trash2 /> Hapus
-                    </Button>
-                  </div>
-                )}
-                {canManage && exam.status === 'PUBLISHED' && (
-                  <Button size="sm" variant="outline" onClick={() => router.push(`${basePath}/${exam.id}/edit`)}>
-                    <Settings2 /> Kelola Status
-                  </Button>
-                )}
+                  )}
+                  {canManage && exam.status === 'DRAFT' && (
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => router.push(`${basePath}/${exam.id}/edit`)}>
+                        <Pencil /> Edit
+                      </Button>
+                      <Button size="sm" onClick={() => setPublishTarget(exam)}>
+                        <Send /> Publikasikan
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={() => handleDelete(exam.id)}>
+                        <Trash2 /> Hapus
+                      </Button>
+                    </>
+                  )}
+                  {canManage && exam.status === 'PUBLISHED' && (
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => router.push(`${basePath}/${exam.id}/edit`)}>
+                        <Settings2 /> Kelola
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={() => setEndTarget(exam)}>
+                        <StopCircle /> Akhiri Ujian
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -288,6 +317,31 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
         onConfirm={() => {
           if (deleteTarget) deleteM.mutate(deleteTarget);
           setDeleteTarget(null);
+        }}
+      />
+      <ConfirmDialog
+        open={publishTarget !== null}
+        onOpenChange={(o) => { if (!o) setPublishTarget(null); }}
+        title="Publikasikan ujian?"
+        description={`"${publishTarget?.title ?? ''}" akan terlihat dan bisa dikerjakan siswa pada jadwal yang ditentukan.`}
+        confirmLabel="Ya, publikasikan"
+        tone="primary"
+        pending={publishM.isPending}
+        onConfirm={() => {
+          if (publishTarget) publishM.mutate(publishTarget.id);
+          setPublishTarget(null);
+        }}
+      />
+      <ConfirmDialog
+        open={endTarget !== null}
+        onOpenChange={(o) => { if (!o) setEndTarget(null); }}
+        title="Akhiri ujian ini?"
+        description={`"${endTarget?.title ?? ''}" akan ditandai Berakhir. Semua attempt yang masih berjalan di-auto-submit otomatis dan jawaban tidak bisa diubah lagi.`}
+        confirmLabel="Ya, akhiri ujian"
+        pending={endM.isPending}
+        onConfirm={() => {
+          if (endTarget) endM.mutate(endTarget.id);
+          setEndTarget(null);
         }}
       />
       <ContentCategoriesManager open={manageCats} onOpenChange={setManageCats} />

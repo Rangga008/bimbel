@@ -66,6 +66,10 @@ services:
       # jam jadwal apa adanya (bukan bergeser +7 jam dari UTC).
       TZ: Asia/Jakarta
       PORT: 3000
+      # Interface bind server. Default 0.0.0.0 = semua interface (wajib di balik
+      # reverse proxy/Railway); localhost tetap dilayani. Jangan pakai HOSTNAME
+      # untuk ini — Docker mengisi HOSTNAME dengan container id.
+      HOST: ${HOST:-0.0.0.0}
       # Origin web yang boleh mengakses API (pisahkan koma untuk >1).
       # Deploy: isi di .env, mis. CORS_ORIGIN=https://bimbel.example.com
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001}

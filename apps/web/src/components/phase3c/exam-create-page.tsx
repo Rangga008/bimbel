@@ -93,7 +93,8 @@ export function ExamCreatePage({
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Buat Ujian</h1>
           <p className="text-sm text-muted-foreground">
-            Jadwal mulai/selesai bersifat global — durasi siswa dihitung dari jadwal ini (server-authoritative).
+            Ujian baru disimpan sebagai <strong>Draft</strong> — belum terlihat siswa sampai dipublikasikan.
+            Jadwal mulai/selesai bersifat global (server-authoritative).
           </p>
         </div>
         <Button variant="outline" onClick={() => router.push(basePath)}>
@@ -105,7 +106,7 @@ export function ExamCreatePage({
 
       <div className="flex items-center justify-end gap-2 sticky bottom-0 bg-background py-3 border-t">
         <Button disabled={!isValid || saveM.isPending} onClick={() => saveM.mutate()}>
-          {saveM.isPending ? 'Menyimpan...' : 'Buat Ujian'}
+          {saveM.isPending ? 'Menyimpan...' : 'Simpan sebagai Draft'}
         </Button>
       </div>
     </div>

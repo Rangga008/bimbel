@@ -50,6 +50,23 @@ export class ExamProctoringController {
   }
 
   /**
+   * Overview proctoring per ujian: kelompok peserta + status attempt
+   * (belum mulai / in-progress / locked / submitted) + jumlah pelanggaran.
+   * Akses: exam.view atau exam_proctor.unlock (semua tutor bisa mengawasi).
+   */
+  @Get('exams/:id/proctoring-overview')
+  @RequireAnyPermissions(
+    PERMISSION_CODES.EXAM_VIEW,
+    PERMISSION_CODES.EXAM_PROCTOR_UNLOCK,
+  )
+  examOverview(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('id') examId: string,
+  ) {
+    return this.proctoring.examOverview(examId, actor);
+  }
+
+  /**
    * Unlock a locked attempt.
    * Requires exam_proctor.unlock permission (lintas kelompok/program).
    */

@@ -4,6 +4,7 @@ export enum ExamStatus {
   DRAFT = 'DRAFT',
   PUBLISHED = 'PUBLISHED',
   LOCKED = 'LOCKED',
+  ENDED = 'ENDED',
 }
 
 export class CreateExamDto {

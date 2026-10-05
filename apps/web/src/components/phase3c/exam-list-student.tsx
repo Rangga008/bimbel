@@ -65,8 +65,9 @@ export function ExamListStudent() {
       DRAFT: 'secondary',
       PUBLISHED: 'default',
       LOCKED: 'destructive',
+      ENDED: 'outline',
     } as const;
-    return <Badge variant={variants[status]}>{status}</Badge>;
+    return <Badge variant={variants[status] ?? 'secondary'}>{status}</Badge>;
   };
 
   const getExamStatus = (exam: ExamRow) => {

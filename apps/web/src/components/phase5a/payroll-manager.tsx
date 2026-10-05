@@ -364,7 +364,7 @@ export function PayrollManager({ canManage }: { canManage: boolean }) {
 
       {/* Dialog rincian run: auditable — tiap angka bisa dilacak ke work items & adjustment. */}
       <Dialog open={!!detailId} onOpenChange={(o) => !o && setDetailId(null)}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>
               Rincian Payroll {detail?.number ?? ''} — {detail?.tutor?.user.name ?? ''}

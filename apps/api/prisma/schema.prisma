@@ -1337,6 +1337,9 @@ enum ExamStatus {
   DRAFT
   PUBLISHED
   LOCKED
+  /// Berakhir manual oleh admin (early-end) — auto-submit semua attempt
+  /// IN_PROGRESS, ujian tidak bisa diubah/dihapus lagi.
+  ENDED
 }
 
 /// Status attempt ujian siswa. IN_PROGRESS: sedang mengerjakan.

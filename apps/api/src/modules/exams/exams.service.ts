@@ -220,16 +220,59 @@ export class ExamsService {
     });
   }
 
+  /**
+   * Publish ujian DRAFT → PUBLISHED. Wajib punya ≥1 soal dan jadwal belum
+   * lewat — ujian yang sudah melewati scheduled_end_at percuma dipublish.
+   */
+  async publish(id: string, actor?: AuthenticatedUser) {
+    const exam = await this.prisma.exam.findUnique({
+      where: { id },
+      include: { _count: { select: { items: true } } },
+    });
+    if (!exam) throw new NotFoundException('Ujian tidak ditemukan.');
+    if (actor) {
+      const scope = await this.tutorScope.for(actor);
+      if (scope)
+        this.tutorScope.assertContentRef(scope, exam.programId, exam.levelId, exam.subjectId);
+    }
+    if (exam.status !== 'DRAFT') {
+      throw new BadRequestException('Hanya ujian berstatus Draft yang bisa dipublikasikan.');
+    }
+    if (exam._count.items === 0) {
+      throw new BadRequestException('Ujian belum memiliki soal — tambahkan soal dulu.');
+    }
+    if (exam.scheduledEndAt <= new Date()) {
+      throw new BadRequestException(
+        'Waktu selesai ujian sudah lewat — atur ulang jadwal dulu.',
+      );
+    }
+    return this.prisma.exam.update({
+      where: { id },
+      data: { status: 'PUBLISHED' },
+      include: TAXONOMY_INCLUDE,
+    });
+  }
+
   async update(id: string, dto: UpdateExamDto) {
     const exam = await this.prisma.exam.findUnique({ where: { id } });
     if (!exam) throw new NotFoundException('Ujian tidak ditemukan.');
 
     // Validasi status transition
+    if (dto.status === 'ENDED') {
+      throw new BadRequestException(
+        'Status Berakhir hanya via aksi "Akhiri Ujian" (auto-submit semua peserta).',
+      );
+    }
     if (dto.status === 'LOCKED' && exam.status !== 'PUBLISHED') {
       throw new BadRequestException('Hanya ujian PUBLISHED yang bisa di-LOCKED.');
     }
-    if (exam.status === 'LOCKED' && dto.status !== 'LOCKED') {
-      throw new BadRequestException('Ujian yang sudah LOCKED tidak bisa diubah.');
+    if (
+      (exam.status === 'LOCKED' || exam.status === 'ENDED') &&
+      dto.status !== exam.status
+    ) {
+      throw new BadRequestException(
+        'Ujian yang sudah LOCKED/ENDED tidak bisa diubah.',
+      );
     }
 
     await this.assertRefs(dto);
@@ -348,8 +391,8 @@ export class ExamsService {
     const exam = await this.prisma.exam.findUnique({ where: { id } });
     if (!exam) throw new NotFoundException('Ujian tidak ditemukan.');
 
-    if (exam.status === 'PUBLISHED' || exam.status === 'LOCKED') {
-      throw new BadRequestException('Ujian yang sudah PUBLISHED atau LOCKED tidak bisa dihapus.');
+    if (exam.status !== 'DRAFT') {
+      throw new BadRequestException('Hanya ujian berstatus Draft yang bisa dihapus.');
     }
 
     await this.prisma.exam.delete({ where: { id } });

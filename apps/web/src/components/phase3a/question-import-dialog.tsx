@@ -174,7 +174,7 @@ export function QuestionImportDialog({
         if (!o) reset();
       }}
     >
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Import Soal dari Word / Excel</DialogTitle>
         </DialogHeader>

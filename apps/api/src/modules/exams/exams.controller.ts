@@ -86,6 +86,25 @@ export class ExamsController {
     return created;
   }
 
+  @Post('exams/:id/publish')
+  @RequirePermissions(PERMISSION_CODES.EXAM_MANAGE)
+  async publish(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const updated = await this.exams.publish(id, actor);
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'EXAM_PUBLISHED',
+      entity: 'Exam',
+      entityId: id,
+      newData: { title: updated.title, status: updated.status },
+      ...ctx(req),
+    });
+    return updated;
+  }
+
   @Patch('exams/:id')
   @RequirePermissions(PERMISSION_CODES.EXAM_MANAGE)
   async update(

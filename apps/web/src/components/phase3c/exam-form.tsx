@@ -158,7 +158,8 @@ export function ExamForm({
               <option value="LOCKED">LOCKED</option>
             </select>
             <p className="text-xs text-muted-foreground mt-1">
-              PUBLISHED = siswa bisa mengerjakan. LOCKED = ujian permanen dikunci (tidak bisa diubah lagi).
+              DRAFT = belum terlihat siswa. PUBLISHED = siswa bisa mengerjakan. LOCKED = dikunci permanen.
+              Status Berakhir (ENDED) hanya lewat tombol "Akhiri Ujian" — semua peserta auto-submit.
             </p>
           </div>
         )}

@@ -13,6 +13,7 @@ import { MaterialsManager } from "@/components/phase3a/materials-manager";
 import { QuestionsManager } from "@/components/phase3a/questions-manager";
 import { LatsolPage } from "@/components/phase3b/latsol-page";
 import { ExamsManager } from "@/components/phase3c/exams-manager";
+import { ProctoringHubPage } from "@/components/phase3d/proctoring-hub-page";
 import { PembahasanManager } from "@/components/phase3e/pembahasan-manager";
 import { MediaLibraryManager } from "@/components/shared/media-library-manager";
 import { MasterDataManager } from "@/components/phase1a/master-data-manager";
@@ -54,6 +55,8 @@ export default async function AdminAcademicMenuPage({
 	if (slug === "soal") return <QuestionsManager canManage basePath="/admin-academic/soal" />;
 	if (slug === "latsol") return <LatsolPage canManage basePath="/admin-academic/latsol" />;
 	if (slug === "ujian") return <ExamsManager canManage basePath="/admin-academic/ujian" />;
+	if (slug === "proctoring")
+		return <ProctoringHubPage examBasePath="/admin-academic/ujian" />;
 	if (slug === "pembahasan") return <PembahasanManager />;
 	if (slug === "pustaka") return <MediaLibraryManager />;
 	if (slug === "analisis") return <AdminAcademicAnalytics />;

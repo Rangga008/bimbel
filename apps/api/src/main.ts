@@ -55,6 +55,14 @@ async function bootstrap() {
     console.error('[uncaughtException]', reason);
   });
 
-  await app.listen(process.env.PORT ?? 3000);
+  // Bind eksplisit ke 0.0.0.0: wajib di balik reverse proxy / Railway /
+  // Docker networking. Localhost tetap dilayani karena 0.0.0.0 = semua
+  // interface. Override via env HOST bila perlu (mis. 127.0.0.1 untuk
+  // dev lokal terisolasi). JANGAN pakai HOSTNAME — env itu diisi Docker
+  // dengan container id.
+  const port = Number(process.env.PORT ?? 3000);
+  const host = process.env.HOST ?? '0.0.0.0';
+  await app.listen(port, host);
+  console.log(`API listening on http://${host}:${port}`);
 }
 bootstrap();

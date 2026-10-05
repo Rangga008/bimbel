@@ -212,7 +212,7 @@ export class ExamAttemptsService {
     const student = await this.requireStudent(userId);
     const attempt = await this.prisma.examAttempt.findUnique({
       where: { id: attemptId },
-      include: { exam: { select: { scheduledEndAt: true } } },
+      include: { exam: { select: { status: true, scheduledEndAt: true } } },
     });
     if (!attempt || attempt.studentId !== student.id) {
       throw new NotFoundException('Attempt tidak ditemukan.');
@@ -224,6 +224,11 @@ export class ExamAttemptsService {
     }
     if (attempt.status !== 'IN_PROGRESS') {
       throw new BadRequestException('Attempt ini sudah dikumpulkan.');
+    }
+    if (attempt.exam.status === 'ENDED') {
+      throw new BadRequestException(
+        'Ujian sudah diakhiri pengawas. Jawaban tidak dapat disimpan lagi.',
+      );
     }
     if (new Date() > attempt.exam.scheduledEndAt) {
       throw new BadRequestException(
@@ -281,6 +286,7 @@ export class ExamAttemptsService {
       include: {
         exam: {
           select: {
+            status: true,
             scheduledEndAt: true,
           },
         },
@@ -296,6 +302,11 @@ export class ExamAttemptsService {
     }
     if (attempt.status !== 'IN_PROGRESS') {
       throw new BadRequestException('Attempt ini sudah dikumpulkan.');
+    }
+    if (attempt.exam.status === 'ENDED') {
+      throw new BadRequestException(
+        'Ujian sudah diakhiri pengawas. Hubungi pengawas bila perlu klarifikasi.',
+      );
     }
 
     const now = new Date();
@@ -435,6 +446,55 @@ export class ExamAttemptsService {
     }
 
     return { score: totalScore };
+  }
+
+  /**
+   * Akhiri ujian manual (PUBLISHED → ENDED).
+   * Urutan penting: tandai ENDED dulu supaya siswa tidak bisa lagi
+   * mulai/simpan jawaban, baru auto-submit semua attempt IN_PROGRESS
+   * via autoSubmit (idempotent, race-safe, + poin + audit).
+   * Attempt LOCKED dibiarkan — unlock manual tetap bisa, lalu worker
+   * auto-submit menangkapnya (status ENDED tetap memblokir jawaban baru).
+   */
+  async endExam(examId: string) {
+    const exam = await this.prisma.exam.findUnique({
+      where: { id: examId },
+      select: { id: true, status: true },
+    });
+    if (!exam) throw new NotFoundException('Ujian tidak ditemukan.');
+    if (exam.status !== 'PUBLISHED') {
+      throw new BadRequestException(
+        'Hanya ujian berstatus PUBLISHED yang bisa diakhiri.',
+      );
+    }
+
+    await this.prisma.exam.update({
+      where: { id: examId },
+      data: { status: 'ENDED' },
+    });
+
+    const inProgress = await this.prisma.examAttempt.findMany({
+      where: { examId, status: 'IN_PROGRESS' },
+      select: { id: true },
+    });
+    for (const a of inProgress) {
+      await this.autoSubmit(a.id);
+    }
+
+    const summary = await this.prisma.examAttempt.groupBy({
+      by: ['status'],
+      where: { examId },
+      _count: { _all: true },
+    });
+    return {
+      examId,
+      status: 'ENDED' as const,
+      autoSubmitted: inProgress.length,
+      attemptSummary: summary.map((s) => ({
+        status: s.status,
+        count: s._count._all,
+      })),
+    };
   }
 
   /**
