@@ -37,8 +37,8 @@ export function SkeletonPage({ role, title }: SkeletonPageProps) {
 
 			<Card>
 				<CardContent className="py-10 text-center text-sm text-muted-foreground">
-					Halaman "{title}" belum memiliki data — modul ini akan dibangun di
-					fase berikutnya.
+					Halaman &quot;{title}&quot; belum memiliki data — modul ini akan
+					dibangun di fase berikutnya.
 				</CardContent>
 			</Card>
 		</div>

@@ -1,11 +1,5 @@
-import { RoleHome } from "@/components/role-home";
+import { FinanceDashboard } from "@/components/phase2b/finance-dashboard";
 
 export default function AdminFinanceDashboardPage() {
-	return (
-		<RoleHome
-			role="admin-finance"
-			apiPath="/dashboard/admin-finance"
-			title="Dashboard Admin Finance"
-		/>
-	);
+	return <FinanceDashboard />;
 }

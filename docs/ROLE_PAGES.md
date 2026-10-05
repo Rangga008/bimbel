@@ -78,7 +78,9 @@ Legenda mobile: **[nav]** = ada di bottom nav utama, **[lainnya]** = masuk drawe
 | Level | ✅ | Menu |
 | Kelompok | ✅ | **[nav]** shortcut / Menu |
 | Tutor | ✅ | Menu |
-| Jadwal | ✅ | Menu |
+| Jadwal & Sesi | ✅ | Menu |
+| Fasilitas (ruangan) | ✅ | Menu |
+| Absensi | ✅ | Menu |
 | Materi | ✅ | Menu |
 | Soal (bank soal) | ✅ | Menu |
 | Latsol | ✅ | Menu |
@@ -101,6 +103,7 @@ Legenda mobile: **[nav]** = ada di bottom nav utama, **[lainnya]** = masuk drawe
 | RAB vs Actual | ✅ | Menu |
 | Payroll | ✅ | Menu |
 | Laporan | ✅ | Menu |
+| **Manajemen Akun** (create/edit/nonaktifkan user, assign role, reset password — governed by permission `users.manage`, default Owner) | ✅ | Menu |
 | Audit (log) | ✅ | Menu |
 
 ---

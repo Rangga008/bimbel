@@ -10,10 +10,21 @@ import { RedisThrottlerStorage } from './redis-throttler.storage';
     {
       provide: REDIS_CLIENT,
       inject: [ConfigService],
-      useFactory: (config: ConfigService) =>
-        new Redis(config.getOrThrow<string>('REDIS_URL'), {
-          maxRetriesPerRequest: 3,
-        }),
+      useFactory: (config: ConfigService) => {
+        const redis = new Redis(config.getOrThrow<string>('REDIS_URL'), {
+          maxRetriesPerRequest: 1,
+          // Jangan blokir bootstrap Nest saat Redis mati (dev lokal tanpa redis).
+          // Kegagalan operasi ditangani di RedisThrottlerStorage (fallback in-memory).
+          lazyConnect: true,
+          enableReadyCheck: false,
+        });
+        redis.on('error', () => {
+          // Sengaja ditelan — sudah di-log + fallback di storage layer.
+        });
+        // Coba connect di background; abaikan jika gagal.
+        redis.connect().catch(() => undefined);
+        return redis;
+      },
     },
     RedisThrottlerStorage,
   ],

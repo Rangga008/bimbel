@@ -57,3 +57,12 @@ docs/_screenshots-raw/
 # Folder/berkas di atas sengaja diexclude supaya Copilot Agent tidak
 # ikut mengindeks/mem-parsing file besar & tidak relevan saat auto-context,
 # sehingga token per request tetap efisien.
+
+# === Artefak dev lokal — jangan commit ===
+.tok
+.tok-*.json
+.test-token*
+.qids
+.qids.json
+Modelfile
+.clinerules/

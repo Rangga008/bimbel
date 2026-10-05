@@ -1,7 +1,18 @@
+# syntax=docker/dockerfile:1
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm install
+# Tahan jaringan tidak stabil: retry + timeout lebih longgar, cache mount npm,
+# dan opsi mirror registry via build-arg NPM_REGISTRY.
+ARG NPM_REGISTRY=
+RUN --mount=type=cache,target=/root/.npm \
+    if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi && \
+    npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 15000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-timeout 300000 && \
+    npm config set maxsockets 3 && \
+    npm ci --no-audit --no-fund
 
 FROM node:22-alpine AS build
 WORKDIR /app

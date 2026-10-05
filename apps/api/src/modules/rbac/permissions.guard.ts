@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
-import { PERMISSIONS_KEY } from './permissions.decorator';
+import { PERMISSIONS_KEY, PERMISSIONS_ANY_KEY } from './permissions.decorator';
 import { PermissionCode } from './permissions.constants';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 
@@ -19,12 +19,19 @@ export class PermissionsGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const required = this.reflector.getAllAndOverride<PermissionCode[]>(
+    const requiredAll = this.reflector.getAllAndOverride<PermissionCode[]>(
       PERMISSIONS_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const requiredAny = this.reflector.getAllAndOverride<PermissionCode[]>(
+      PERMISSIONS_ANY_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
-    if (!required || required.length === 0) {
+    if (
+      (!requiredAll || requiredAll.length === 0) &&
+      (!requiredAny || requiredAny.length === 0)
+    ) {
       return true;
     }
 
@@ -39,13 +46,26 @@ export class PermissionsGuard implements CanActivate {
       );
     }
 
-    const hasAll = required.every((permission) =>
-      user.permissions.includes(permission),
-    );
-    if (!hasAll) {
-      throw new ForbiddenException(
-        'Anda tidak memiliki akses ke halaman/aksi ini.',
+    if (requiredAll && requiredAll.length > 0) {
+      const hasAll = requiredAll.every((permission) =>
+        user.permissions.includes(permission),
       );
+      if (!hasAll) {
+        throw new ForbiddenException(
+          'Anda tidak memiliki akses ke halaman/aksi ini.',
+        );
+      }
+    }
+
+    if (requiredAny && requiredAny.length > 0) {
+      const hasAny = requiredAny.some((permission) =>
+        user.permissions.includes(permission),
+      );
+      if (!hasAny) {
+        throw new ForbiddenException(
+          'Anda tidak memiliki akses ke halaman/aksi ini.',
+        );
+      }
     }
 
     return true;

@@ -19,13 +19,26 @@ model User {
   passwordHash String
   name         String
   phone        String?
+  avatarUrl    String?
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  userRoles     UserRole[]
+        userRoles     UserRole[]
   refreshTokens RefreshToken[]
   auditLogs     AuditLog[] @relation("AuditLogActor")
+  student       Student?
+  parent        Parent?
+  tutor         Tutor?
+  notifications Notification[]
+  notificationPreference NotificationPreference?
+  whatsAppOutbox WhatsAppOutbox[]
+  reportSnapshots ReportSnapshot[] @relation("ReportSnapshotCreator")
+  appSettingsUpdated AppSetting[] @relation("AppSettingUpdater")
+  mediaAssets   MediaAsset[] @relation("MediaAssetUploader")
+  passwordResetTokens PasswordResetToken[]
+  reviewedEnrollments Enrollment[] @relation("EnrollmentReviewer")
+  feedbackEntries FeedbackEntry[] @relation("FeedbackAuthor")
 
   @@map("users")
 }
@@ -112,9 +125,1699 @@ model AuditLog {
   userAgent  String?
   createdAt  DateTime @default(now())
 
-  actor User? @relation("AuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+    actor User? @relation("AuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([entity, entityId])
   @@index([actorId])
   @@map("audit_logs")
+}
+
+// ===========================================================================
+// Fase 1a — People & Programs
+// ===========================================================================
+
+/// Gender siswa, hanya untuk keperluan operasional/administrasi.
+enum Gender {
+  M
+  F
+  OTHER
+}
+
+/// Profil siswa (1:1 dengan User yang role-nya SISWA). Soft-delete lewat `isActive`.
+model Student {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  dateOfBirth DateTime?
+  address   String?
+  schoolOrigin String?
+  gender    Gender?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentStudents ParentStudent[]
+  groupMembers   GroupMember[]
+  sessionOverrides SessionStudentOverride[]
+  attendances    Attendance[]
+  invoices       Invoice[]
+  latsolAttempts LatsolAttempt[]
+  examAttempts   ExamAttempt[]
+  pointTransactions PointTransaction[]
+  enrollments    Enrollment[]
+  feedbackEntries FeedbackEntry[]
+
+  @@index([userId])
+  @@map("students")
+}
+
+/// Profil orang tua/wali (1:1 dengan User role ORANG_TUA). Bisa mengikat >1 anak via `parent_students`.
+model Parent {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentStudents ParentStudent[]
+  enrollments    Enrollment[]
+  feedbackEntries FeedbackEntry[] @relation("FeedbackParent")
+
+  @@index([userId])
+  @@map("parents")
+}
+
+/// Junction many-to-many orang tua <-> siswa (1 ortu bisa ke banyak anak, 1 anak boleh ada 2 ortu).
+model ParentStudent {
+  id        String   @id @default(uuid())
+  parentId  String
+  studentId String
+  createdAt DateTime @default(now())
+
+  parent  Parent  @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([parentId, studentId])
+  @@index([studentId])
+  @@map("parent_students")
+}
+
+/// Profil tutor (1:1 dengan User role TUTOR). `isActive` = status kepegawaian.
+model Tutor {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  specialization String? @db.VarChar(100)
+  bio         String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupTutors GroupTutor[]
+  schedules Schedule[]
+  sessions  Session[]
+  rates     TutorRate[]
+  workItems TutorWorkItem[]
+  payrollRuns PayrollRun[]
+  attendances TutorAttendance[]
+
+  @@index([userId])
+  @@map("tutors")
+}
+
+/// Program akademik, mis. "Matematika", "Bahasa Inggris", "Fisika".
+/// Master data mata pelajaran (mapel) — kode unik (mis. MTK, BIN) supaya
+/// program, level, dan kelompok mengacu ke data yang sama, bukan teks bebas.
+model Subject {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  programs       Program[]
+  levels         Level[]
+  levelSubjects  LevelSubject[]
+  questions      Question[]
+  latsolPackages LatsolPackage[]
+  materials      Material[]
+  exams          Exam[]
+  schedules      Schedule[]
+  sessions       Session[]     @relation("SessionSubject")
+  feedbackEntries FeedbackEntry[]
+
+  @@map("subjects")
+}
+
+/// Master data level kelas (mis. "SD Kelas 4", "SMP Kelas 8") — dipilih
+/// dari dropdown saat menambah level ke program, bukan diketik manual.
+model GradeLevel {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  levels Level[]
+
+  @@map("grade_levels")
+}
+
+/// Kategori kelas sesuai brosur: Reguler (per jenjang, multi-mapel),
+/// Extra (kursus khusus), Privat (guru ke rumah, per pertemuan).
+enum ProgramCategory {
+  REGULER
+  EXTRA
+  PRIVAT
+}
+
+/// Satuan penagihan harga level.
+enum PriceUnit {
+  YEAR       /// per tahun ajaran — kelas reguler (brosur: biaya sampai selesai 1 tahun)
+  MONTH      /// per bulan — kelas extra
+  SESSION    /// per pertemuan — kelas privat
+  PACKAGE    /// per paket — paket sesi lama (kompatibilitas)
+}
+
+/// Cara bayar pendaftaran reguler (brosur: lunas di awal / 2x / bulanan).
+enum PaymentPlan {
+  FULL        /// lunas di awal — harga diskon
+  TWO_TIMES   /// angsuran 2 kali
+  MONTHLY     /// angsuran bulanan (9x/10x sesuai jenjang)
+}
+
+model Program {
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique
+  description String?
+  subjectId   String?
+  category    ProgramCategory @default(REGULER)
+  /// Biaya pendaftaran sekali bayar saat enrollment (brosur: 250rb reguler / 200rb extra).
+  registrationFee Decimal? @db.Decimal(12, 2)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  levels Level[]
+  groups LearningGroup[]
+  materials Material[]
+  questions Question[]
+  latsolPackages LatsolPackage[]
+  exams    Exam[]
+  enrollments Enrollment[]
+
+  @@index([subjectId])
+  @@map("programs")
+}
+
+/// Level dalam program, mis. "SD", "SMP", "SMA" atau "Pemula", "Menengah", "Lanjutan".
+model Level {
+  id           String   @id @default(uuid())
+  programId    String
+  name         String
+  code         String?
+  sortOrder    Int      @default(0)
+  gradeLevelId String?
+  subjectId    String?
+  /// Harga kelas per jenjang (brosur: tahunan reguler / per bulan extra / per pertemuan privat 1 siswa).
+  price        Decimal?   @db.Decimal(12, 2)
+  priceUnit    PriceUnit?
+  /// Pricelist cara bayar reguler: lunas di awal (diskon).
+  fullPayPrice Decimal?   @db.Decimal(12, 2)
+  /// Pricelist cara bayar reguler: nominal per angsuran 2x.
+  installment2x Decimal?  @db.Decimal(12, 2)
+  /// Pricelist cara bayar reguler: nominal angsuran bulanan + jumlah bulannya (9x/10x).
+  monthlyAmount Decimal?  @db.Decimal(12, 2)
+  monthlyCount  Int?
+  /// Harga promo kelas extra (brosur: diskon 25-50% jika anak ikut kelas reguler).
+  promoPrice    Decimal?  @db.Decimal(12, 2)
+  /// Tier privat per jumlah siswa: {"2":75000,"3":65000,"4":55000,"5":45000}.
+  sessionPrices        Json?
+  /// Durasi pertemuan privat (menit) — 60/90 sesuai jenjang.
+  sessionDurationMin   Int?
+  /// Override biaya pendaftaran per jenjang (brosur: TK 300rb, lainnya 250rb).
+  registrationFee      Decimal? @db.Decimal(12, 2)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  program    Program     @relation(fields: [programId], references: [id], onDelete: Cascade)
+  gradeLevel GradeLevel? @relation(fields: [gradeLevelId], references: [id], onDelete: SetNull)
+  /// Mapel level — opsional; bila kosong level mewarisi mapel program.
+  subject    Subject?    @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  /// Daftar mapel dalam jenjang ini (brosur: kls reguler berisi beberapa mapel).
+  levelSubjects LevelSubject[]
+  packages Package[]
+  groups   LearningGroup[]
+  materials Material[]
+  questions Question[]
+  latsolPackages LatsolPackage[]
+  exams    Exam[]
+  enrollments Enrollment[]
+
+  @@unique([programId, name])
+  @@index([programId])
+  @@map("levels")
+}
+
+/// Junction mapel per jenjang — mis. "Kelas 4 SD" berisi MTK, IPAS, BIN, PKN.
+/// Dipakai katalog pendaftaran dan batas mapel yang boleh dijadwalkan di kelompok.
+model LevelSubject {
+  id        String @id @default(uuid())
+  levelId   String
+  subjectId String
+  createdAt DateTime @default(now())
+
+  level   Level   @relation(fields: [levelId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([levelId, subjectId])
+  @@index([subjectId])
+  @@map("level_subjects")
+}
+
+/// Paket dalam sebuah level — memiliki jumlah sesi tetap (`totalSessions`).
+/// Diharga lewat finance di Fase 2; disini hanya didefinisikan skema & CRUD master.
+model Package {
+  id            String   @id @default(uuid())
+  levelId       String
+  name          String
+  code          String?  @unique
+  totalSessions Int
+  durationWeeks Int?
+  price         Decimal? @db.Decimal(12, 2)
+  description   String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  level Level @relation(fields: [levelId], references: [id], onDelete: Cascade)
+  invoices Invoice[]
+  groups   LearningGroup[]
+
+  @@index([levelId])
+  @@map("packages")
+}
+
+// ===========================================================================
+// Fase 1b — Groups & Tutor Assignment
+// ===========================================================================
+
+/// Kelompok belajar. Terhubung ke Program wajib + Level opsional.
+/// Multi-tutor didukung via `groupTutors` (tutor per sesi bisa berbeda — ITU Fase 1c).
+/// Jadwal/sesi konkret BELUM ada di fase ini (Fase 1c), jadi kelompok hanya punya
+/// daftar anggota + daftar tutor. `branchId` sengaja opsional-nullable sekarang
+/// supaya siap multi-cabang nanti tanpa refactor besar (single brand, single branch saat ini).
+model LearningGroup {
+  id        String   @id @default(uuid())
+  name      String
+  code      String?  @unique
+  programId String
+  levelId   String?
+  packageId String?
+  branchId  String?
+  capacity  Int?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  program Program @relation(fields: [programId], references: [id], onDelete: Restrict)
+  level   Level?  @relation(fields: [levelId], references: [id], onDelete: SetNull)
+  package Package? @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  members GroupMember[]
+  tutors  GroupTutor[]
+  schedules Schedule[]
+  sessions  Session[]
+  materials Material[]
+  enrollments Enrollment[]
+  feedbackEntries FeedbackEntry[]
+
+  @@index([programId])
+  @@index([levelId])
+  @@index([packageId])
+  @@index([branchId])
+  @@map("learning_groups")
+}
+
+/// Alur pendaftaran siswa baru (self-service ortu):
+/// ortu daftarkan anak → invoice terbit → bayar → finance verifikasi →
+/// academic menempatkan ke kelompok. Akun siswa nonaktif sampai ACCEPTED.
+enum EnrollmentStatus {
+  /// Invoice pendaftaran sudah terbit, menunggu pembayaran.
+  PENDING_PAYMENT
+  /// Invoice lunas — menunggu verifikasi admin finance.
+  PAID
+  /// Diverifikasi finance — menunggu penempatan kelompok oleh admin academic.
+  ACCEPTED
+  /// Sudah ditempatkan di kelompok (status akhir).
+  PLACED
+  /// Ditolak admin finance (mis. pembayaran tidak sah).
+  REJECTED
+}
+
+model Enrollment {
+  id           String           @id @default(uuid())
+  parentId     String
+  studentId    String
+  programId    String
+  levelId      String
+  /// Invoice pendaftaran (biaya daftar + tagihan pertama).
+  invoiceId    String?          @unique
+  /// Kelompok tujuan setelah ditempatkan admin academic.
+  groupId      String?
+  status       EnrollmentStatus @default(PENDING_PAYMENT)
+  /// Cara bayar untuk kelas reguler (FULL/TWO_TIMES/MONTHLY) — null untuk extra/privat.
+  paymentPlan  PaymentPlan?
+  /// Jumlah siswa untuk kelas privat (tier harga brosur 1-5 siswa).
+  studentCount Int?
+  /// Jumlah pertemuan privat yang dibayar di awal.
+  sessionCount Int?
+  /// Nama anak persis seperti diisi ortu saat mendaftar.
+  childName    String
+  notes        String?
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  parent     Parent         @relation(fields: [parentId], references: [id], onDelete: Restrict)
+  student    Student        @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  program    Program        @relation(fields: [programId], references: [id], onDelete: Restrict)
+  level      Level          @relation(fields: [levelId], references: [id], onDelete: Restrict)
+  invoice    Invoice?       @relation("EnrollmentPrimaryInvoice", fields: [invoiceId], references: [id], onDelete: SetNull)
+  /// Semua invoice pendaftaran ini (cicilan 2x/bulanan).
+  invoices   Invoice[]      @relation("EnrollmentInvoices")
+  group      LearningGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  reviewedBy User?          @relation("EnrollmentReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([parentId])
+  @@index([studentId])
+  @@index([status])
+  @@map("enrollments")
+}
+
+/// Keanggotaan siswa di kelompok (many-to-many Student <-> LearningGroup).
+/// Satu siswa boleh ikut >1 kelompok (mis. reguler + kelas tambahan).
+model GroupMember {
+  id        String   @id @default(uuid())
+  groupId   String
+  studentId String
+  joinedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  group   LearningGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  student Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, studentId])
+  @@index([studentId])
+  @@map("group_members")
+}
+
+/// Penugasan tutor ke kelompok (many-to-many Tutor <-> LearningGroup).
+/// Sengaja multi-tutor per kelompok; JANGAN hardcode 1 tutor per kelompok.
+/// `isLead` opsional untuk menandai koordinator — bukan pembatas 1 tutor.
+model GroupTutor {
+  id         String   @id @default(uuid())
+  groupId    String
+  tutorId    String
+  isLead     Boolean  @default(false)
+  assignedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  group LearningGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  tutor Tutor         @relation(fields: [tutorId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, tutorId])
+  @@index([tutorId])
+  @@map("group_tutors")
+}
+
+// ===========================================================================
+// Fase 1c — Schedule & Session (jadwal konkret + sesi + override per-siswa)
+// ===========================================================================
+
+/// Gedung minimal untuk deteksi konflik ruangan. `branchId` nullable agar siap
+/// multi-cabang nanti tanpa refactor (single brand, single branch saat ini).
+model Building {
+  id        String   @id @default(uuid())
+  name      String
+  address   String?
+  branchId  String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rooms Room[]
+
+  @@index([branchId])
+  @@map("buildings")
+}
+
+/// Ruangan minimal untuk deteksi konflik ruangan. `buildingId` opsional supaya
+/// bimbel kecil tanpa gedung tetap bisa pakai (ruang "Ruang 1", "Ruang 2").
+model Room {
+  id         String   @id @default(uuid())
+  buildingId String?
+  name       String
+  capacity   Int?
+  photoUrl   String?
+  branchId   String?
+  isActive   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  building  Building?               @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  schedules Schedule[]
+  sessions  Session[]
+  overrides SessionStudentOverride[]
+
+  @@index([buildingId])
+  @@index([branchId])
+  @@map("rooms")
+}
+
+/// Template jadwal mingguan per kelompok (entitas mandiri, bisa diubah).
+/// Contoh: "tiap Senin 16:00-17:30, berlaku 1 Sep - 30 Nov".
+/// `tutorId`/`roomId` adalah default saat generate Session; tiap Session boleh
+/// diganti tutor/ruang-nya tanpa mengubah template ini.
+model Schedule {
+  id        String   @id @default(uuid())
+  groupId   String
+  tutorId   String?
+  roomId    String?
+  subjectId String?
+  dayOfWeek Int
+  startMin  Int
+  endMin    Int
+  validFrom DateTime @db.Date
+  validTo   DateTime? @db.Date
+  branchId  String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  group    LearningGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  tutor    Tutor?        @relation(fields: [tutorId], references: [id], onDelete: SetNull)
+  room     Room?         @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  subject  Subject?      @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  sessions Session[]
+
+  @@index([groupId])
+  @@index([tutorId])
+  @@index([roomId])
+  @@index([branchId])
+  @@map("schedules")
+}
+
+/// Status sesi konkret. COMPLETED dicadangkan untuk Fase 1d (absensi) — fase
+/// ini hanya memakai SCHEDULED/CANCELLED.
+enum SessionStatus {
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+/// Sesi konkret bertanggal-waktu (entitas mandiri, bisa diubah/reschedule).
+/// `scheduleId` nullable untuk sesi ad-hoc / kelas tambahan di luar template.
+model Session {
+  id         String        @id @default(uuid())
+  groupId    String
+  scheduleId String?
+  tutorId    String?
+  roomId     String?
+  /// Mapel yang diajarkan di sesi ini — null = ikut mapel jadwal/level/program.
+  subjectId  String?
+  startsAt   DateTime
+  endsAt     DateTime
+  status     SessionStatus @default(SCHEDULED)
+  notes      String?
+  /// Laporan tutor berhalangan (sakit/dll) — tutorId tetap tutor aslinya sampai
+  /// admin menunjuk pengganti; note+timestamp jadi jejak audit.
+  tutorAbsenceNote String?
+  tutorAbsenceAt   DateTime?
+  branchId   String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  group     LearningGroup              @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  schedule  Schedule?                  @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  tutor     Tutor?                     @relation(fields: [tutorId], references: [id], onDelete: SetNull)
+  room      Room?                      @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  subject   Subject?                   @relation("SessionSubject", fields: [subjectId], references: [id], onDelete: SetNull)
+  overrides SessionStudentOverride[]
+  attendances Attendance[]
+  tutorAttendances TutorAttendance[]
+  workItems TutorWorkItem[]
+
+  @@index([groupId, startsAt])
+  @@index([tutorId, startsAt])
+  @@index([roomId, startsAt])
+  @@index([startsAt])
+  // Satu jadwal tidak boleh punya 2 sesi di jam mulai yang sama (mencegah
+  // sesi ganda hasil generate berulang/race condition).
+  @@unique([scheduleId, startsAt])
+  @@map("sessions")
+}
+
+/// Catatan tanggal kalender (LIBUR/RAPAT/DARURAT/INFO) — mis. rapat guru,
+/// pembangunan gedung, libur nasional. Ditampilkan di jadwal & ikut
+/// reminder jadwal mingguan.
+model DayNote {
+  id        String   @id @default(uuid())
+  date      DateTime @db.Date
+  /// LIBUR | RAPAT | DARURAT | INFO
+  type      String   @default("INFO")
+  title     String
+  note      String?
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+  @@map("day_notes")
+}
+
+/// Override jadwal per-siswa: Admin mengubah waktu/ruang untuk 1 siswa tanpa
+/// mengubah sesi kelompok. Satu baris per (sessionId, studentId).
+model SessionStudentOverride {
+  id        String   @id @default(uuid())
+  sessionId String
+  studentId String
+  startsAt  DateTime?
+  endsAt    DateTime?
+  roomId    String?
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  room    Room?   @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  @@unique([sessionId, studentId])
+  @@index([studentId])
+  @@map("session_student_overrides")
+}
+
+// ===========================================================================
+// Fase 2a — Invoice & Core Finance Data Model
+// Struktur final: Invoice -> InvoiceItem -> Payment -> PaymentAllocation.
+// SENGAJA tidak ada kolom per-bulan (JULI, dst) — piutang/outstanding
+// dihitung dari agregat transaksi (Fase 2c), bukan kolom statis.
+// Payment & PaymentAllocation di fase ini hanya skema + relasi siap pakai;
+// logic pembayaran/verifikasi menyusul Fase 2b.
+// ===========================================================================
+
+/// Status tagihan Fase 2a: masih manual/belum ada pembayaran nyata.
+/// PAID/PARTIAL/OVERDUE menyusul Fase 2b-2c (butuh logic payment).
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  VOID
+}
+
+/// Status pembayaran (dipakai mulai Fase 2b; skema disiapkan di 2a).
+enum PaymentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+/// Kas/bank penampung dana. Minimal 2 akun: Kas & Bank (lihat seed).
+model FinancialAccount {
+  id        String   @id @default(uuid())
+  name      String
+  code      String?  @unique
+  type      String   @default("CASH")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payments      Payment[]
+  refunds       Refund[]
+  ledgerEntries LedgerEntry[]
+  expenses      Expense[]
+  payrollRuns   PayrollRun[]
+
+  @@map("financial_accounts")
+}
+
+/// Tagihan per siswa. Satu invoice boleh berisi >1 item (cicilan, diskon,
+/// kelas tambahan menyusul fase berikutnya — struktur sudah siap).
+/// `branchId` nullable agar siap multi-cabang tanpa refactor.
+model Invoice {
+  id          String        @id @default(uuid())
+  number      String        @unique
+  studentId   String
+  packageId   String?
+  status      InvoiceStatus @default(DRAFT)
+  totalAmount Decimal       @db.Decimal(14, 2)
+  amountPaid  Decimal       @default(0) @db.Decimal(14, 2)
+  dueDate     DateTime?     @db.Date
+  notes       String?
+  branchId    String?
+  issuedAt    DateTime?
+  voidedAt    DateTime?
+  /// Fase 2c — flag reminder piutang (WA menyusul Fase 5). NONE | PENDING | SENT
+  reminderStatus String     @default("NONE")
+  remindedAt  DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  student     Student         @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  package     Package?        @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  items       InvoiceItem[]
+  allocations PaymentAllocation[]
+  receipts    Receipt[]
+  refunds     Refund[]
+  enrollment  Enrollment?   @relation("EnrollmentPrimaryInvoice")
+  /// Pendaftaran yang menagih lewat invoice ini (cicilan lanjutan ikut tertaut).
+  enrollmentId   String?
+  enrollmentLink Enrollment? @relation("EnrollmentInvoices", fields: [enrollmentId], references: [id], onDelete: SetNull)
+
+  @@index([studentId])
+  @@index([status])
+  @@index([number])
+  @@index([packageId])
+  @@index([enrollmentId])
+  @@index([branchId])
+  @@map("invoices")
+}
+
+/// Baris item tagihan. Harga di-snapshot (`unitPrice`) supaya perubahan harga
+/// Package di kemudian hari tidak merusak histori tagihan.
+model InvoiceItem {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  description String
+  quantity    Int      @default(1)
+  unitPrice   Decimal  @db.Decimal(14, 2)
+  amount      Decimal  @db.Decimal(14, 2)
+  createdAt   DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+/// Pembayaran. Logic verifikasi/alokasi menyusul Fase 2b — di 2a hanya skema.
+/// JANGAN pernah anggap payment sukses hanya dari callback client (Fase 2b).
+/// Fase 2b — 3 channel (cash / manual-bukti / gateway-dummy):
+/// - `method`: CASH | TRANSFER_MANUAL | GATEWAY (string bebas, divalidasi di service).
+/// - `channel`: CASH | MANUAL | GATEWAY (turunan method, untuk filter admin).
+/// - Bukti manual: `proofUrl` + `proofNote` (diisi Ortu saat submit, PENDING).
+/// - Gateway dummy: `provider` + `providerRef` (+ idempotencyKey) — status final
+///   HANYA dari webhook server (bukan dari request client).
+/// - Verifikasi admin: `verifiedBy` + `verifiedAt` + `rejectReason`.
+model Payment {
+  id        String        @id @default(uuid())
+  invoiceId String?
+  studentId String?
+  accountId String?
+  amount    Decimal       @db.Decimal(14, 2)
+  method    String        @default("MANUAL")
+  channel   String        @default("MANUAL")
+  status    PaymentStatus @default(PENDING)
+  provider  String?
+  providerRef String?
+  /** URL halaman bayar gateway (Snap redirect_url Midtrans) — untuk lanjutkan pembayaran PENDING. */
+  paymentUrl String?
+  idempotencyKey String?  @unique
+  proofUrl  String?
+  proofNote String?
+  rejectReason String?
+  verifiedBy String?
+  verifiedAt DateTime?
+  paidAt    DateTime?
+  createdBy String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  account     FinancialAccount?   @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  allocations PaymentAllocation[]
+  receipts    Receipt[]
+  ledgerEntries LedgerEntry[]
+
+  @@index([invoiceId])
+  @@index([studentId])
+  @@index([accountId])
+  @@index([status])
+  @@index([channel])
+  @@index([providerRef])
+  @@map("payments")
+}
+
+/// Alokasi satu payment ke satu/beberapa invoice (mendukung cicilan & split).
+model PaymentAllocation {
+  id        String   @id @default(uuid())
+  paymentId String
+  invoiceId String
+  amount    Decimal  @db.Decimal(14, 2)
+  createdAt DateTime @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([paymentId, invoiceId])
+  @@index([invoiceId])
+  @@map("payment_allocations")
+}
+
+/// Kwitansi — diterbitkan OTOMATIS tiap pembayaran sukses (verified).
+/// Fase 2b: nomor `KWT-YYYYMM-XXXX`, snapshot nominal/metode/siswa.
+/// TIDAK boleh dibuat manual dari client — hanya dari transaksi verifikasi.
+/// Field sesuai 02-finance.md: nomor, tanggal, siswa, item, nominal, metode,
+/// status, verifier (+ relasi payment & invoice untuk audit).
+model Receipt {
+  id        String   @id @default(uuid())
+  number    String   @unique
+  paymentId String
+  invoiceId String?
+  studentId String
+  amount    Decimal  @db.Decimal(14, 2)
+  method    String
+  status    String   @default("VERIFIED")
+  verifierId String?
+  issuedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([paymentId])
+  @@index([invoiceId])
+  @@index([studentId])
+  @@index([number])
+  @@map("receipts")
+}
+
+/// Fase 2c — Refund full/partial. Tidak soft-delete.
+/// - Bagian unpaid: credit note (turunkan totalAmount → outstanding berkurang).
+/// - Bagian already-paid: cash-out ke ledger + turunkan amountPaid (dan total).
+model Refund {
+  id        String   @id @default(uuid())
+  number    String   @unique
+  invoiceId String
+  accountId String?
+  amount    Decimal  @db.Decimal(14, 2)
+  cashOut   Decimal  @default(0) @db.Decimal(14, 2)
+  reason    String
+  createdBy String
+  createdAt DateTime @default(now())
+
+  invoice Invoice           @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  account FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  ledgerEntries LedgerEntry[]
+
+  @@index([invoiceId])
+  @@index([accountId])
+  @@index([number])
+  @@map("refunds")
+}
+
+/// Buku besar kas/bank. Sumber: payment VERIFIED (IN) dan refund cash-out (OUT).
+/// Jangan hapus baris — rekonsiliasi manual mengandalkan histori utuh.
+model LedgerEntry {
+  id          String   @id @default(uuid())
+  accountId   String
+  direction   String
+  amount      Decimal  @db.Decimal(14, 2)
+  sourceType  String
+  sourceId    String
+  paymentId   String?
+  refundId    String?
+  description String
+  occurredAt  DateTime
+  createdAt   DateTime @default(now())
+
+  account FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  payment Payment?         @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  refund  Refund?          @relation(fields: [refundId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, occurredAt])
+  @@index([sourceType, sourceId])
+  @@index([paymentId])
+  @@index([refundId])
+  @@map("ledger_entries")
+}
+
+// ===========================================================================
+// Fase 1d — Attendance & Notification skeleton (in-app saja, WA menyusul Fase 5)
+// ===========================================================================
+
+/// Status kehadiran per sesi. Murni informasi operasional — TIDAK memengaruhi nilai.
+enum AttendanceStatus {
+  HADIR
+  TERLAMBAT
+  IZIN
+  SAKIT
+  ALFA
+}
+
+/// Satu baris per (sessionId, studentId). Diisi tutor per sesi penuh.
+model Attendance {
+  id        String           @id @default(uuid())
+  sessionId String
+  studentId String
+  status    AttendanceStatus
+  note      String?
+  markedBy  String?
+  markedAt  DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, studentId])
+  @@index([studentId])
+  @@index([sessionId])
+  @@index([status])
+  @@map("attendances")
+}
+
+/// Kehadiran tutor per sesi mengajar — satu baris per (sessionId, tutorId).
+/// Terpisah dari absensi siswa: dipakai payroll — sesi dengan status
+/// IZIN/SAKIT/ALFA tidak dihitung sebagai work item; HADIR/TERLAMBAT/tanpa
+/// catatan (data lama) tetap dihitung supaya payroll historis tak berubah.
+model TutorAttendance {
+  id        String           @id @default(uuid())
+  sessionId String
+  tutorId   String
+  status    AttendanceStatus @default(HADIR)
+  note      String?
+  markedBy  String?
+  markedAt  DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  tutor   Tutor   @relation(fields: [tutorId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, tutorId])
+  @@index([tutorId])
+  @@index([sessionId])
+  @@map("tutor_attendances")
+}
+
+/// Notifikasi in-app (skeleton). Trigger otomatis lintas modul + WhatsApp menyusul Fase 5.
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  title     String
+  body      String?
+  link      String?
+  isRead    Boolean   @default(false)
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+/// Preferensi notifikasi per user. Satu baris per user (upsert).
+/// Fase 5b: `whatsAppEnabled` mematikan antrean WhatsApp untuk user tsb.
+model NotificationPreference {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  inAppEnabled   Boolean  @default(true)
+  attendanceAlert Boolean @default(true)
+  scheduleAlert  Boolean  @default(true)
+  whatsAppEnabled Boolean @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+// ===========================================================================
+// Fase 2d — RAB, Expense & Laporan Finance
+// ===========================================================================
+
+/// Kategori RAB sesuai spec: Pengadaan Ruang Belajar, Persiapan Tahun Ajaran, 
+/// Overhead & Rumah Tangga, Logistik & Perawatan, Akademik, Marketing, 
+/// Kesehatan & Tunjangan, Honor Pegawai, Lain-lain.
+enum BudgetCategory {
+  PENGADAAN_RUANG_BELAJAR
+  PERSIAPAN_TAHUN_AJARAN
+  OVERHEAD_RUMAH_TANGGA
+  LOGISTIK_PERAWATAN
+  AKADEMIK
+  MARKETING
+  KESEHATAN_TUNJANGAN
+  HONOR_PEGAWAI
+  LAIN_LAIN
+}
+
+/// RAB (Anggaran) per kategori per periode (mis. tahun).
+model Budget {
+  id          String         @id @default(uuid())
+  category    BudgetCategory
+  period      String         @db.VarChar(7) // format "YYYY-MM"
+  amount      Decimal        @db.Decimal(14, 2)
+  description String?
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  expenses    Expense[]
+
+  @@unique([category, period])
+  @@index([period])
+  @@index([category])
+  @@map("budgets")
+}
+
+/// Pengeluaran operasional, terhubung ke kategori RAB & financial_accounts.
+model Expense {
+  id          String         @id @default(uuid())
+  budgetId    String?
+  accountId   String
+  amount      Decimal        @db.Decimal(14, 2)
+  description String
+  category    BudgetCategory // category untuk fallback jika budgetId null
+  occurredAt  DateTime
+  receiptUrl  String?        // bukti pengeluaran
+  createdBy   String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  budget      Budget?        @relation(fields: [budgetId], references: [id], onDelete: SetNull)
+  account     FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([budgetId])
+  @@index([accountId])
+  @@index([category])
+  @@index([occurredAt])
+  @@map("expenses")
+}
+
+// ===========================================================================
+// Fase 3b — Latsol (paket latihan dari bank soal, feedback instan)
+// Beda dari exam resmi (3c/3d): tanpa timing global & proctoring.
+// Siswa kerjakan kapan saja; tiap submit langsung dapat benar/salah + solusi.
+// ===========================================================================
+
+/// Tipe/kategori konten dinamis per jenjang→mapel (materi, bank soal, paket
+/// latsol, ujian): mis. latihan/ujian harian, UTS, TO, UAS, Bab 1, Bab 2, dst.
+/// Bisa ditambah admin tanpa mengubah kode — kolom `category` di konten
+/// menyimpan `code` dari tabel ini.
+model ContentCategoryDef {
+  id        String   @id @default(uuid())
+  /// Kode unik (disimpan di kolom `category` konten), mis. HARIAN, UTS, BAB-1.
+  code      String   @unique
+  name      String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("content_categories")
+}
+
+model LatsolPackage {
+  id          String   @id @default(uuid())
+  programId   String?
+  levelId     String?
+  /// Mapel paket latsol — pemisahan bank latihan per mata pelajaran.
+  subjectId   String?
+  /// Tipe konten — paket dikategorikan per jenjang→mapel→tipe.
+  category    String?
+  title       String
+  description String?
+  isActive    Boolean  @default(true)
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  program Program? @relation(fields: [programId], references: [id], onDelete: SetNull)
+  level   Level?   @relation(fields: [levelId], references: [id], onDelete: SetNull)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  items    LatsolPackageItem[]
+  attempts LatsolAttempt[]
+
+  @@index([programId])
+  @@index([levelId])
+  @@index([subjectId])
+  @@index([isActive])
+  @@map("latsol_packages")
+}
+
+/// 1 baris = 1 soal dalam 1 paket latsol (snapshot sortOrder, bukan copy soal).
+model LatsolPackageItem {
+  id        String @id @default(uuid())
+  packageId String
+  questionId String
+  sortOrder Int    @default(0)
+
+  package  LatsolPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  question Question       @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([packageId, questionId])
+  @@index([packageId])
+  @@index([questionId])
+  @@map("latsol_package_items")
+}
+
+/// 1 attempt = 1x siswa mengerjakan 1 paket latsol (boleh mengulang → banyak attempt).
+model LatsolAttempt {
+  id        String    @id @default(uuid())
+  packageId String
+  studentId String
+  status    LatsolAttemptStatus @default(IN_PROGRESS)
+  score     Int       @default(0)
+  maxScore  Int       @default(0)
+  startedAt DateTime  @default(now())
+  submittedAt DateTime?
+
+  package LatsolPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  student Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  answers LatsolAnswer[]
+
+  @@index([packageId])
+  @@index([studentId])
+  @@index([status])
+  @@map("latsol_attempts")
+}
+
+enum LatsolAttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+}
+
+/// Jawaban siswa per soal dalam 1 attempt. Dinilai server-side saat submit.
+model LatsolAnswer {
+  id             String   @id @default(uuid())
+  attemptId      String
+  questionId     String
+  selectedOptionIds String[] @default([])
+  textAnswer     String?
+  isCorrect      Boolean?
+  score          Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  attempt  LatsolAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question      @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+  @@index([questionId])
+  @@map("latsol_answers")
+}
+
+/// Materi belajar per Program/Level/Kelompok. Mendukung upload file (PDF, dll).
+// ===========================================================================
+// Fase 3a — Materials & Question Bank (header dipertahankan, model di bawah)
+// ===========================================================================
+
+/// Materi belajar per Program/Level/Kelompok. Mendukung upload file (PDF, dll).
+model Material {
+  id          String   @id @default(uuid())
+  programId   String?
+  levelId     String?
+  groupId     String?
+  /// Mapel materi — untuk landing/filter per-mapel seperti bank soal.
+  subjectId   String?
+  /// Tipe konten — materi dikategorikan per jenjang→mapel→tipe.
+  category    String?
+  title       String
+  description String?
+  /// Isi materi bentuk teks (opsional) — materi bisa murni teks tanpa file.
+  content     String?
+  /// Gambar pendukung (mis. contoh soal/diagram materi matematika).
+  imageUrl    String?
+  fileUrl     String?  // URL file materi (PDF, dll)
+  fileType    String?  // MIME type file
+  fileSize    Int?     // Ukuran file dalam bytes
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  program Program?        @relation(fields: [programId], references: [id], onDelete: SetNull)
+  level   Level?          @relation(fields: [levelId], references: [id], onDelete: SetNull)
+  group   LearningGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  subject Subject?        @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@index([programId])
+  @@index([levelId])
+  @@index([groupId])
+  @@index([subjectId])
+  @@map("materials")
+}
+
+/// Tipe soal untuk Question Bank.
+enum QuestionType {
+  SINGLE_CHOICE    // Pilihan tunggal (1 jawaban benar)
+  MULTIPLE_CHOICE  // Pilihan ganda (bisa >1 jawaban benar)
+  TRUE_FALSE       // Benar/Salah
+  SHORT_ANSWER     // Isian singkat
+  ESSAY            // Essay
+}
+
+/// Soal dalam bank soal. Mendukung teks, KaTeX, dan gambar.
+model Question {
+  id          String       @id @default(uuid())
+  programId   String?
+  levelId     String?
+  /// Mapel soal — dipakai untuk pemisahan bank soal per mata pelajaran
+  /// dan scope visibilitas tutor se-mapel (lintas level).
+  subjectId   String?
+  /// Tipe konten — soal dikategorikan per jenjang→mapel→tipe
+  /// (mis. soal harian, UTS, TO, UAS, ujian bab).
+  category    String?
+  type        QuestionType
+  content     String       // Konten soal (teks + KaTeX)
+  imageUrl    String?      // URL gambar soal (opsional)
+  difficulty  String?      // EASY | MEDIUM | HARD (opsional)
+  points      Int?         // Poin soal (opsional, default 1)
+  explanation String?      // Pembahasan/solusi (teks + KaTeX)
+  explanationImageUrl String? // Gambar solusi/pembahasan (opsional)
+  answerKey   String?      // Kunci isian singkat (dipakai latsol; null = tidak auto-grade)
+  isActive    Boolean      @default(true)
+  createdBy   String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  program    Program?   @relation(fields: [programId], references: [id], onDelete: SetNull)
+  level      Level?     @relation(fields: [levelId], references: [id], onDelete: SetNull)
+  subject    Subject?   @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  options    QuestionOption[]
+  latsolItems LatsolPackageItem[]
+  latsolAnswers LatsolAnswer[]
+  examItems  ExamItem[]
+  examAnswers ExamAnswer[]
+
+  @@index([programId])
+  @@index([levelId])
+  @@index([subjectId])
+  @@index([type])
+  @@index([difficulty])
+  @@map("questions")
+}
+
+/// Opsi jawaban untuk soal pilihan (SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE).
+/// Untuk TRUE_FALSE: 2 opsi (Benar, Salah) di-generate otomatis.
+model QuestionOption {
+  id         String   @id @default(uuid())
+  questionId String
+  /// Konten opsi (teks + KaTeX). Opsional bila imageUrl diisi (opsi gambar).
+  content    String   @default("")
+  /// Gambar opsi jawaban — untuk soal yang pilihan jawabannya berupa gambar.
+  imageUrl   String?
+  isCorrect  Boolean  @default(false)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+  @@map("question_options")
+}
+
+// ===========================================================================
+// Fase 3c — Exam Core & Timing (ujian resmi dengan timing global server-side)
+// Paling kritis: scheduled_start_at/end_at GLOBAL, auto-submit saat waktu habis.
+// TANPA proctoring (3d) dan TANPA result release logic (3e).
+// ===========================================================================
+
+/// Status ujian. DRAFT: masih disiapkan. PUBLISHED: siap dikerjakan siswa.
+/// LOCKED: tidak bisa diubah lagi (setelah ujian mulai atau selesai).
+enum ExamStatus {
+  DRAFT
+  PUBLISHED
+  LOCKED
+}
+
+/// Status attempt ujian siswa. IN_PROGRESS: sedang mengerjakan.
+/// SUBMITTED: sudah selesai (manual submit atau auto-submit).
+/// LOCKED: attempt dikunci karena pelanggaran proctoring (perlu unlock oleh permission khusus).
+enum ExamAttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  LOCKED
+}
+
+/// Ujian resmi dari bank soal (3a). Timing global server-side.
+/// scheduled_start_at & scheduled_end_at berlaku untuk SEMUA peserta.
+/// Siswa yang telat tetap kehabisan waktu di jam global yang sama.
+/// Fase 5b: `resultsNotifiedAt` = flag notif "hasil ujian rilis" sudah
+/// dikirim (rilis mengikuti scheduled_end_at — dicek berkala oleh worker).
+model Exam {
+  id               String     @id @default(uuid())
+  /// Kategorisasi konten seperti materi/soal: jenjang → mapel → tipe.
+  programId        String?
+  levelId          String?
+  subjectId        String?
+  /// Tipe ujian — harian, UTS, TO, UAS, ujian bab.
+  category         String?
+  title            String
+  description      String?
+  scheduledStartAt DateTime   // Waktu mulai global (server-side)
+  scheduledEndAt   DateTime   // Waktu selesai global (server-side)
+  status           ExamStatus @default(DRAFT)
+  maxScore         Int        @default(0) // Total poin dari semua soal
+  durationMinutes  Int?       // Durasi dalam menit (opsional, untuk display saja)
+  notes            String?
+  resultsNotifiedAt DateTime?
+  createdBy        String
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  program   Program? @relation(fields: [programId], references: [id], onDelete: SetNull)
+  level     Level?   @relation(fields: [levelId], references: [id], onDelete: SetNull)
+  subject   Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  items       ExamItem[]
+  attempts    ExamAttempt[]
+
+  @@index([status])
+  @@index([scheduledStartAt])
+  @@index([scheduledEndAt])
+  @@index([programId])
+  @@index([levelId])
+  @@index([subjectId])
+  @@index([category])
+  @@map("exams")
+}
+
+/// Soal dalam ujian (snapshot dari bank soal).
+/// Mirip LatsolPackageItem tapi untuk ujian resmi.
+model ExamItem {
+  id         String @id @default(uuid())
+  examId     String
+  questionId String
+  sortOrder  Int    @default(0)
+  points     Int    @default(1) // Poin soal dalam ujian ini (bisa override dari question.points)
+
+  exam     Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([examId, questionId])
+  @@index([examId])
+  @@index([questionId])
+  @@map("exam_items")
+}
+
+/// Attempt ujian siswa. Status IN_PROGRESS sampai SUBMITTED (manual atau auto-submit).
+/// Waktu dihitung dari jadwal global, bukan dari saat siswa klik "mulai".
+/// Fase 3d: menambahkan tracking pelanggaran proctoring dan lock/unlock.
+model ExamAttempt {
+  id              String             @id @default(uuid())
+  examId          String
+  studentId       String
+  status          ExamAttemptStatus @default(IN_PROGRESS)
+  score           Int                @default(0)
+  maxScore        Int                @default(0)
+  startedAt       DateTime           @default(now())
+  submittedAt     DateTime?
+  lateByMs        Int?               // Berapa milidetik terlambat dari scheduled_end_at (untuk analytics)
+  // Fase 3d: Proctoring violation tracking
+  violationCount  Int                @default(0) // Jumlah pelanggaran proctoring
+  lockedAt        DateTime?          // Waktu attempt dikunci (LOCKED)
+  lockedBy        String?            // User yang mengunci attempt
+  lockedReason    String?            // Alasan penguncian
+  unlockedAt      DateTime?          // Waktu attempt dibuka kembali
+  unlockedBy      String?            // User yang membuka kembali attempt
+
+  exam     Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student  Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  answers  ExamAnswer[]
+
+  @@index([examId])
+  @@index([studentId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("exam_attempts")
+}
+
+/// Jawaban siswa per soal dalam attempt ujian.
+/// Mirip LatsolAnswer tapi untuk ujian resmi.
+model ExamAnswer {
+  id              String   @id @default(uuid())
+  attemptId       String
+  questionId      String
+  selectedOptionIds String[] @default([])
+  textAnswer      String?
+  isCorrect       Boolean?
+  score           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  attempt  ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question    @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+  @@index([questionId])
+  @@map("exam_answers")
+}
+
+// ===========================================================================
+// Fase 4b — Score Rules & Ranking (sistem poin & leaderboard)
+// ===========================================================================
+
+/// Jenis event yang memicu transaksi poin
+enum PointEventType {
+  EXAM_COMPLETED
+  LATSOL_COMPLETED
+  BONUS
+  PENALTY
+  MANUAL_ADJUSTMENT
+}
+
+/// Aturan poin per jenis soal & exam (data-driven, bukan hardcode formula)
+/// Perubahan rule hanya berlaku untuk exam berikutnya, bukan retroaktif
+model ScoreRule {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  entityType  String   // EXAM, LATSOL, QUESTION_TYPE
+  entityValue String?  // ID spesifik atau tipe soal (SINGLE_CHOICE, MULTIPLE_CHOICE, dll)
+  pointsPerUnit Int    @default(1) // Poin per unit (per soal benar, per persentase, dll)
+  bonusThreshold Int?  // Threshold untuk bonus (mis. >80% dapat bonus)
+  bonusPoints Int?     // Poin bonus jika threshold tercapai
+  isActive    Boolean  @default(true)
+  validFrom   DateTime @default(now())
+  validTo     DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  pointTransactions PointTransaction[]
+
+  @@index([entityType, entityValue])
+  @@index([isActive])
+  @@index([validFrom, validTo])
+  @@map("score_rules")
+}
+
+/// Transaksi poin per siswa per event (histori lengkap)
+/// Setiap event yang mengubah poin siswa mencatat baris baru
+model PointTransaction {
+  id          String         @id @default(uuid())
+  studentId   String
+  scoreRuleId String?
+  eventType   PointEventType
+  points      Int            // Bisa positif (bonus) atau negatif (penalty)
+  referenceId String?        // ID referensi (exam_attempt_id, latsol_attempt_id, dll)
+  referenceType String?      // Tipe referensi (EXAM_ATTEMPT, LATSOL_ATTEMPT, dll)
+  description String?
+  period      String         @db.VarChar(7) // Format "YYYY-MM" untuk grouping per periode
+  createdAt   DateTime       @default(now())
+
+  student    Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  scoreRule  ScoreRule?  @relation(fields: [scoreRuleId], references: [id], onDelete: SetNull)
+
+  // Guard anti double-credit: satu rule hanya boleh mencatat 1 transaksi per
+  // event+referensi. Kolom nullable (manual adjustment tanpa referensi) tetap
+  // boleh duplikat karena Postgres menganggap NULL berbeda.
+  @@unique([eventType, referenceType, referenceId, scoreRuleId])
+  @@index([studentId])
+  @@index([eventType])
+  @@index([referenceId])
+  @@index([period])
+  @@index([createdAt])
+  @@map("point_transactions")
+}
+
+// ===========================================================================
+// Fase 5a — Tutor Payroll
+// Honor dihitung dari tutor_rates x tutor_work_items (bukan hardcode).
+// Work items SESI ditarik dari data Session COMPLETED (absensi Fase 1d) —
+// JANGAN input manual duplikat sesi; input manual hanya untuk SPECIAL_TASK.
+// Pembayaran payroll wajib transaction + masuk audit log (aturan finance).
+// ===========================================================================
+
+/// Jenis kerja tutor yang bisa dihonorkan.
+enum TutorWorkType {
+  REGULAR_SESSION  // sesi reguler — dari jadwal template (scheduleId terisi)
+  PRIVATE_SESSION  // sesi private — kelompok berisi 1 siswa
+  EXTRA_CLASS      // kelas tambahan — sesi ad-hoc di luar template
+  SPECIAL_TASK     // tugas khusus — manual, tanpa sesi sumber
+}
+
+/// Status pembayaran payroll per periode.
+enum PayrollRunStatus {
+  UNPAID
+  PAID
+}
+
+/// Tarif honor per tutor per jenis kerja, dengan masa berlaku.
+/// `unit`: SESSION (per sesi) atau HOUR (per jam — kuantitas = durasi sesi).
+model TutorRate {
+  id            String        @id @default(uuid())
+  tutorId       String
+  workType      TutorWorkType
+  amount        Decimal       @db.Decimal(14, 2)
+  unit          String        @default("SESSION") @db.VarChar(10)
+  effectiveFrom DateTime      @db.Date
+  effectiveTo   DateTime?     @db.Date
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  tutor     Tutor           @relation(fields: [tutorId], references: [id], onDelete: Cascade)
+  workItems TutorWorkItem[]
+
+  @@index([tutorId, workType])
+  @@index([effectiveFrom])
+  @@map("tutor_rates")
+}
+
+/// Catatan kerja tutor yang bisa dihonorkan. Sumber: sesi COMPLETED
+/// (sourceType SESSION, sessionId terisi — jejak audit ke sesi asal) atau
+/// input manual untuk tugas khusus (sourceType MANUAL, sessionId null).
+/// `unitAmount` & `amount` di-SNAPSHOT saat generate agar histori tidak rusak
+/// saat tarif berubah; `rateId` hanya referensi (SetNull bila rate dihapus).
+model TutorWorkItem {
+  id           String        @id @default(uuid())
+  tutorId      String
+  workType     TutorWorkType
+  sourceType   String        @default("SESSION") @db.VarChar(10) // SESSION | MANUAL
+  sessionId    String?       @unique // 1 sesi = maks 1 work item (guard anti duplikat)
+  period       String        @db.VarChar(7) // YYYY-MM — denormalisasi dari occurredAt
+  description  String
+  occurredAt   DateTime
+  quantity     Decimal       @default(1) @db.Decimal(14, 2) // 1 sesi atau N jam
+  rateId       String?
+  unitAmount   Decimal       @default(0) @db.Decimal(14, 2)
+  amount       Decimal       @default(0) @db.Decimal(14, 2)
+  payrollRunId String?
+  createdBy    String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  tutor      Tutor        @relation(fields: [tutorId], references: [id], onDelete: Cascade)
+  session    Session?     @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  rate       TutorRate?   @relation(fields: [rateId], references: [id], onDelete: SetNull)
+  payrollRun PayrollRun?  @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
+
+  @@index([tutorId, period])
+  @@index([payrollRunId])
+  @@index([occurredAt])
+  @@map("tutor_work_items")
+}
+
+/// Payroll 1 tutor untuk 1 periode (YYYY-MM). gross = Σ work items,
+/// net = gross + Σ adjustment. Sekali PAID tidak boleh diubah lagi.
+/// `expenseId` menunjuk ke baris expenses yang dibuat saat pembayaran
+/// (kategori HONOR_PEGAWAI) — jejak audit ke kas/bank keluar.
+model PayrollRun {
+  id               String           @id @default(uuid())
+  number           String           @unique // PAY-YYYYMM-XXXX
+  tutorId          String
+  period           String           @db.VarChar(7)
+  grossAmount      Decimal          @default(0) @db.Decimal(14, 2)
+  adjustmentAmount Decimal          @default(0) @db.Decimal(14, 2)
+  netAmount        Decimal          @default(0) @db.Decimal(14, 2)
+  status           PayrollRunStatus @default(UNPAID)
+  accountId        String?
+  expenseId        String?
+  paidAt           DateTime?
+  paidBy           String?
+  notes            String?
+  createdBy        String
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  tutor        Tutor               @relation(fields: [tutorId], references: [id], onDelete: Restrict)
+  account      FinancialAccount?   @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  workItems    TutorWorkItem[]
+  adjustments  PayrollAdjustment[]
+
+  @@unique([tutorId, period])
+  @@index([period])
+  @@index([status])
+  @@map("payroll_runs")
+}
+
+/// Adjustment payroll (bisa positif/negatif). `reason` WAJIB diisi (aturan
+/// finance) — tanpa alasan adjustment ditolak. Hanya untuk run UNPAID.
+model PayrollAdjustment {
+  id           String   @id @default(uuid())
+  payrollRunId String
+  amount       Decimal  @db.Decimal(14, 2)
+  reason       String
+  createdBy    String
+  createdAt    DateTime @default(now())
+
+  payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+
+  @@index([payrollRunId])
+  @@map("payroll_adjustments")
+}
+
+// ===========================================================================
+// Fase 5b — Notifikasi full trigger + WhatsApp outbox (provider abstraction)
+// ===========================================================================
+
+/// Status pesan WhatsApp di outbox. PENDING = antre menunggu diproses worker,
+/// SENT = provider mengonfirmasi terkirim, FAILED = gagal (bisa retry manual).
+enum WhatsAppOutboxStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+}
+
+/// Antrean pesan WhatsApp keluar (outbox pattern). SEMUA pengiriman WAJIB
+/// lewat sini — service/controller hanya membuat entry PENDING, worker
+/// memprosesnya lewat interface `WhatsAppProvider` (provider konkret dipilih
+/// via env WHATSAPP_PROVIDER; saat ini provider dummy log-only).
+/// `@@unique(eventType+referenceType+referenceId+recipientPhone)` = dedupe
+/// guard: satu event hanya menghasilkan 1 pesan per nomor tujuan.
+model WhatsAppOutbox {
+  id             String               @id @default(uuid())
+  userId         String?
+  recipientPhone String
+  recipientName  String?
+  eventType      String               @db.VarChar(60)
+  referenceType  String?              @db.VarChar(40)
+  referenceId    String?
+  message        String
+  /** Lampiran (mis. PDF kwitansi) — referensi media_assets. */
+  attachmentAssetId String?
+  attachmentName    String?
+  status         WhatsAppOutboxStatus @default(PENDING)
+  provider       String?              @db.VarChar(40)
+  providerRef    String?
+  attempts       Int                  @default(0)
+  error          String?
+  sentAt         DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([eventType, referenceType, referenceId, recipientPhone])
+  @@index([status, createdAt])
+  @@index([userId])
+  @@map("whatsapp_outbox")
+}
+
+// ===========================================================================
+// Fase 6 — Laporan Lanjutan & Audit Hardening
+// ===========================================================================
+
+/// Snapshot laporan beku (arsip bulanan/tahun ajaran). `payload` menyimpan
+/// dokumen laporan utuh (header + rows + summary) sehingga nilai TIDAK berubah
+/// walau data sumber diubah setelah snapshot dibuat — ini DoD Fase 6.
+/// `reportKind` mengacu ke kunci di report-helpers.ts (invoice, rab, dst).
+model ReportSnapshot {
+  id          String   @id @default(uuid())
+  reportKind  String   @db.VarChar(40)
+  period      String?  @db.VarChar(7)
+  title       String
+  filterText  String?
+  payload     Json
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  createdBy User? @relation("ReportSnapshotCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([reportKind, period])
+  @@index([createdAt])
+  @@map("report_snapshots")
+}
+
+
+/// Pengaturan aplikasi (key-value JSON). Dipakai untuk identitas bimbel
+/// (header laporan/kwitansi), default keuangan (jatuh tempo invoice), dan
+/// konfigurasi notifikasi otomatis WhatsApp (nomor admin + toggle event).
+/// Daftar key valid & bentuk nilainya dijaga di settings.service.ts
+/// (SETTING_DEFS) — jangan tulis key sembarangan.
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+
+  updater User? @relation("AppSettingUpdater", fields: [updatedBy], references: [id], onDelete: SetNull)
+
+  @@map("app_settings")
+}
+
+/// Aset gambar pustaka media — diupload admin/tutor, dipakai di soal & konten
+/// (mis. imageUrl pada Question). File disimpan di disk <cwd>/uploads/media;
+/// record ini menyimpan metadata agar bisa dilist/dicari di picker.
+model MediaAsset {
+  id           String   @id @default(uuid())
+  filename     String   // nama file tersimpan (uuid + ext) di uploads/media
+  originalName String
+  mime         String
+  size         Int
+  uploadedById String?
+  /// ACADEMIC = pustaka materi/soal (admin akademik, tutor) · FINANCE = bukti
+  /// pembayaran, kwitansi hasil generate, dokumen keuangan (admin finance).
+  category     String   @default("ACADEMIC")
+  createdAt    DateTime @default(now())
+
+  uploadedBy User? @relation("MediaAssetUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([uploadedById])
+  @@index([category])
+  @@map("media_assets")
+}
+
+/// Token reset password satu-kali-pakai yang dikirim lewat email. Yang
+/// disimpan hanya hash SHA-256 token — token mentah hanya ada di link email.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+/// Siapa yang mengisi feedback mingguan — siswa sendiri atau orang tuanya.
+enum FeedbackAuthorRole {
+  SISWA
+  ORANG_TUA
+}
+
+/// Feedback/survei mingguan per siswa per mapel dalam sebuah kelompok.
+/// Ortu (atau siswa) mengisi "di sekolah anak belajar apa" tiap minggu;
+/// semua tutor anggota kelompok bisa melihat tabel gabungannya
+/// (baris = siswa, kolom = mapel).
+model FeedbackEntry {
+  id        String   @id @default(uuid())
+  groupId   String
+  studentId String
+  subjectId String
+  /// Senin minggu berjalan (00:00) — 1 entri per siswa per mapel per minggu per kelompok.
+  weekStart DateTime @db.Date
+  content   String   @db.Text
+  /// User yang mengisi (akun siswa atau akun ortu).
+  authorUserId String
+  authorRole   FeedbackAuthorRole
+  /// Profil ortu pengisi — null bila diisi siswa langsung.
+  parentId     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  group   LearningGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  student Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject Subject       @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  author  User          @relation("FeedbackAuthor", fields: [authorUserId], references: [id], onDelete: Cascade)
+  parent  Parent?       @relation("FeedbackParent", fields: [parentId], references: [id], onDelete: SetNull)
+
+  @@unique([groupId, studentId, subjectId, weekStart])
+  @@index([studentId, weekStart])
+  @@index([groupId, weekStart])
+  @@map("feedback_entries")
 }

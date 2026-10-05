@@ -30,9 +30,10 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio:latest
+    # minio/minio images are no longer published (community edition is source-only);
+    # older Bitnami tags moved to the bitnamilegacy namespace, which remains publicly pullable.
+    image: bitnamilegacy/minio:2024.1.16
     restart: unless-stopped
-    command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-bimbel}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-bimbel_secret}
@@ -40,9 +41,9 @@ services:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - minio-data:/data
+      - minio-data:/bitnami/minio/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -51,6 +52,8 @@ services:
     build:
       context: ./apps/api
       dockerfile: Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -59,8 +62,18 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
+      # Jam operasional bisnis WIB — penting agar generate sesi menyimpan
+      # jam jadwal apa adanya (bukan bergeser +7 jam dari UTC).
+      TZ: Asia/Jakarta
       PORT: 3000
-      CORS_ORIGIN: http://localhost:3001
+      # Origin web yang boleh mengakses API (pisahkan koma untuk >1).
+      # Deploy: isi di .env, mis. CORS_ORIGIN=https://bimbel.example.com
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001}
+      # Cookie refresh token: none bila web & API beda domain (wajib HTTPS).
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      COOKIE_SECURE: ${COOKIE_SECURE:-auto}
+      # Set 1 bila API di balik reverse proxy (nginx/Cloudflare) agar req.ip benar.
+      TRUST_PROXY: ${TRUST_PROXY:-0}
       DATABASE_URL: postgresql://${POSTGRES_USER:-bimbel}:${POSTGRES_PASSWORD:-bimbel_secret}@postgres:5432/${POSTGRES_DB:-bimbel}?schema=public
       REDIS_URL: redis://redis:6379
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me}
@@ -68,6 +81,18 @@ services:
       JWT_REFRESH_TTL_DAYS: "7"
       THROTTLE_TTL_MS: "60000"
       THROTTLE_LIMIT: "100"
+      # Fase 5b — WhatsApp outbox. "log" = dummy console; "fonnte" = gateway
+      # HTTP asli (butuh WHATSAPP_API_TOKEN + opsional WHATSAPP_API_URL).
+      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-log}
+      WHATSAPP_API_URL: ${WHATSAPP_API_URL:-https://api.fonnte.com/send}
+      WHATSAPP_API_TOKEN: ${WHATSAPP_API_TOKEN:-}
+      WHATSAPP_OUTBOX_INTERVAL_MS: "10000"
+      WHATSAPP_OUTBOX_BATCH: "10"
+      WHATSAPP_OUTBOX_MAX_ATTEMPTS: "3"
+      EXAM_RESULT_SCAN_INTERVAL_MS: "30000"
+    volumes:
+      # File bukti pembayaran (Fase 2b upload) persisten di luar container.
+      - api-uploads:/app/uploads
     ports:
       - "3000:3000"
 
@@ -76,10 +101,20 @@ services:
       context: ./apps/web
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:3000/api
+        # URL API yang dipakai browser — wajib diisi saat deploy karena
+        # dibundel ke JS saat build. Di .env mis.:
+        #   NEXT_PUBLIC_API_URL=https://api.bimbel.example.com/api
+        # atau https://bimbel.example.com/api bila satu domain via reverse proxy.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3000/api}
+        NPM_REGISTRY: ${NPM_REGISTRY:-}
     restart: unless-stopped
     depends_on:
       - api
+    environment:
+      TZ: Asia/Jakarta
+      # URL internal antar-container — dipakai server component (generateMetadata)
+      # untuk fetch branding; NEXT_PUBLIC_* tetap URL browser-facing.
+      API_INTERNAL_URL: ${API_INTERNAL_URL:-http://api:3000/api}
     ports:
       - "3001:3000"
 
@@ -87,3 +122,4 @@ volumes:
   postgres-data:
   redis-data:
   minio-data:
+  api-uploads:

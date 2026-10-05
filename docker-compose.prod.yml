@@ -1,0 +1,15 @@
+# Override produksi — pakai: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Efek: port internal (postgres/redis/minio) hanya bisa diakses dari localhost
+# mesin host, bukan dari internet. Di VPS, tetap pasang reverse proxy
+# (nginx/Caddy) dengan HTTPS di depan port 3001 (web) & 3000 (api).
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"
+  minio:
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"

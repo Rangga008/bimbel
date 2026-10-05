@@ -6,32 +6,27 @@
 > Matriks role/halaman/mode ada di `docs/ROLE_PAGES.md`.
 
 ## Peran Anda
-
 Software architect + senior full-stack engineer + product designer. Model agent: **Claude Sonnet 5**.
 Bangun aplikasi manajemen bimbel production-like: mobile-first untuk Siswa/Orang Tua, tetap kuat untuk Tutor/Admin/Owner.
 **Jangan membuat demo statis / mockup kosong.** Prioritaskan alur end-to-end yang benar-benar berfungsi (backend, DB, auth, validasi, error handling, audit log).
 
 ## Stack Wajib (jangan diganti tanpa persetujuan eksplisit)
-
 - **Frontend:** Next.js + TypeScript, Tailwind CSS, shadcn/ui, TanStack Query, Zustand (local state), PWA-ready, responsive 360px→desktop
 - **Backend:** NestJS + TypeScript, Prisma ORM, PostgreSQL, Redis, BullMQ (background job), REST API modular monolith
 - **Infra:** S3-compatible object storage, Docker Compose, Nginx, Cloudflare-ready, target deploy IDCloudHost Cloud VPS eXtreme
 - **Dilarang:** Kubernetes, microservices, di fase awal ini.
 
 ## Prinsip Arsitektur
-
 - Modular monolith dengan domain boundary jelas (lihat daftar module di `docs/phases/`).
 - **Single brand, single branch** saat ini — tapi skema DB harus siap ditambah `branch_id` nanti tanpa refactor besar. Jangan bangun UI multi-cabang sekarang.
 - RBAC granular. **Validasi permission WAJIB di backend**, bukan cuma sembunyikan tombol di frontend.
 - Gunakan DB transaction untuk semua operasi finansial & submission ujian.
 
 ## Aplikasi Punya 2 Mode (WAJIB dipisahkan, lihat `ui-mobile-desktop.instructions.md`)
-
 1. **Mode Desktop** — dibangun dari nol mengikuti spec ini (sidebar untuk Admin/Owner, dashboard lengkap).
 2. **Mode Mobile/Smartphone** — mengacu pola UI referensi app **EduBimbel** (`edubimbel-mobile-manager.lovable.app`): navigasi **bottom nav** dengan 4–5 item utama + tab "Lainnya" untuk sisanya, card-based, minim tabel.
 
 ## Aturan Bisnis yang TIDAK BOLEH Diubah
-
 - Absensi **tidak** memengaruhi nilai/penilaian.
 - Paket punya jumlah sesi tetap; jadwal per-siswa bisa diubah manual oleh Admin.
 - Kelompok bisa punya beberapa tutor; tutor per sesi bisa berbeda-beda.
@@ -47,21 +42,38 @@ Bangun aplikasi manajemen bimbel production-like: mobile-first untuk Siswa/Orang
 - Semua aksi kritis (verifikasi/reject payment, refund, diskon, exam publish/lock/unlock, koreksi nilai, perubahan jadwal, koreksi absensi, perubahan status tutor, perubahan permission) **wajib** masuk audit log (actor, action, entity, entity_id, old_data, new_data, timestamp, ip, user_agent).
 
 ## Cara Kerja dengan Agent (efisiensi credit/token)
-
-1. **Ikuti urutan fase** di `docs/phases/phase-0-foundation.md` s.d. `phase-7-hardening-deploy.md`. Jangan lompat fase atau implement semua modul sekaligus dalam satu sesi chat.
+1. **Ikuti urutan fase** di `docs/phases/phase-0-foundation.md` s.d. `phase-8-hardening-deploy.md`. Jangan lompat fase atau implement semua modul sekaligus dalam satu sesi chat.
 2. Sebelum mulai fase baru, buka **hanya** file phase itu + instructions file yang relevan (`applyTo`) — jangan minta Copilot membaca ulang seluruh riwayat/README/dokumen sumber kecuali eksplisit diminta.
 3. Jangan generate ulang file yang sudah ada dan belum diminta diubah; gunakan edit/diff, bukan rewrite penuh.
 4. Ikuti `.gitignore` — jangan indexing/scan `node_modules`, build output, file upload/seed besar.
 5. Definition of Done tiap modul: lihat bagian akhir tiap file phase.
 
-## Referensi Cepat
+## Inisiatif Agent — Boleh Menambah Fitur, dengan Batasan
+Anda boleh proaktif menambahkan hal yang menurut Anda perlu secara teknis — jangan hanya menjalankan checklist fase secara buta. Tapi bedakan dua level:
 
-| Kebutuhan                          | File                                                       |
-| ---------------------------------- | ---------------------------------------------------------- |
-| Aturan RBAC & auth                 | `.github/instructions/auth-rbac.instructions.md`           |
-| Aturan finance/payment/payroll     | `.github/instructions/finance.instructions.md`             |
-| Aturan exam/latsol/question bank   | `.github/instructions/exam.instructions.md`                |
+**Boleh langsung dikerjakan tanpa persetujuan** (best practice standar, tidak menambah scope besar):
+- Validasi input tambahan, penanganan edge-case/error state, empty state, loading state yang belum disebut eksplisit.
+- Index database untuk query yang jelas akan lambat.
+- Hardening keamanan kecil yang tidak mengubah kontrak API (rate limit, sanitasi input, dsb).
+- Perbaikan aksesibilitas/UX kecil yang konsisten dengan `ui-mobile-desktop.instructions.md`.
+
+**Wajib diusulkan dulu — JANGAN langsung diimplementasikan besar-besaran.** Tulis sebagai bagian **"Usulan Tambahan"** di akhir ringkasan sesi, lalu tunggu instruksi lanjutan, jika fitur tsb:
+- Menambah tabel/kolom/skema DB baru di luar yang disebut fase berjalan.
+- Menambah dependency/library/pihak ketiga baru.
+- Menambah halaman/menu baru yang tidak ada di `docs/ROLE_PAGES.md`.
+- Berpotensi mengubah/melanggar bagian "Aturan Bisnis yang Tidak Boleh Diubah" di atas.
+- Menambah biaya (API berbayar, storage tambahan besar, dsb).
+- Cukup besar untuk pantas jadi fase tersendiri.
+
+Format "Usulan Tambahan": nama fitur → alasan perlu → dampak (modul/tabel/halaman yang tersentuh) → bisa dikerjakan sekarang atau sebaiknya fase terpisah.
+
+## Referensi Cepat
+| Kebutuhan | File |
+|---|---|
+| Aturan RBAC & auth | `.github/instructions/auth-rbac.instructions.md` |
+| Aturan finance/payment/payroll | `.github/instructions/finance.instructions.md` |
+| Aturan exam/latsol/question bank | `.github/instructions/exam.instructions.md` |
 | Aturan schedule/session/attendance | `.github/instructions/attendance-schedule.instructions.md` |
-| Aturan UI 2 mode (desktop/mobile)  | `.github/instructions/ui-mobile-desktop.instructions.md`   |
-| Matriks role × halaman × mode      | `docs/ROLE_PAGES.md`                                       |
-| Rencana kerja per fase             | `docs/phases/phase-0-foundation.md` dst.                   |
+| Aturan UI 2 mode (desktop/mobile) | `.github/instructions/ui-mobile-desktop.instructions.md` |
+| Matriks role × halaman × mode | `docs/ROLE_PAGES.md` |
+| Rencana kerja per fase | `docs/phases/phase-0-foundation.md` dst. |
