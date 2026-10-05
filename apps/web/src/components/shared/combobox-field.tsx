@@ -89,11 +89,11 @@ export function ComboboxField({
 			</div>
 			<Combobox.Portal>
 				<Combobox.Positioner sideOffset={4} className="z-50">
-					<Combobox.Popup className="max-h-64 w-(--anchor-width) overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg">
+					<Combobox.Popup className="max-h-80 w-(--anchor-width) overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg">
 						<Combobox.Empty className="px-3 py-4 text-center text-sm text-muted-foreground">
 							{emptyText}
 						</Combobox.Empty>
-						<Combobox.List className="max-h-64 overflow-y-auto p-1">
+						<Combobox.List className="max-h-80 overflow-y-auto p-1">
 							{(option: ComboboxOption) => (
 								<Combobox.Item
 									key={option.value}

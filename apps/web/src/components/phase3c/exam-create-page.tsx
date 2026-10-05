@@ -6,7 +6,11 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { apiFetch, ApiError } from '@/lib/api-client';
-import type { LevelItem } from '@/lib/phase3a-types';
+import {
+  drillBackUrl,
+  tingkatCode,
+  type HierarchyLevel,
+} from '@/lib/content-taxonomy';
 import { ExamForm, emptyExamForm } from './exam-form';
 
 function err(e: unknown, fb: string) {
@@ -37,17 +41,21 @@ export function ExamCreatePage({
   // Prefill dari drill-down: turunkan program dari jenjang yang dipilih.
   const levelsAllQ = useQuery({
     queryKey: ['levels-all'],
-    queryFn: () => apiFetch<(LevelItem & { program?: { id: string } | null })[]>('/levels'),
+    queryFn: () => apiFetch<HierarchyLevel[]>('/levels'),
     enabled: !!initial?.levelId,
   });
   useEffect(() => {
     const lvl = levelsAllQ.data?.find((l) => l.id === form.pickerFilters.levelId);
-    if (lvl?.program?.id) {
-      setForm((f) =>
-        f.pickerFilters.programId
-          ? f
-          : { ...f, pickerFilters: { ...f.pickerFilters, programId: lvl.program!.id } },
-      );
+    if (lvl) {
+      const tk = tingkatCode(lvl) ?? 'none';
+      setForm((f) => ({
+        ...f,
+        pickerFilters: {
+          ...f.pickerFilters,
+          tingkat: f.pickerFilters.tingkat || tk,
+          programId: f.pickerFilters.programId || lvl.program?.id || '',
+        },
+      }));
     }
   }, [levelsAllQ.data, form.pickerFilters.levelId]);
 
@@ -72,7 +80,14 @@ export function ExamCreatePage({
     onSuccess: () => {
       toast.success('Ujian berhasil dibuat.');
       qc.invalidateQueries({ queryKey: ['exams'] });
-      router.push(basePath);
+      router.push(
+        drillBackUrl(basePath, {
+          tingkat: form.pickerFilters.tingkat,
+          levelId: form.pickerFilters.levelId,
+          subjectId: form.pickerFilters.subjectId,
+          category: form.category,
+        }),
+      );
     },
     onError: (e) => toast.error(err(e, 'Gagal membuat ujian.')),
   });
@@ -97,7 +112,19 @@ export function ExamCreatePage({
             Jadwal mulai/selesai bersifat global (server-authoritative).
           </p>
         </div>
-        <Button variant="outline" onClick={() => router.push(basePath)}>
+        <Button
+          variant="outline"
+          onClick={() =>
+            router.push(
+              drillBackUrl(basePath, {
+                tingkat: form.pickerFilters.tingkat,
+                levelId: form.pickerFilters.levelId,
+                subjectId: form.pickerFilters.subjectId,
+                category: form.category,
+              }),
+            )
+          }
+        >
           Batal
         </Button>
       </div>

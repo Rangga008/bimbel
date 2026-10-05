@@ -28,9 +28,12 @@ function errMsg(e: unknown, fallback: string) {
 export function ContentCategoriesManager({
   open,
   onOpenChange,
+  onCreated,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
+  /** Dipanggil dengan `code` tipe baru — form bisa auto-pilih langsung. */
+  onCreated?: (code: string) => void;
 }) {
   const qc = useQueryClient();
   const [name, setName] = useState('');
@@ -52,12 +55,13 @@ export function ContentCategoriesManager({
     mutationFn: (n: string) =>
       apiFetch<ContentCategoryItem>('/content-categories', {
         method: 'POST',
-        body: JSON.stringify({ name: n }),
+        body: { name: n },
       }),
     onSuccess: (c) => {
       toast.success(`Tipe "${c.name}" ditambahkan.`);
       setName('');
       invalidate();
+      onCreated?.(c.code);
     },
     onError: (e) => toast.error(errMsg(e, 'Gagal menambah tipe.')),
   });
@@ -69,7 +73,7 @@ export function ContentCategoriesManager({
     }: { id: string; name?: string; isActive?: boolean }) =>
       apiFetch<ContentCategoryItem>(`/content-categories/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify(data),
+        body: data,
       }),
     onSuccess: () => {
       toast.success('Tipe diperbarui.');

@@ -14,7 +14,7 @@ import {
   useContentCategories,
   useContentLevels,
 } from '@/components/shared/content-drilldown';
-import { categoryOptions, tingkatCode } from '@/lib/content-taxonomy';
+import { categoryLabel, categoryOptions, sortLevels, tingkatCode } from '@/lib/content-taxonomy';
 
 export interface QuestionPickerFilters {
   /** Tingkat sekolah (SD/SMP/SMA/TK) — dari kode gradeLevel jenjang. */
@@ -90,11 +90,21 @@ export function QuestionPicker({
         .sort((a, b) => a.sort - b.sort),
     [levels],
   );
+  // Jenjang tanpa gradeLevel (paket Privat dsb.) → bucket "Lainnya".
+  if (levels.some((l) => !tingkatCode(l)) && !tingkatOptions.some((t) => t.value === 'none')) {
+    tingkatOptions.push({ value: 'none', label: 'Lainnya', sort: 9999 });
+  }
 
   const levelOptions = useMemo(
     () =>
-      levels
-        .filter((l) => !filters.tingkat || tingkatCode(l) === filters.tingkat)
+      sortLevels(levels)
+        .filter((l) => {
+          const tk = tingkatCode(l);
+          return (
+            !filters.tingkat ||
+            (filters.tingkat === 'none' ? !tk : tk === filters.tingkat)
+          );
+        })
         .map((l) => ({
           value: l.id,
           label: l.program?.name ? `${l.name} — ${l.program.name}` : l.name,
@@ -223,7 +233,7 @@ export function QuestionPicker({
                     </label>
                     <div className="flex gap-1 mt-1">
                       {q.subject && <Badge variant="default" className="text-xs">{q.subject.name}</Badge>}
-                      {q.category && <Badge variant="secondary" className="text-xs">{q.category}</Badge>}
+                      {q.category && <Badge variant="secondary" className="text-xs">{categoryLabel(q.category, catsQ.data)}</Badge>}
                       <Badge variant="outline" className="text-xs">{q.type}</Badge>
                       {q.difficulty && <Badge variant="secondary" className="text-xs">{q.difficulty}</Badge>}
                       {q.points && <Badge variant="outline" className="text-xs">{q.points} poin</Badge>}

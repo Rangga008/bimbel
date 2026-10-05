@@ -87,9 +87,13 @@ export class LatsolService {
       ];
     }
     // Siswa hanya melihat paket jenjang/mapel/kelompok yang dia ikuti.
+    // LatsolPackage tidak punya kolom groupId — filter kelompok dilewati.
     const sScope = await this.tutorScope.forStudent(actor);
     if (sScope) {
-      where.AND = [...((where.AND as unknown[]) ?? []), this.tutorScope.studentContentWhere(sScope)];
+      where.AND = [
+        ...((where.AND as unknown[]) ?? []),
+        this.tutorScope.studentContentWhere(sScope, { group: false }),
+      ];
     }
     return this.prisma.latsolPackage.findMany({
       where,

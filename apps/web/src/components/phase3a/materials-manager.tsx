@@ -1,15 +1,16 @@
 "use client";
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
-import { BookOpen, FileText, GraduationCap, Layers, Pencil, Plus, Search, Tag, Trash2, Users } from 'lucide-react';
+import { BookOpen, FileText, GraduationCap, Layers, Pencil, Plus, Search, Settings2, Tag, Trash2, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError, resolveAssetUrl } from '@/lib/api-client';
+import { useAuthStore } from '@/stores/auth-store';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import type { MaterialRow, GroupItem } from '@/lib/phase3a-types';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
@@ -22,6 +23,7 @@ import {
   categoryLabel,
   categoryOptions,
   drillDone,
+  drillFromParams,
   DRILL_ALL,
   DRILL_EMPTY,
   DRILL_NONE,
@@ -36,12 +38,18 @@ function err(e: unknown, fb: string) {
 export function MaterialsManager({ canManage, basePath = '/materi' }: { canManage: boolean; basePath?: string }) {
   const qc = useQueryClient();
   const router = useRouter();
-  const [drill, setDrill] = useState<DrillValue>({ ...DRILL_EMPTY });
+  const searchParams = useSearchParams();
+  const [drill, setDrill] = useState<DrillValue>(() =>
+    drillFromParams((k) => searchParams.get(k)),
+  );
   const [groupId, setGroupId] = useState('');
   const [catFilter, setCatFilter] = useState('');
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const roles = useAuthStore((s) => s.user?.roles ?? []);
+  // Siswa tak punya akses /groups — kelompoknya sudah dibatasi backend.
+  const showGroupFilter = canManage || roles.includes('TUTOR');
 
   const listQ = useQuery({
     queryKey: ['materials', groupId, debouncedSearch],
@@ -57,6 +65,7 @@ export function MaterialsManager({ canManage, basePath = '/materi' }: { canManag
   const groupsQ = useQuery({
     queryKey: ['groups-lite'],
     queryFn: () => apiFetch<GroupItem[]>('/groups'),
+    enabled: showGroupFilter,
   });
 
   const levelsQ = useContentLevels();
@@ -139,24 +148,40 @@ export function MaterialsManager({ canManage, basePath = '/materi' }: { canManag
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Materi</h1>
       </div>
       <div className="flex flex-wrap items-end gap-3">
-        <div className="w-full sm:w-44">
-          <Phase1aSelectField
-            id="mat-cat"
-            label="Tipe"
-            value={catFilter}
-            onChange={setCatFilter}
-            options={categoryOptions(catsQ.data)}
-          />
+        <div className="flex w-full items-end gap-1.5 sm:w-auto">
+          <div className="w-full sm:w-44">
+            <Phase1aSelectField
+              id="mat-cat"
+              label="Tipe"
+              value={catFilter}
+              onChange={setCatFilter}
+              options={categoryOptions(catsQ.data)}
+            />
+          </div>
+          {canManage && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 shrink-0"
+              title="Kelola tipe materi (tambah Bab, dsb.)"
+              onClick={() => setManageCats(true)}
+            >
+              <Settings2 className="size-4" />
+            </Button>
+          )}
         </div>
-        <div className="w-full sm:w-44">
-          <Phase1aSelectField
-            id="mat-group"
-            label="Kelompok"
-            value={groupId}
-            onChange={setGroupId}
-            options={groupsQ.data?.map((g) => ({ value: g.id, label: g.name })) || []}
-          />
-        </div>
+        {showGroupFilter && (
+          <div className="w-full sm:w-44">
+            <Phase1aSelectField
+              id="mat-group"
+              label="Kelompok"
+              value={groupId}
+              onChange={setGroupId}
+              options={groupsQ.data?.map((g) => ({ value: g.id, label: g.name })) || []}
+            />
+          </div>
+        )}
         <div className="relative w-full sm:w-56">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input

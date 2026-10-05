@@ -6,7 +6,11 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { apiFetch, ApiError } from '@/lib/api-client';
-import type { LevelItem } from '@/lib/phase3a-types';
+import {
+  drillBackUrl,
+  tingkatCode,
+  type HierarchyLevel,
+} from '@/lib/content-taxonomy';
 import { MaterialForm, emptyMaterialForm } from './material-form';
 
 function err(e: unknown, fb: string) {
@@ -33,13 +37,18 @@ export function MaterialCreatePage({
   // Prefill dari drill-down: turunkan program dari jenjang yang dipilih.
   const levelsAllQ = useQuery({
     queryKey: ['levels-all'],
-    queryFn: () => apiFetch<(LevelItem & { program?: { id: string } | null })[]>('/levels'),
+    queryFn: () => apiFetch<HierarchyLevel[]>('/levels'),
     enabled: !!initial?.levelId,
   });
   useEffect(() => {
     const lvl = levelsAllQ.data?.find((l) => l.id === form.levelId);
-    if (lvl?.program?.id) {
-      setForm((f) => (f.programId ? f : { ...f, programId: lvl.program!.id }));
+    if (lvl) {
+      const tk = tingkatCode(lvl) ?? 'none';
+      setForm((f) => ({
+        ...f,
+        tingkat: f.tingkat || tk,
+        programId: f.programId || lvl.program?.id || '',
+      }));
     }
   }, [levelsAllQ.data, form.levelId]);
 
@@ -65,7 +74,14 @@ export function MaterialCreatePage({
     onSuccess: () => {
       toast.success('Materi berhasil ditambahkan.');
       qc.invalidateQueries({ queryKey: ['materials'] });
-      router.push(basePath);
+      router.push(
+        drillBackUrl(basePath, {
+          tingkat: form.tingkat,
+          levelId: form.levelId,
+          subjectId: form.subjectId,
+          category: form.category,
+        }),
+      );
     },
     onError: (e) => toast.error(err(e, 'Gagal menambahkan materi.')),
   });
@@ -83,7 +99,19 @@ export function MaterialCreatePage({
             Upload materi untuk Program/Level/Kelompok tertentu.
           </p>
         </div>
-        <Button variant="outline" onClick={() => router.push(basePath)}>
+        <Button
+          variant="outline"
+          onClick={() =>
+            router.push(
+              drillBackUrl(basePath, {
+                tingkat: form.tingkat,
+                levelId: form.levelId,
+                subjectId: form.subjectId,
+                category: form.category,
+              }),
+            )
+          }
+        >
           Batal
         </Button>
       </div>

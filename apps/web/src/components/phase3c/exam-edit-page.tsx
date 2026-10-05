@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { ExamRow, UpdateExamDto } from '@/lib/phase3c-types';
+import { drillBackUrl, tingkatCode } from '@/lib/content-taxonomy';
+import { useContentLevels } from '@/components/shared/content-drilldown';
 import { ExamForm, emptyExamForm, type ExamFormState } from './exam-form';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 
@@ -51,6 +53,25 @@ function ExamEditForm({
   const [form, setForm] = useState<ExamFormState>(() => toForm(initial));
   const [deleteOpen, setDeleteOpen] = useState(false);
 
+  // Tingkat disimpan terpisah dari data — turunkan dari jenjang ujian.
+  const levelsQ = useContentLevels();
+  useEffect(() => {
+    if (form.pickerFilters.tingkat || !form.pickerFilters.levelId) return;
+    const lvl = levelsQ.data?.find((l) => l.id === form.pickerFilters.levelId);
+    if (lvl)
+      setForm((f) => ({
+        ...f,
+        pickerFilters: { ...f.pickerFilters, tingkat: tingkatCode(lvl) ?? 'none' },
+      }));
+  }, [levelsQ.data, form.pickerFilters.levelId, form.pickerFilters.tingkat]);
+
+  const backUrl = drillBackUrl(basePath, {
+    tingkat: form.pickerFilters.tingkat,
+    levelId: form.pickerFilters.levelId,
+    subjectId: form.pickerFilters.subjectId,
+    category: form.category,
+  });
+
   const saveM = useMutation({
     mutationFn: () => {
       const body: UpdateExamDto = {
@@ -72,7 +93,7 @@ function ExamEditForm({
     onSuccess: () => {
       toast.success('Ujian berhasil diperbarui.');
       qc.invalidateQueries({ queryKey: ['exams'] });
-      router.push(basePath);
+      router.push(backUrl);
     },
     onError: (e) => toast.error(err(e, 'Gagal memperbarui ujian.')),
   });
@@ -82,7 +103,7 @@ function ExamEditForm({
     onSuccess: () => {
       toast.success('Ujian dihapus.');
       qc.invalidateQueries({ queryKey: ['exams'] });
-      router.push(basePath);
+      router.push(backUrl);
     },
     onError: (e) => toast.error(err(e, 'Gagal menghapus ujian.')),
   });
@@ -106,7 +127,7 @@ function ExamEditForm({
             Perbarui detail, status, atau daftar soal ujian ini.
           </p>
         </div>
-        <Button variant="outline" onClick={() => router.push(basePath)}>
+        <Button variant="outline" onClick={() => router.push(backUrl)}>
           Batal
         </Button>
       </div>

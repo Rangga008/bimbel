@@ -1,9 +1,9 @@
 "use client";
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
-import { CircleCheck, FileQuestion, FileUp, ImageIcon, Pencil, Plus, Search, Tag, Trash2 } from 'lucide-react';
+import { CircleCheck, FileQuestion, FileUp, ImageIcon, Pencil, Plus, Search, Settings2, Tag, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -25,6 +25,7 @@ import {
   categoryLabel,
   categoryOptions,
   drillDone,
+  drillFromParams,
   DRILL_ALL,
   DRILL_EMPTY,
   DRILL_NONE,
@@ -39,7 +40,10 @@ function err(e: unknown, fb: string) {
 export function QuestionsManager({ canManage, basePath }: { canManage: boolean; basePath: string }) {
   const qc = useQueryClient();
   const router = useRouter();
-  const [drill, setDrill] = useState<DrillValue>({ ...DRILL_EMPTY });
+  const searchParams = useSearchParams();
+  const [drill, setDrill] = useState<DrillValue>(() =>
+    drillFromParams((k) => searchParams.get(k)),
+  );
   const [type, setType] = useState('');
   const [difficulty, setDifficulty] = useState('');
   const [catFilter, setCatFilter] = useState('');
@@ -166,15 +170,29 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
             placeholder="Semua tipe"
           />
         </div>
-        <div className="w-full sm:w-44">
-          <Phase1aSelectField
-            id="q-category"
-            label="Kategori"
-            value={catFilter}
-            onChange={setCatFilter}
-            options={categoryOptions(catsQ.data)}
-            placeholder="Semua kategori"
-          />
+        <div className="flex w-full items-end gap-1.5 sm:w-auto">
+          <div className="w-full sm:w-44">
+            <Phase1aSelectField
+              id="q-category"
+              label="Kategori"
+              value={catFilter}
+              onChange={setCatFilter}
+              options={categoryOptions(catsQ.data)}
+              placeholder="Semua kategori"
+            />
+          </div>
+          {canManage && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 shrink-0"
+              title="Kelola tipe soal (tambah Bab, dsb.)"
+              onClick={() => setManageCats(true)}
+            >
+              <Settings2 className="size-4" />
+            </Button>
+          )}
         </div>
         <div className="w-full sm:w-40">
           <Phase1aSelectField

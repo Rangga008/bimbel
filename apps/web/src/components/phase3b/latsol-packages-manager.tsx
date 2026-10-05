@@ -1,9 +1,9 @@
 "use client";
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
-import { NotebookPen, Pencil, Play, Plus, Search, Tag, Trash2 } from 'lucide-react';
+import { NotebookPen, Pencil, Play, Plus, Search, Settings2, Tag, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -22,6 +22,7 @@ import {
   categoryLabel,
   categoryOptions,
   drillDone,
+  drillFromParams,
   DRILL_ALL,
   DRILL_EMPTY,
   DRILL_NONE,
@@ -44,7 +45,10 @@ export function LatsolPackagesManager({
 }) {
   const qc = useQueryClient();
   const router = useRouter();
-  const [drill, setDrill] = useState<DrillValue>({ ...DRILL_EMPTY });
+  const searchParams = useSearchParams();
+  const [drill, setDrill] = useState<DrillValue>(() =>
+    drillFromParams((k) => searchParams.get(k)),
+  );
   const [catFilter, setCatFilter] = useState('');
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
@@ -140,15 +144,29 @@ export function LatsolPackagesManager({
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Paket Latsol</h1>
       </div>
       <div className="flex flex-wrap items-end gap-3">
-        <div className="w-full sm:w-44">
-          <Phase1aSelectField
-            id="lp-cat"
-            label="Kategori"
-            value={catFilter}
-            onChange={setCatFilter}
-            options={categoryOptions(catsQ.data)}
-            placeholder="Semua kategori"
-          />
+        <div className="flex w-full items-end gap-1.5 sm:w-auto">
+          <div className="w-full sm:w-44">
+            <Phase1aSelectField
+              id="lp-cat"
+              label="Kategori"
+              value={catFilter}
+              onChange={setCatFilter}
+              options={categoryOptions(catsQ.data)}
+              placeholder="Semua kategori"
+            />
+          </div>
+          {canManage && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 shrink-0"
+              title="Kelola tipe (tambah Bab, dsb.)"
+              onClick={() => setManageCats(true)}
+            >
+              <Settings2 className="size-4" />
+            </Button>
+          )}
         </div>
         <div className="relative w-full sm:w-56">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />

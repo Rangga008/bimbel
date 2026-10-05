@@ -26,7 +26,7 @@ import {
   useContentLevels,
 } from '@/components/shared/content-drilldown';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
-import { categoryOptions, tingkatCode } from '@/lib/content-taxonomy';
+import { categoryOptions, sortLevels, tingkatCode } from '@/lib/content-taxonomy';
 import { QUESTION_TYPES } from '@/lib/phase3a-types';
 
 interface ImportRowResult {
@@ -73,26 +73,36 @@ export function QuestionImportDialog({
   const catsQ = useContentCategories();
   const levels = levelsQ.data ?? [];
 
-  const tingkats = useMemo(
-    () =>
-      [...new Set(levels.map((l) => tingkatCode(l)).filter(Boolean) as string[])]
-        .map((t) => ({
-          value: t,
-          label: t,
-          sort: Math.min(
-            ...levels
-              .filter((l) => tingkatCode(l) === t)
-              .map((l) => l.gradeLevel?.sortOrder ?? 9999),
-          ),
-        }))
-        .sort((a, b) => a.sort - b.sort),
-    [levels],
-  );
+  const tingkats = useMemo(() => {
+    const opts = [
+      ...new Set(levels.map((l) => tingkatCode(l)).filter(Boolean) as string[]),
+    ]
+      .map((t) => ({
+        value: t,
+        label: t,
+        sort: Math.min(
+          ...levels
+            .filter((l) => tingkatCode(l) === t)
+            .map((l) => l.gradeLevel?.sortOrder ?? 9999),
+        ),
+      }))
+      .sort((a, b) => a.sort - b.sort);
+    if (levels.some((l) => !tingkatCode(l))) {
+      opts.push({ value: 'none', label: 'Lainnya', sort: 9999 });
+    }
+    return opts;
+  }, [levels]);
   const levelOptions = useMemo(
     () =>
-      levels
-        .filter((l) => !tingkat || tingkatCode(l) === tingkat)
-        .map((l) => ({ value: l.id, label: l.name })),
+      sortLevels(levels)
+        .filter((l) => {
+          const tk = tingkatCode(l);
+          return !tingkat || (tingkat === 'none' ? !tk : tk === tingkat);
+        })
+        .map((l) => ({
+          value: l.id,
+          label: l.program?.name ? `${l.name} — ${l.program.name}` : l.name,
+        })),
     [levels, tingkat],
   );
   const subjectOptions = useMemo(() => {

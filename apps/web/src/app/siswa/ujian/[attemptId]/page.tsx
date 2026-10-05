@@ -13,9 +13,11 @@ export default async function ExamTakingPage({
 	const { attemptId } = await params;
 	return (
 		<div className="min-h-screen bg-background">
-			<Suspense fallback={<div className="p-6">Memuat ujian...</div>}>
-				<AttemptLoader attemptId={attemptId} />
-			</Suspense>
+			<div className="mx-auto w-full max-w-4xl p-4 sm:p-6">
+				<Suspense fallback={<div>Memuat ujian...</div>}>
+					<AttemptLoader attemptId={attemptId} />
+				</Suspense>
+			</div>
 		</div>
 	);
 }

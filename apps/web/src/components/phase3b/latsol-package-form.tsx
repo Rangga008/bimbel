@@ -10,6 +10,8 @@ import { categoryOptions } from '@/lib/content-taxonomy';
 import { useContentCategories } from '@/components/shared/content-drilldown';
 
 export interface LatsolPackageFormState {
+  /** Tingkat sekolah (SD/SMP/…) — filter UI picker, tidak dikirim ke API. */
+  tingkat: string;
   programId: string;
   levelId: string;
   subjectId: string;
@@ -20,7 +22,7 @@ export interface LatsolPackageFormState {
 }
 
 export function emptyLatsolPackageForm(): LatsolPackageFormState {
-  return { programId: '', levelId: '', subjectId: '', category: '', title: '', description: '', questionIds: [] };
+  return { tingkat: '', programId: '', levelId: '', subjectId: '', category: '', title: '', description: '', questionIds: [] };
 }
 
 /** Form Buat/Edit Paket Latsol — dipakai di halaman terpisah (bukan modal). */
@@ -77,9 +79,10 @@ export function LatsolPackageForm({
           placeholder="Harian/UTS/TO/Bab…"
         />
         <QuestionPicker
-          // Tipe di picker disinkronkan dengan kategori paket.
-          filters={{ subjectId: form.subjectId, programId: form.programId, levelId: form.levelId, tingkat: '', category: form.category }}
-          onFiltersChange={(f) => onChange({ ...form, subjectId: f.subjectId, programId: f.programId, levelId: f.levelId, category: f.category })}
+          // Tipe di picker disinkronkan dengan kategori paket; tingkat
+          // disimpan agar filter tidak reset setiap render.
+          filters={{ subjectId: form.subjectId, programId: form.programId, levelId: form.levelId, tingkat: form.tingkat, category: form.category }}
+          onFiltersChange={(f) => onChange({ ...form, tingkat: f.tingkat, subjectId: f.subjectId, programId: f.programId, levelId: f.levelId, category: f.category })}
           selectedIds={form.questionIds}
           onToggle={toggleQuestion}
         />

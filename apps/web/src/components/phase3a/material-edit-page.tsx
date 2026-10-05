@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { MaterialRow } from '@/lib/phase3a-types';
+import { drillBackUrl, tingkatCode } from '@/lib/content-taxonomy';
+import { useContentLevels } from '@/components/shared/content-drilldown';
 import { MaterialForm, type MaterialFormState } from './material-form';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 
@@ -48,6 +50,21 @@ function MaterialEditForm({
   const [form, setForm] = useState<MaterialFormState>(() => toForm(initial));
   const [deleteOpen, setDeleteOpen] = useState(false);
 
+  // Tingkat disimpan terpisah dari data — turunkan dari jenjang materi.
+  const levelsQ = useContentLevels();
+  useEffect(() => {
+    if (form.tingkat || !form.levelId) return;
+    const lvl = levelsQ.data?.find((l) => l.id === form.levelId);
+    if (lvl) setForm((f) => ({ ...f, tingkat: tingkatCode(lvl) ?? 'none' }));
+  }, [levelsQ.data, form.levelId, form.tingkat]);
+
+  const backUrl = drillBackUrl(basePath, {
+    tingkat: form.tingkat,
+    levelId: form.levelId,
+    subjectId: form.subjectId,
+    category: form.category,
+  });
+
   const saveM = useMutation({
     mutationFn: () =>
       apiFetch(`/materials/${materialId}`, {
@@ -71,7 +88,7 @@ function MaterialEditForm({
     onSuccess: () => {
       toast.success('Materi berhasil diperbarui.');
       qc.invalidateQueries({ queryKey: ['materials'] });
-      router.push(basePath);
+      router.push(backUrl);
     },
     onError: (e) => toast.error(err(e, 'Gagal memperbarui materi.')),
   });
@@ -81,7 +98,7 @@ function MaterialEditForm({
     onSuccess: () => {
       toast.success('Materi dihapus.');
       qc.invalidateQueries({ queryKey: ['materials'] });
-      router.push(basePath);
+      router.push(backUrl);
     },
     onError: (e) => toast.error(err(e, 'Gagal menghapus materi.')),
   });
@@ -97,7 +114,19 @@ function MaterialEditForm({
           <h1 className="text-2xl font-semibold tracking-tight">Edit Materi</h1>
           <p className="text-sm text-muted-foreground">Perbarui detail materi ini.</p>
         </div>
-        <Button variant="outline" onClick={() => router.push(basePath)}>
+        <Button
+          variant="outline"
+          onClick={() =>
+            router.push(
+              drillBackUrl(basePath, {
+                tingkat: form.tingkat,
+                levelId: form.levelId,
+                subjectId: form.subjectId,
+                category: form.category,
+              }),
+            )
+          }
+        >
           Batal
         </Button>
       </div>

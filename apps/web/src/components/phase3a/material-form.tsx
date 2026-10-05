@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { apiFetch } from '@/lib/api-client';
 import type { GroupItem, ProgramItem, SubjectItem } from '@/lib/phase3a-types';
-import { categoryOptions, tingkatCode } from '@/lib/content-taxonomy';
+import { categoryOptions, sortLevels, tingkatCode } from '@/lib/content-taxonomy';
 import {
   useContentCategories,
   useContentLevels,
@@ -78,14 +78,22 @@ export function MaterialForm({
       sort: Math.min(...levels.filter((l) => tingkatCode(l) === t).map((l) => l.gradeLevel?.sortOrder ?? 9999)),
     }))
     .sort((a, b) => a.sort - b.sort);
+  // Jenjang tanpa gradeLevel (mis. paket Privat) → bucket "Lainnya".
+  if (levels.some((l) => !tingkatCode(l))) {
+    tingkatOptions.push({ value: 'none', label: 'Lainnya', sort: 9999 });
+  }
 
-  const levelOptions = levels
-    .filter(
-      (l) =>
-        (!form.tingkat || tingkatCode(l) === form.tingkat) &&
-        (!form.programId || l.program?.id === form.programId),
-    )
-    .map((l) => ({ value: l.id, label: l.name }));
+  const levelOptions = sortLevels(levels)
+    .filter((l) => {
+      const tk = tingkatCode(l);
+      const tingkatOk = !form.tingkat
+        || (form.tingkat === 'none' ? !tk : tk === form.tingkat);
+      return tingkatOk && (!form.programId || l.program?.id === form.programId);
+    })
+    .map((l) => ({
+      value: l.id,
+      label: l.program?.name ? `${l.name} — ${l.program.name}` : l.name,
+    }));
 
   const selectedLevel = levels.find((l) => l.id === form.levelId);
   const subjectsQ = useQuery({

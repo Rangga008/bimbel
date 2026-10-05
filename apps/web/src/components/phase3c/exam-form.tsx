@@ -87,6 +87,7 @@ export function ExamForm({
             id="ex-title"
             value={form.title}
             onChange={(e) => onChange({ ...form, title: e.target.value })}
+            placeholder="Contoh: Ujian Bab 3 — Pecahan"
             required
           />
         </div>
@@ -96,6 +97,7 @@ export function ExamForm({
             id="ex-description"
             value={form.description}
             onChange={(e) => onChange({ ...form, description: e.target.value })}
+            placeholder="Deskripsi/petunjuk ujian (opsional)"
             rows={3}
           />
         </div>
@@ -127,6 +129,7 @@ export function ExamForm({
             id="ex-duration"
             type="number"
             value={form.durationMinutes || ''}
+            placeholder="Mis. 60"
             onChange={(e) =>
               onChange({
                 ...form,
@@ -141,6 +144,7 @@ export function ExamForm({
             id="ex-notes"
             value={form.notes}
             onChange={(e) => onChange({ ...form, notes: e.target.value })}
+            placeholder="Catatan internal (opsional)"
             rows={2}
           />
         </div>

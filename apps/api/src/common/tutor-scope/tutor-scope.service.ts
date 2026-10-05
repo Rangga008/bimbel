@@ -108,6 +108,17 @@ export class TutorScopeService {
       for (const p of programs)
         if (p.subjectId && !subjectIds.includes(p.subjectId)) subjectIds.push(p.subjectId);
     }
+    // Kelas reguler multi-mapel: penugasan tutor per kelompok (bukan per
+    // mapel), jadi semua mapel jenjang yang dia ampu masuk scope —
+    // tanpa ini tutor kelas reguler tidak melihat mapel apa pun.
+    if (levelIds.length) {
+      const lsubs = await this.prisma.levelSubject.findMany({
+        where: { levelId: { in: levelIds } },
+        select: { subjectId: true },
+      });
+      for (const s of lsubs)
+        if (!subjectIds.includes(s.subjectId)) subjectIds.push(s.subjectId);
+    }
     return { programIds, groupIds, levelIds, subjectIds, tutorId: tutor.id };
   }
 
@@ -211,21 +222,23 @@ export class TutorScopeService {
   /**
    * Prisma `where` konten untuk siswa: cocok bila salah satu taksonomi
    * konten masuk scope. Konten tanpa taksonomi sama sekali (umum) tetap
-   * terlihat oleh semua siswa.
+   * terlihat oleh semua siswa. `opts.group` = false untuk entitas yang
+   * tidak punya kolom groupId (LatsolPackage, Exam).
    */
-  studentContentWhere(scope: StudentScope) {
+  studentContentWhere(scope: StudentScope, opts?: { group?: boolean }) {
+    const withGroup = opts?.group !== false;
     return {
       OR: [
         { programId: { in: scope.programIds } },
         { levelId: { in: scope.levelIds } },
-        { groupId: { in: scope.groupIds } },
+        ...(withGroup ? [{ groupId: { in: scope.groupIds } }] : []),
         { subjectId: { in: scope.subjectIds } },
         // Konten umum — tidak menargetkan jenjang/mapel/kelompok tertentu.
         {
           AND: [
             { programId: null },
             { levelId: null },
-            { groupId: null },
+            ...(withGroup ? [{ groupId: null }] : []),
             { subjectId: null },
           ],
         },

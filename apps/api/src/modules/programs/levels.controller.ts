@@ -35,9 +35,12 @@ export class LevelsController {
 
   @Get('levels')
   // Tutor boleh memanggil — hasilnya dibatasi program yang dia ampu.
+  // Siswa juga boleh — hasilnya dibatasi jenjang enrollment/kelompoknya,
+  // dipakai drill-down materi/latsol/ujian di portal siswa.
   @RequireAnyPermissions(
     PERMISSION_CODES.PEOPLE_VIEW,
     PERMISSION_CODES.DASHBOARD_TUTOR_VIEW,
+    PERMISSION_CODES.DASHBOARD_SISWA_VIEW,
   )
   list(
     @CurrentUser() actor: AuthenticatedUser,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { ProgramItem, QuestionRow } from '@/lib/phase3a-types';
+import { drillBackUrl, tingkatCode } from '@/lib/content-taxonomy';
+import { useContentLevels } from '@/components/shared/content-drilldown';
 import { QuestionFormCard, type QuestionDraft } from './question-form-card';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 
@@ -74,6 +76,21 @@ function QuestionEditForm({
   const [draft, setDraft] = useState<QuestionDraft>(() => questionToDraft(initial));
   const [deleteOpen, setDeleteOpen] = useState(false);
 
+  // Tingkat disimpan terpisah dari data — turunkan dari jenjang soal.
+  const levelsQ = useContentLevels();
+  useEffect(() => {
+    if (draft.tingkat || !draft.levelId) return;
+    const lvl = levelsQ.data?.find((l) => l.id === draft.levelId);
+    if (lvl) setDraft((d) => ({ ...d, tingkat: tingkatCode(lvl) ?? 'none' }));
+  }, [levelsQ.data, draft.levelId, draft.tingkat]);
+
+  const backUrl = drillBackUrl(basePath, {
+    tingkat: draft.tingkat,
+    levelId: draft.levelId,
+    subjectId: draft.subjectId,
+    category: draft.category,
+  });
+
   const saveM = useMutation({
     mutationFn: () =>
       apiFetch<QuestionRow>(`/questions/${questionId}`, {
@@ -100,7 +117,7 @@ function QuestionEditForm({
       qc.invalidateQueries({ queryKey: ['questions'] });
       qc.invalidateQueries({ queryKey: ['question', questionId] });
       qc.invalidateQueries({ queryKey: ['questions-summary'] });
-      router.push(basePath);
+      router.push(backUrl);
     },
     onError: (e) => toast.error(err(e, 'Gagal memperbarui soal.')),
   });
@@ -111,7 +128,7 @@ function QuestionEditForm({
       toast.success('Soal dihapus.');
       qc.invalidateQueries({ queryKey: ['questions'] });
       qc.invalidateQueries({ queryKey: ['questions-summary'] });
-      router.push(basePath);
+      router.push(backUrl);
     },
     onError: (e) => toast.error(err(e, 'Gagal menghapus soal.')),
   });
@@ -136,7 +153,7 @@ function QuestionEditForm({
           <h1 className="text-2xl font-semibold tracking-tight">Edit Soal</h1>
           <p className="text-sm text-muted-foreground">Perbarui konten, opsi, atau solusi soal ini.</p>
         </div>
-        <Button variant="outline" onClick={() => router.push(basePath)}>
+        <Button variant="outline" onClick={() => router.push(backUrl)}>
           Batal
         </Button>
       </div>

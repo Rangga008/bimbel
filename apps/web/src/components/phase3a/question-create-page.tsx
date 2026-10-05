@@ -6,7 +6,12 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { apiFetch, ApiError } from '@/lib/api-client';
-import type { LevelItem, ProgramItem, QuestionRow } from '@/lib/phase3a-types';
+import type { ProgramItem, QuestionRow } from '@/lib/phase3a-types';
+import {
+  drillBackUrl,
+  tingkatCode,
+  type HierarchyLevel,
+} from '@/lib/content-taxonomy';
 import { QuestionFormCard, emptyQuestionDraft, type QuestionDraft } from './question-form-card';
 
 function err(e: unknown, fb: string) {
@@ -63,13 +68,24 @@ export function QuestionCreatePage({
   // Prefill dari drill-down: turunkan program dari jenjang yang dipilih.
   const levelsAllQ = useQuery({
     queryKey: ['levels-all'],
-    queryFn: () => apiFetch<(LevelItem & { program?: { id: string } | null })[]>('/levels'),
+    queryFn: () => apiFetch<HierarchyLevel[]>('/levels'),
     enabled: !!initial?.levelId,
   });
   useEffect(() => {
     const lvl = levelsAllQ.data?.find((l) => l.id === initial?.levelId);
-    if (lvl?.program?.id) {
-      setDrafts((prev) => prev.map((d, i) => (i === 0 && !d.programId ? { ...d, programId: lvl.program!.id } : d)));
+    if (lvl) {
+      const tk = tingkatCode(lvl) ?? 'none';
+      setDrafts((prev) =>
+        prev.map((d, i) =>
+          i === 0
+            ? {
+                ...d,
+                tingkat: d.tingkat || tk,
+                programId: d.programId || lvl.program?.id || '',
+              }
+            : d,
+        ),
+      );
     }
   }, [levelsAllQ.data, initial?.levelId]);
 
@@ -89,7 +105,14 @@ export function QuestionCreatePage({
       toast.success(`${results.length} soal berhasil disimpan.`);
       qc.invalidateQueries({ queryKey: ['questions'] });
       qc.invalidateQueries({ queryKey: ['questions-summary'] });
-      router.push(basePath);
+      router.push(
+        drillBackUrl(basePath, {
+          tingkat: drafts[0]?.tingkat,
+          levelId: drafts[0]?.levelId,
+          subjectId: drafts[0]?.subjectId,
+          category: drafts[0]?.category,
+        }),
+      );
     },
     onError: (e) => toast.error(err(e, 'Gagal menyimpan soal. Perbaiki kartu yang bermasalah lalu coba lagi.')),
   });
@@ -128,7 +151,19 @@ export function QuestionCreatePage({
             Tambahkan sebanyak mungkin soal di halaman ini, lalu simpan sekaligus.
           </p>
         </div>
-        <Button variant="outline" onClick={() => router.push(basePath)}>
+        <Button
+          variant="outline"
+          onClick={() =>
+            router.push(
+              drillBackUrl(basePath, {
+                tingkat: drafts[0]?.tingkat,
+                levelId: drafts[0]?.levelId,
+                subjectId: drafts[0]?.subjectId,
+                category: drafts[0]?.category,
+              }),
+            )
+          }
+        >
           Batal
         </Button>
       </div>

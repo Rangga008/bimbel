@@ -6,7 +6,11 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { apiFetch, ApiError } from '@/lib/api-client';
-import type { LevelItem } from '@/lib/phase3a-types';
+import {
+  drillBackUrl,
+  tingkatCode,
+  type HierarchyLevel,
+} from '@/lib/content-taxonomy';
 import { LatsolPackageForm, emptyLatsolPackageForm } from './latsol-package-form';
 
 function err(e: unknown, fb: string) {
@@ -33,13 +37,18 @@ export function LatsolPackageCreatePage({
   // Prefill dari drill-down: turunkan program dari jenjang yang dipilih.
   const levelsAllQ = useQuery({
     queryKey: ['levels-all'],
-    queryFn: () => apiFetch<(LevelItem & { program?: { id: string } | null })[]>('/levels'),
+    queryFn: () => apiFetch<HierarchyLevel[]>('/levels'),
     enabled: !!initial?.levelId,
   });
   useEffect(() => {
     const lvl = levelsAllQ.data?.find((l) => l.id === form.levelId);
-    if (lvl?.program?.id) {
-      setForm((f) => (f.programId ? f : { ...f, programId: lvl.program!.id }));
+    if (lvl) {
+      const tk = tingkatCode(lvl) ?? 'none';
+      setForm((f) => ({
+        ...f,
+        tingkat: f.tingkat || tk,
+        programId: f.programId || lvl.program?.id || '',
+      }));
     }
   }, [levelsAllQ.data, form.levelId]);
 
@@ -60,7 +69,14 @@ export function LatsolPackageCreatePage({
     onSuccess: () => {
       toast.success('Paket latsol berhasil dibuat.');
       qc.invalidateQueries({ queryKey: ['latsol-packages'] });
-      router.push(basePath);
+      router.push(
+        drillBackUrl(basePath, {
+          tingkat: form.tingkat,
+          levelId: form.levelId,
+          subjectId: form.subjectId,
+          category: form.category,
+        }),
+      );
     },
     onError: (e) => toast.error(err(e, 'Gagal membuat paket latsol.')),
   });
@@ -77,7 +93,19 @@ export function LatsolPackageCreatePage({
           <h1 className="text-2xl font-semibold tracking-tight">Buat Paket Latsol</h1>
           <p className="text-sm text-muted-foreground">Pilih soal dari bank soal untuk dikumpulkan menjadi paket latihan.</p>
         </div>
-        <Button variant="outline" onClick={() => router.push(basePath)}>
+        <Button
+          variant="outline"
+          onClick={() =>
+            router.push(
+              drillBackUrl(basePath, {
+                tingkat: form.tingkat,
+                levelId: form.levelId,
+                subjectId: form.subjectId,
+                category: form.category,
+              }),
+            )
+          }
+        >
           Batal
         </Button>
       </div>

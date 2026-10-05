@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -116,6 +118,7 @@ function useExamProctoring(params: {
 
 export function ExamTaker({ attemptId }: ExamTakerProps) {
   const qc = useQueryClient();
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState<number>(() => Date.now());
   const [answers, setAnswers] = useState<Record<string, SaveExamAnswerDto>>({});
@@ -135,6 +138,25 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
     refetchInterval: (query) => (query.state.data?.status === 'LOCKED' ? 15000 : false),
   });
   const attempt = attemptQ.data ?? null;
+
+  // Pulihkan jawaban yang sudah tersimpan di server saat halaman di-refresh /
+  // attempt dilanjutkan — state lokal menang bila sudah ada isian baru.
+  useEffect(() => {
+    const items = attemptQ.data?.items;
+    if (!items?.length) return;
+    setAnswers((prev) => {
+      const next = { ...prev };
+      for (const it of items) {
+        if (it.answer && !(it.questionId in next)) {
+          next[it.questionId] = {
+            selectedOptionIds: it.answer.selectedOptionIds ?? [],
+            textAnswer: it.answer.textAnswer ?? undefined,
+          };
+        }
+      }
+      return next;
+    });
+  }, [attemptQ.data]);
 
   // Timer sisi klien: hanya menampilkan hitung mundur berdasarkan `now` yang di-tick
   // tiap detik. Waktu yang otoritatif tetap server (scheduled_end_at + auto-submit scheduler);
@@ -216,6 +238,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
   };
 
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
 
   const submitExam = () => {
     if (!attempt || attempt.status !== 'IN_PROGRESS') return;
@@ -270,6 +293,11 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
   const isLocked = attempt.status === 'LOCKED';
   const isInProgress = attempt.status === 'IN_PROGRESS';
 
+  const answeredCount = attempt.items.filter((it) => {
+    const a = answers[it.questionId];
+    return (a?.selectedOptionIds?.length ?? 0) > 0 || !!a?.textAnswer?.trim();
+  }).length;
+
   const VIOLATION_THRESHOLD = 3;
 
   return (
@@ -279,8 +307,23 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-1">
-              <CardTitle>{attempt.exam.title}</CardTitle>
-              <div className="flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-8 shrink-0"
+                  aria-label="Kembali ke daftar ujian"
+                  onClick={() =>
+                    isInProgress
+                      ? setLeaveConfirmOpen(true)
+                      : router.push('/siswa/ujian')
+                  }
+                >
+                  <ArrowLeft className="size-4" />
+                </Button>
+                <CardTitle>{attempt.exam.title}</CardTitle>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                 <Badge variant={isSubmitted ? 'default' : isLocked ? 'destructive' : 'secondary'}>
                   {isSubmitted ? 'Selesai' : isLocked ? 'Dikunci (Proctoring)' : 'Sedang Mengerjakan'}
                 </Badge>
@@ -290,6 +333,11 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                       Sisa waktu: {formatTime(timeLeft)}
                     </span>
                   </div>
+                )}
+                {isInProgress && attempt.items.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    {answeredCount}/{attempt.items.length} terjawab
+                  </span>
                 )}
                 {isInProgress && (
                   <span className="text-xs text-muted-foreground">
@@ -569,6 +617,16 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
         description="Jawaban yang sudah terisi akan dikirim dan tidak bisa diubah lagi."
         confirmLabel="Ya, kumpulkan"
         onConfirm={doSubmitExam}
+      />
+
+      <ConfirmDialog
+        open={leaveConfirmOpen}
+        onOpenChange={setLeaveConfirmOpen}
+        tone="primary"
+        title="Tinggalkan halaman ujian?"
+        description="Jawaban Anda sudah tersimpan otomatis di server — Anda bisa kembali dan melanjutkan selama waktu ujian masih berjalan."
+        confirmLabel="Ya, kembali ke daftar"
+        onConfirm={() => router.push('/siswa/ujian')}
       />
     </div>
   );

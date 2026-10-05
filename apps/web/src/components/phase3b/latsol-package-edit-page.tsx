@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
+import { drillBackUrl, tingkatCode } from '@/lib/content-taxonomy';
+import { useContentLevels } from '@/components/shared/content-drilldown';
 import { LatsolPackageForm, type LatsolPackageFormState } from './latsol-package-form';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 
@@ -28,6 +30,7 @@ interface LatsolPackageDetail {
 
 function toForm(pkg: LatsolPackageDetail): LatsolPackageFormState {
   return {
+    tingkat: '',
     programId: pkg.programId ?? '',
     levelId: pkg.levelId ?? '',
     subjectId: pkg.subjectId ?? '',
@@ -52,6 +55,21 @@ function LatsolPackageEditForm({
   const [form, setForm] = useState<LatsolPackageFormState>(() => toForm(initial));
   const [deleteOpen, setDeleteOpen] = useState(false);
 
+  // Tingkat disimpan terpisah dari data — turunkan dari jenjang paket.
+  const levelsQ = useContentLevels();
+  useEffect(() => {
+    if (form.tingkat || !form.levelId) return;
+    const lvl = levelsQ.data?.find((l) => l.id === form.levelId);
+    if (lvl) setForm((f) => ({ ...f, tingkat: tingkatCode(lvl) ?? 'none' }));
+  }, [levelsQ.data, form.levelId, form.tingkat]);
+
+  const backUrl = drillBackUrl(basePath, {
+    tingkat: form.tingkat,
+    levelId: form.levelId,
+    subjectId: form.subjectId,
+    category: form.category,
+  });
+
   const saveM = useMutation({
     mutationFn: () =>
       apiFetch(`/latsol/packages/${packageId}`, {
@@ -70,7 +88,7 @@ function LatsolPackageEditForm({
       toast.success('Paket latsol berhasil diperbarui.');
       qc.invalidateQueries({ queryKey: ['latsol-packages'] });
       qc.invalidateQueries({ queryKey: ['latsol-package', packageId] });
-      router.push(basePath);
+      router.push(backUrl);
     },
     onError: (e) => toast.error(err(e, 'Gagal memperbarui paket latsol.')),
   });
@@ -80,7 +98,7 @@ function LatsolPackageEditForm({
     onSuccess: () => {
       toast.success('Paket latsol dihapus.');
       qc.invalidateQueries({ queryKey: ['latsol-packages'] });
-      router.push(basePath);
+      router.push(backUrl);
     },
     onError: (e) => toast.error(err(e, 'Gagal menghapus paket latsol.')),
   });
@@ -97,7 +115,7 @@ function LatsolPackageEditForm({
           <h1 className="text-2xl font-semibold tracking-tight">Edit Paket Latsol</h1>
           <p className="text-sm text-muted-foreground">Perbarui detail paket atau daftar soal di dalamnya.</p>
         </div>
-        <Button variant="outline" onClick={() => router.push(basePath)}>
+        <Button variant="outline" onClick={() => router.push(backUrl)}>
           Batal
         </Button>
       </div>

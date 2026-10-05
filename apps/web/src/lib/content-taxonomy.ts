@@ -61,6 +61,32 @@ export const DRILL_ALL = 'ALL';
 export const DRILL_NONE = 'none';
 export const DRILL_EMPTY: DrillValue = { gradeLevelId: '', levelId: '', subjectId: '', category: '' };
 
+/** Posisi drill di-encode di query string (?g=tingkat&l=jenjang&s=mapel&c=tipe)
+ *  supaya tombol Batal/kembali dari halaman buat/edit mengembalikan user ke
+ *  posisi drill semula, bukan me-reset ke langkah awal. */
+export function drillFromParams(get: (k: string) => string | null): DrillValue {
+  return {
+    gradeLevelId: get('g') ?? '',
+    levelId: get('l') ?? '',
+    subjectId: get('s') ?? '',
+    category: get('c') ?? '',
+  };
+}
+
+/** URL kembali ke halaman daftar dengan posisi drill yang sama. */
+export function drillBackUrl(
+  basePath: string,
+  d: { tingkat?: string; levelId?: string; subjectId?: string; category?: string },
+): string {
+  const p = new URLSearchParams();
+  if (d.tingkat) p.set('g', d.tingkat);
+  if (d.levelId) p.set('l', d.levelId);
+  if (d.subjectId) p.set('s', d.subjectId);
+  if (d.category) p.set('c', d.category);
+  const qs = p.toString();
+  return qs ? `${basePath}?${qs}` : basePath;
+}
+
 /** Hierarki master data dari GET /levels — tiap jenjang membawa
  *  gradeLevel (tingkat sekolah: SD/SMP/…) dan levelSubjects (mapel
  *  yang diajarkan di jenjang itu). */
@@ -76,6 +102,18 @@ export interface HierarchyLevel {
 /** Tingkat sekolah = prefix kode gradeLevel ('SD-5' → 'SD'). */
 export function tingkatCode(l?: HierarchyLevel | null): string | undefined {
   return l?.gradeLevel?.code?.split('-')[0] || undefined;
+}
+
+/** Urutkan jenjang untuk dropdown: jenjang ber-grade dulu sesuai urutan
+ *  kelas (TK, SD-1…6, SMP-7…9, SMA-10…12), lalu jenjang tanpa grade
+ *  (paket Privat/Extra) per nama. Mencegah jenjang kelas "tenggelam"
+ *  di antara penawaran extra/privat saat tingkat belum dipilih. */
+export function sortLevels<T extends HierarchyLevel>(list: T[]): T[] {
+  return [...list].sort(
+    (a, b) =>
+      (a.gradeLevel?.sortOrder ?? 9999) - (b.gradeLevel?.sortOrder ?? 9999) ||
+      a.name.localeCompare(b.name),
+  );
 }
 
 /** true bila ketiga langkah sudah diputuskan (ALL/none/id asli). */

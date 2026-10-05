@@ -40,6 +40,7 @@ export class LevelsService {
 
   async list(actor: AuthenticatedUser, query: { programId?: string }) {
     const scope = await this.tutorScope.for(actor);
+    const sScope = await this.tutorScope.forStudent(actor);
     const where: Record<string, unknown> = {};
     if (query.programId) where.programId = query.programId;
     // Tutor hanya melihat level dari program yang dia ampu.
@@ -49,12 +50,27 @@ export class LevelsService {
         { id: { in: scope.levelIds } },
       ];
     }
-    return this.prisma.level.findMany({
+    // Siswa hanya melihat jenjang yang dia ikuti (enrollment + kelompok).
+    if (sScope) {
+      where.AND = [{ id: { in: sScope.levelIds } }];
+    }
+    const rows = await this.prisma.level.findMany({
       where,
       include: levelInclude,
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       take: 200,
     });
+    // Tutor: mapel jenjang dibatasi ke yang dia ampu — drill-down tutor tidak
+    // menampilkan mapel di luar ampunannya meski satu jenjang.
+    if (scope) {
+      return rows.map((l) => ({
+        ...l,
+        levelSubjects: l.levelSubjects.filter((ls) =>
+          scope.subjectIds.includes(ls.subjectId),
+        ),
+      }));
+    }
+    return rows;
   }
 
   async get(id: string) {

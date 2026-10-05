@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { CalendarClock, CircleAlert, FileCheck2, FileQuestion, MonitorCheck, Pencil, Plus, Send, Settings2, Star, StopCircle, Trash2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,7 @@ import {
   categoryLabel,
   categoryOptions,
   drillDone,
+  drillFromParams,
   DRILL_ALL,
   DRILL_EMPTY,
   DRILL_NONE,
@@ -44,7 +45,10 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
   const router = useRouter();
   const me = useAuthStore((s) => s.user);
   const canUnlockProctoring = me?.permissions.includes('exam_proctor.unlock') ?? false;
-  const [drill, setDrill] = useState<DrillValue>({ ...DRILL_EMPTY });
+  const searchParams = useSearchParams();
+  const [drill, setDrill] = useState<DrillValue>(() =>
+    drillFromParams((k) => searchParams.get(k)),
+  );
   const [catFilter, setCatFilter] = useState('');
 
   const examsQ = useQuery({
@@ -154,6 +158,7 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
         <ContentDrilldown
           items={allExams}
           levels={levels}
+          categories={catsQ.data}
           value={drill}
           onChange={setDrill}
           itemNoun="Ujian"
@@ -179,15 +184,29 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
         )}
       </div>
 
-      <div className="w-full sm:w-52">
-        <Phase1aSelectField
-          id="exam-cat"
-          label="Kategori"
-          value={catFilter}
-          onChange={setCatFilter}
-          options={categoryOptions(catsQ.data)}
-          placeholder="Semua kategori"
-        />
+      <div className="flex w-full items-end gap-1.5 sm:w-auto">
+        <div className="w-full sm:w-52">
+          <Phase1aSelectField
+            id="exam-cat"
+            label="Kategori"
+            value={catFilter}
+            onChange={setCatFilter}
+            options={categoryOptions(catsQ.data)}
+            placeholder="Semua kategori"
+          />
+        </div>
+        {canManage && (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-9 w-9 shrink-0"
+            title="Kelola tipe ujian (tambah Bab, dsb.)"
+            onClick={() => setManageCats(true)}
+          >
+            <Settings2 className="size-4" />
+          </Button>
+        )}
       </div>
 
       {exams.length === 0 && (

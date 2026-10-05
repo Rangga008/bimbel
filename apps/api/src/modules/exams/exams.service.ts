@@ -514,9 +514,26 @@ export class ExamsService {
    * Hanya PUBLISHED, tanpa answerKey/isCorrect/explanation.
    */
   async listAvailableForStudent(actor: AuthenticatedUser) {
-    const where: Record<string, unknown> = { status: 'PUBLISHED' };
     // Siswa hanya melihat ujian jenjang/mapel/kelompoknya + ujian umum.
     const sScope = await this.tutorScope.forStudent(actor);
+    // Ujian ENDED tetap terlihat bila siswa punya attempt — supaya hasil
+    // yang sudah dirilis masih bisa dibuka dari daftar.
+    let studentId: string | undefined;
+    if (sScope) {
+      const s = await this.prisma.student.findUnique({
+        where: { userId: actor.id },
+        select: { id: true },
+      });
+      studentId = s?.id;
+    }
+    const where: Record<string, unknown> = {
+      OR: [
+        { status: 'PUBLISHED' },
+        ...(studentId
+          ? [{ status: 'ENDED', attempts: { some: { studentId } } }]
+          : []),
+      ],
+    };
     if (sScope) {
       where.AND = [
         {

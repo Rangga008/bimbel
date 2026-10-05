@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { apiFetch } from '@/lib/api-client';
 import type { LevelItem, ProgramItem, SubjectItem } from '@/lib/phase3a-types';
 import { QUESTION_TYPES, DIFFICULTY_LEVELS } from '@/lib/phase3a-types';
-import { categoryOptions, tingkatCode } from '@/lib/content-taxonomy';
+import { categoryOptions, sortLevels, tingkatCode } from '@/lib/content-taxonomy';
 import {
   useContentCategories,
   useContentLevels,
@@ -98,14 +98,23 @@ export function QuestionFormCard({
       sort: Math.min(...levels.filter((l) => tingkatCode(l) === t).map((l) => l.gradeLevel?.sortOrder ?? 9999)),
     }))
     .sort((a, b) => a.sort - b.sort);
+  // Jenjang tanpa gradeLevel (mis. paket Privat) → bucket "Lainnya" agar tidak
+  // hilang saat Tingkat dipilih.
+  if (levels.some((l) => !tingkatCode(l))) {
+    tingkatOptions.push({ value: 'none', label: 'Lainnya', sort: 9999 });
+  }
 
-  const levelOptions = levels
-    .filter(
-      (l) =>
-        (!draft.tingkat || tingkatCode(l) === draft.tingkat) &&
-        (!draft.programId || l.program?.id === draft.programId),
-    )
-    .map((l) => ({ value: l.id, label: l.name }));
+  const levelOptions = sortLevels(levels)
+    .filter((l) => {
+      const tk = tingkatCode(l);
+      const tingkatOk = !draft.tingkat
+        || (draft.tingkat === 'none' ? !tk : tk === draft.tingkat);
+      return tingkatOk && (!draft.programId || l.program?.id === draft.programId);
+    })
+    .map((l) => ({
+      value: l.id,
+      label: l.program?.name ? `${l.name} — ${l.program.name}` : l.name,
+    }));
 
   // Mapel jenjang terpilih; fallback seluruh master mapel bila belum pilih.
   const selectedLevel = levels.find((l) => l.id === draft.levelId);

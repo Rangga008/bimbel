@@ -124,17 +124,21 @@ export class ExamAttemptsService {
     // Fase 3e: Cek apakah result sudah boleh dirilis
     const now = new Date();
     const isResultReleased = now >= attempt.exam.scheduledEndAt;
+    const reveal = attempt.status === 'SUBMITTED' && isResultReleased;
 
-    // Jika attempt belum selesai atau result belum dirilis, kembalikan data terbatas
-    if (attempt.status !== 'SUBMITTED' || !isResultReleased) {
+    // Sudah terkumpul tapi hasil belum dirilis: soal & jawaban disembunyikan
+    // sampai waktu ujian berakhir untuk semua peserta.
+    if (attempt.status === 'SUBMITTED' && !isResultReleased) {
       return {
         ...attempt,
         resultReleased: isResultReleased,
-        items: [], // Tidak kirim item/jawaban jika belum dirilis
+        items: [],
       };
     }
 
-    // Get exam items and answers (hanya jika result sudah dirilis)
+    // IN_PROGRESS/LOCKED: kirim soal ter-sanitasi (tanpa kunci/pembahasan/
+    // isCorrect) + jawaban siswa sendiri supaya refresh melanjutkan isian.
+    // SUBMITTED + released: detail penuh termasuk kunci & pembahasan.
     const [items, answers] = await Promise.all([
       this.prisma.examItem.findMany({
         where: { examId: attempt.examId },
@@ -147,17 +151,16 @@ export class ExamAttemptsService {
               content: true,
               imageUrl: true,
               points: true,
-              // Fase 3d anti-leak: jangan kirim answerKey/explanation ke client jika attempt belum selesai
-              answerKey: attempt.status === 'SUBMITTED',
-              explanation: attempt.status === 'SUBMITTED',
+              // Fase 3d anti-leak: kunci/pembahasan hanya setelah hasil dirilis
+              answerKey: reveal,
+              explanation: reveal,
               options: {
                 orderBy: { sortOrder: 'asc' },
                 select: {
                   id: true,
                   content: true,
                   sortOrder: true,
-                  // Fase 3d anti-leak: jangan kirim isCorrect ke client jika attempt belum selesai
-                  isCorrect: attempt.status === 'SUBMITTED',
+                  isCorrect: reveal,
                 },
               },
             },
@@ -185,11 +188,9 @@ export class ExamAttemptsService {
             ? {
                 selectedOptionIds: answer.selectedOptionIds,
                 textAnswer: answer.textAnswer,
-                // Fase 3d anti-leak: jangan kirim isCorrect ke client jika attempt belum selesai
-                isCorrect:
-                  attempt.status === 'SUBMITTED' ? answer.isCorrect : undefined,
-                score:
-                  attempt.status === 'SUBMITTED' ? answer.score : undefined,
+                // Fase 3d anti-leak: isCorrect/score hanya setelah dirilis
+                isCorrect: reveal ? answer.isCorrect : undefined,
+                score: reveal ? answer.score : undefined,
               }
             : null,
         };

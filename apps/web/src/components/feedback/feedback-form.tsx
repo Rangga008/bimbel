@@ -3,9 +3,11 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -49,6 +51,12 @@ function mondayOf(d: Date): Date {
 	const diff = (day + 6) % 7;
 	return new Date(d.getFullYear(), d.getMonth(), d.getDate() - diff);
 }
+function isoDay(d: Date): string {
+	const y = d.getFullYear();
+	const m = String(d.getMonth() + 1).padStart(2, "0");
+	const dd = String(d.getDate()).padStart(2, "0");
+	return `${y}-${m}-${dd}`;
+}
 function fmtDay(d: Date) {
 	return new Intl.DateTimeFormat("id-ID", {
 		weekday: "long",
@@ -64,12 +72,17 @@ function fmtDay(d: Date) {
  */
 export function FeedbackForm() {
 	const qc = useQueryClient();
-	const [weekStart, setWeekStart] = useState<Date>(() => mondayOf(new Date()));
+	// Minggu dipilih eksplisit lewat tanggal — form baru tampil setelah minggu
+	// dikonfirmasi, sesuai permintaan "pilih minggu dulu dari tanggalnya".
+	const [pickedDate, setPickedDate] = useState("");
+	const [weekStart, setWeekStart] = useState<Date | null>(null);
 	const [drafts, setDrafts] = useState<Record<string, string>>({});
 	// Ortu dengan >1 anak wajib pilih anak dulu — feedback tidak dicampur.
 	const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
-	const weekIso = weekStart.toISOString();
-	const weekEnd = new Date(weekStart.getTime() + 6 * 86400000);
+	const weekIso = weekStart?.toISOString() ?? "";
+	const weekEnd = weekStart
+		? new Date(weekStart.getTime() + 6 * 86400000)
+		: null;
 
 	const contextQ = useQuery({
 		queryKey: ["feedback-context"],
@@ -79,6 +92,7 @@ export function FeedbackForm() {
 		queryKey: ["my-feedback", weekIso],
 		queryFn: () =>
 			apiFetch<MyFeedback>(`/me/feedback?week=${encodeURIComponent(weekIso)}`),
+		enabled: !!weekStart,
 	});
 
 	const existing = useMemo(() => {
@@ -187,30 +201,76 @@ export function FeedbackForm() {
 				</Card>
 			) : null}
 
-			{/* Langkah 2 — pilih minggu (hanya setelah anak dipilih) */}
+			{/* Langkah 2 — pilih minggu dari tanggal (hanya setelah anak dipilih) */}
 			{activeStudentId ? (
-				<div className="flex items-center gap-2">
-					<Button
-						variant="outline"
-						size="icon"
-						onClick={() => setWeekStart(new Date(weekStart.getTime() - 7 * 86400000))}
-					>
-						<ChevronLeft className="size-4" />
-					</Button>
-					<p className="min-w-0 flex-1 text-center text-sm font-medium">
-						{fmtDay(weekStart)} — {fmtDay(weekEnd)}
-					</p>
-					<Button
-						variant="outline"
-						size="icon"
-						onClick={() => setWeekStart(new Date(weekStart.getTime() + 7 * 86400000))}
-					>
-						<ChevronRight className="size-4" />
-					</Button>
-				</div>
+				<Card>
+					<CardContent className="flex flex-col gap-3 pt-4">
+						<Label htmlFor="fb-week-date" className="text-sm font-medium">
+							Pilih minggu — isi satu tanggal apa pun di minggu itu:
+						</Label>
+						<div className="flex flex-wrap items-end gap-2">
+							<Input
+								id="fb-week-date"
+								type="date"
+								className="w-full sm:w-48"
+								value={pickedDate}
+								onChange={(e) => setPickedDate(e.target.value)}
+							/>
+							<Button
+								size="sm"
+								disabled={!pickedDate}
+								onClick={() => {
+									const [y, m, d] = pickedDate.split("-").map(Number);
+									setWeekStart(mondayOf(new Date(y, m - 1, d)));
+									setDrafts({});
+								}}
+							>
+								<CalendarDays /> Tampilkan minggu ini
+							</Button>
+						</div>
+						{weekStart && weekEnd ? (
+							<div className="flex items-center gap-2">
+								<Button
+									variant="outline"
+									size="icon"
+									aria-label="Minggu sebelumnya"
+									onClick={() => {
+										setWeekStart(new Date(weekStart.getTime() - 7 * 86400000));
+										setDrafts({});
+									}}
+								>
+									<ChevronLeft className="size-4" />
+								</Button>
+								<p className="min-w-0 flex-1 text-center text-sm font-medium">
+									{fmtDay(weekStart)} — {fmtDay(weekEnd)}
+								</p>
+								<Button
+									variant="outline"
+									size="icon"
+									aria-label="Minggu berikutnya"
+									onClick={() => {
+										setWeekStart(new Date(weekStart.getTime() + 7 * 86400000));
+										setDrafts({});
+									}}
+								>
+									<ChevronRight className="size-4" />
+								</Button>
+							</div>
+						) : null}
+					</CardContent>
+				</Card>
 			) : null}
 
-			{contextQ.isLoading || mineQ.isLoading ? (
+			{activeStudentId && !weekStart && !contextQ.isLoading ? (
+				<Card>
+					<CardContent className="py-8 text-center text-sm text-muted-foreground">
+						Pilih tanggal lalu tekan &quot;Tampilkan minggu ini&quot; untuk mengisi
+						feedback minggu tersebut.
+					</CardContent>
+				</Card>
+			) : null}
+
+			{weekStart && (contextQ.isLoading || mineQ.isLoading) ? (
 				<Skeleton className="h-40 w-full" />
 			) : null}
 			{contextQ.isError ? (
@@ -221,7 +281,7 @@ export function FeedbackForm() {
 				</Card>
 			) : null}
 
-			{contextQ.data && activeStudentId && !students.some((s) => s.groups.length > 0) ? (
+			{weekStart && contextQ.data && activeStudentId && !students.some((s) => s.groups.length > 0) ? (
 				<EmptyState
 					icon={MessageSquareText}
 					title="Belum ada kelompok"
@@ -229,7 +289,7 @@ export function FeedbackForm() {
 				/>
 			) : null}
 
-			{students.map((st) =>
+			{weekStart ? students.map((st) =>
 				st.groups.map((g) => (
 					<Card key={`${st.id}:${g.id}`}>
 						<CardHeader className="pb-2">
@@ -284,7 +344,7 @@ export function FeedbackForm() {
 						</CardContent>
 					</Card>
 				)),
-			)}
+			) : null}
 		</div>
 	);
 }
