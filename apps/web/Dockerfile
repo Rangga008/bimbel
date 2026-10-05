@@ -25,6 +25,10 @@ RUN npm run build
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# Next.js standalone server.js membaca process.env.HOSTNAME — tanpa ini ia
+# bisa bind ke localhost saja sehingga proxy luar (Railway/nginx) mendapat 502.
+# PORT tidak di-hardcode: Railway meng-inject PORT saat runtime.
+ENV HOSTNAME=0.0.0.0
 COPY --from=build /app/public ./public
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
