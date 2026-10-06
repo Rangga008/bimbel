@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Providers } from "@/components/providers";
 import { AuthBootstrap } from "@/components/auth-bootstrap";
 import { DynamicFavicon } from "@/components/dynamic-favicon";
+import { ChunkErrorGuard } from "@/components/chunk-error-guard";
 import { Toaster } from "@/components/ui/sonner";
 
 // Font brand: Plus Jakarta Sans (variable) di-bundle di repo via
@@ -91,6 +92,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 				<ThemeProvider>
 					<Providers>
 						<AuthBootstrap>
+							{/* Auto-muat ulang sekali saat chunk versi lama tidak
+							    ditemukan setelah deploy baru. */}
+							<ChunkErrorGuard />
 							{/* Re-apply favicon di client saat branding berubah realtime
 							    (metadata SSR di-cache 60d). */}
 							<DynamicFavicon />
