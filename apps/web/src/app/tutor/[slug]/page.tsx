@@ -51,7 +51,8 @@ export default async function TutorMenuPage({
 				title="Feedback Siswa Mingguan"
 			/>
 		);
-	if (slug === "materi") return <MaterialsManager canManage={false} />;
+	if (slug === "materi")
+		return <MaterialsManager canManage={false} basePath="/tutor/materi" />;
 	if (slug === "soal") return <QuestionsManager canManage basePath="/tutor/soal" />;
 	if (slug === "latsol") return <LatsolPage canManage basePath="/tutor/latsol" />;
 	if (slug === "ujian") return <ExamsManager canManage={false} basePath="/tutor/ujian" />;

@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { MaterialRow } from '@/lib/phase3a-types';
-import { drillBackUrl, tingkatCode } from '@/lib/content-taxonomy';
+import { drillBackFromUrl, tingkatCode } from '@/lib/content-taxonomy';
 import { useContentLevels } from '@/components/shared/content-drilldown';
 import { MaterialForm, type MaterialFormState } from './material-form';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -33,6 +33,8 @@ function toForm(m: MaterialRow): MaterialFormState {
     fileType: m.fileType ?? '',
     fileSize: m.fileSize != null ? String(m.fileSize) : '',
     isActive: m.isActive,
+    examId: m.examId ?? '',
+    latsolPackageId: m.latsolPackageId ?? '',
   };
 }
 
@@ -47,6 +49,7 @@ function MaterialEditForm({
 }) {
   const qc = useQueryClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [form, setForm] = useState<MaterialFormState>(() => toForm(initial));
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -58,7 +61,7 @@ function MaterialEditForm({
     if (lvl) setForm((f) => ({ ...f, tingkat: tingkatCode(lvl) ?? 'none' }));
   }, [levelsQ.data, form.levelId, form.tingkat]);
 
-  const backUrl = drillBackUrl(basePath, {
+  const backUrl = drillBackFromUrl(basePath, (k) => searchParams.get(k), {
     tingkat: form.tingkat,
     levelId: form.levelId,
     subjectId: form.subjectId,
@@ -83,6 +86,9 @@ function MaterialEditForm({
           fileType: form.fileType || undefined,
           fileSize: form.fileSize ? Number(form.fileSize) : undefined,
           isActive: form.isActive,
+          // Dikirim eksplisit (string kosong → null) supaya tautan bisa dilepas.
+          examId: form.examId || null,
+          latsolPackageId: form.latsolPackageId || null,
         },
       }),
     onSuccess: () => {
@@ -118,7 +124,7 @@ function MaterialEditForm({
           variant="outline"
           onClick={() =>
             router.push(
-              drillBackUrl(basePath, {
+              drillBackFromUrl(basePath, (k) => searchParams.get(k), {
                 tingkat: form.tingkat,
                 levelId: form.levelId,
                 subjectId: form.subjectId,

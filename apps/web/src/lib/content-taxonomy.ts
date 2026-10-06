@@ -78,13 +78,44 @@ export function drillBackUrl(
   basePath: string,
   d: { tingkat?: string; levelId?: string; subjectId?: string; category?: string },
 ): string {
+  return `${basePath}${drillQuery(d)}`;
+}
+
+/** Fragment query string posisi drill (?g=…&l=…&s=…&c=…, atau '' bila kosong).
+ *  Dipakai untuk meneruskan konteks drill ke URL halaman detail/buat/edit. */
+export function drillQuery(d: {
+  gradeLevelId?: string;
+  tingkat?: string;
+  levelId?: string;
+  subjectId?: string;
+  category?: string;
+}): string {
   const p = new URLSearchParams();
-  if (d.tingkat) p.set('g', d.tingkat);
+  const g = d.gradeLevelId ?? d.tingkat;
+  if (g) p.set('g', g);
   if (d.levelId) p.set('l', d.levelId);
   if (d.subjectId) p.set('s', d.subjectId);
   if (d.category) p.set('c', d.category);
   const qs = p.toString();
-  return qs ? `${basePath}?${qs}` : basePath;
+  return qs ? `?${qs}` : '';
+}
+
+/** URL kembali ke daftar: utamakan posisi drill yang dibawa URL saat ini
+ *  (g/l/s/c — mis. pilihan "Semua"), fallback ke taksonomi entity/form. */
+export function drillBackFromUrl(
+  basePath: string,
+  get: (k: string) => string | null,
+  fallback: { tingkat?: string; levelId?: string; subjectId?: string; category?: string },
+): string {
+  const d = drillFromParams(get);
+  return d.gradeLevelId || d.levelId || d.subjectId || d.category
+    ? drillBackUrl(basePath, {
+        tingkat: d.gradeLevelId,
+        levelId: d.levelId,
+        subjectId: d.subjectId,
+        category: d.category,
+      })
+    : drillBackUrl(basePath, fallback);
 }
 
 /** Hierarki master data dari GET /levels — tiap jenjang membawa

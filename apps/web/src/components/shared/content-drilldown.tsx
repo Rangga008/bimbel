@@ -1,5 +1,7 @@
 "use client";
 
+import { useCallback, useState } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { ArrowLeft, BookOpen, FileText, GraduationCap, Layers, Settings2, Tag } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -12,6 +14,7 @@ import {
   DRILL_ALL,
   DRILL_NONE,
   drillBuckets,
+  drillFromParams,
   tingkatCode,
   type ContentCategoryItem,
   type DrillValue,
@@ -59,6 +62,47 @@ export function useContentLevels() {
     retry: false,
     staleTime: 60_000,
   });
+}
+
+/** State drill yang tersinkron ke query string (?g=&l=&s=&c=) via
+ *  history.replaceState — tidak menambah entri riwayat browser, tapi posisi
+ *  drill ikut tersimpan di URL sehingga kembali dari halaman lain
+ *  (buat/edit/player) atau browser-back memulihkan posisi semula. */
+export function useDrillState(): [
+  DrillValue,
+  (v: DrillValue | ((prev: DrillValue) => DrillValue)) => void,
+] {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [drill, setDrill] = useState<DrillValue>(() =>
+    drillFromParams((k) => searchParams.get(k)),
+  );
+
+  const update = useCallback(
+    (v: DrillValue | ((prev: DrillValue) => DrillValue)) => {
+      setDrill((prev) => {
+        const d = typeof v === 'function' ? v(prev) : v;
+        if (typeof window !== 'undefined') {
+          // Pertahankan param non-drill (mis. play=, exam=) yang sedang aktif.
+          const p = new URLSearchParams(window.location.search);
+          p.delete('g');
+          p.delete('l');
+          p.delete('s');
+          p.delete('c');
+          if (d.gradeLevelId) p.set('g', d.gradeLevelId);
+          if (d.levelId) p.set('l', d.levelId);
+          if (d.subjectId) p.set('s', d.subjectId);
+          if (d.category) p.set('c', d.category);
+          const qs = p.toString();
+          window.history.replaceState(null, '', `${pathname}${qs ? `?${qs}` : ''}`);
+        }
+        return d;
+      });
+    },
+    [pathname],
+  );
+
+  return [drill, update];
 }
 
 /** Kategori/tipe konten dinamis dari master data (semua role boleh baca). */

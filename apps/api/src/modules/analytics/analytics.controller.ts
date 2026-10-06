@@ -3,7 +3,8 @@
  * Per-question analytics & student performance dashboard
  * Role-based access control for Student, Parent, Tutor, Admin Academic
  */
-import { Controller, Get, Query, UseGuards, Param } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Param, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../rbac/permissions.guard';
 import { RequirePermissions } from '../rbac/permissions.decorator';
@@ -49,6 +50,83 @@ export class AnalyticsController {
   @RequirePermissions(PERMISSION_CODES.ANALYTICS_STUDENT_PERFORMANCE_VIEW)
   async getStudentPerformance(@Param('studentId') studentId: string) {
     return this.analytics.getStudentPerformance(studentId);
+  }
+
+  /**
+   * Rekap nilai semua siswa dalam satu ujian (matriks mapel/bab — gaya "HASIL TO").
+   * Access: Admin Academic, Tutor
+   */
+  @Get('exam/:examId/score-recap')
+  @RequirePermissions(PERMISSION_CODES.ANALYTICS_EXAM_VIEW)
+  async getExamScoreRecap(@Param('examId') examId: string) {
+    return this.analytics.getExamScoreRecap(examId);
+  }
+
+  /**
+   * Rekap jawaban per nomor soal (baris KUNCI + jawaban tiap siswa — gaya "JAWABAN SISWA").
+   */
+  @Get('exam/:examId/answer-recap')
+  @RequirePermissions(PERMISSION_CODES.ANALYTICS_EXAM_VIEW)
+  async getExamAnswerRecap(@Param('examId') examId: string) {
+    return this.analytics.getExamAnswerRecap(examId);
+  }
+
+  /** Export rekap nilai ujian ke .xlsx. */
+  @Get('exam/:examId/score-recap.xlsx')
+  @RequirePermissions(PERMISSION_CODES.ANALYTICS_EXAM_VIEW)
+  async exportExamScoreRecap(
+    @Param('examId') examId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, filename } = await this.analytics.exportExamScoreRecapXlsx(examId);
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': String(buffer.length),
+    });
+    res.send(buffer);
+  }
+
+  /**
+   * Dokumen cetak HTML siap-print (auto window.print):
+   * part=questions (lembar soal, +key=1 untuk kunci) | answers (rekap jawaban) | scores (rekap nilai).
+   */
+  @Get('exam/:examId/print')
+  @RequirePermissions(PERMISSION_CODES.ANALYTICS_EXAM_VIEW)
+  async printExam(
+    @Param('examId') examId: string,
+    @Query('part') part: string,
+    @Query('key') key: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    let html: string;
+    if (part === 'answers') {
+      const recap = await this.analytics.getExamAnswerRecap(examId);
+      html = this.analytics.renderAnswerRecapHtml(recap);
+    } else if (part === 'scores') {
+      const recap = await this.analytics.getExamScoreRecap(examId);
+      html = this.analytics.renderScoreRecapHtml(recap);
+    } else {
+      const sheet = await this.analytics.getExamQuestionSheet(examId, key === '1');
+      html = this.analytics.renderQuestionSheetHtml(sheet);
+    }
+    res.set({ 'Content-Type': 'text/html; charset=utf-8' });
+    res.send(html);
+  }
+
+  /**
+   * Laporan bulanan anak (kehadiran + nilai ujian + latsol + poin).
+   * Access: Parent (own children only). period=YYYY-MM, default bulan berjalan.
+   */
+  @Get('parent/child/:studentId/monthly')
+  @RequirePermissions(PERMISSION_CODES.ANALYTICS_PARENT_CHILD_VIEW)
+  async getChildMonthlyReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('studentId') studentId: string,
+    @Query('period') period?: string,
+  ) {
+    return this.analytics.getChildMonthlyReport(user.id, studentId, period ?? '');
   }
 
   /**

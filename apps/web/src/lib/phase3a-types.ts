@@ -15,6 +15,10 @@ export interface MaterialRow {
   category?: string | null;
   createdAt: string;
   updatedAt: string;
+  examId?: string | null;
+  latsolPackageId?: string | null;
+  exam?: { id: string; title: string; status: string; scheduledStartAt: string } | null;
+  latsolPackage?: { id: string; title: string; isActive: boolean } | null;
   program?: { id: string; name: string; code: string | null } | null;
   level?: { id: string; name: string; code: string | null } | null;
   group?: { id: string; name: string; code: string | null } | null;

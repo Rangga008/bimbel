@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Search } from 'lucide-react';
@@ -16,12 +16,12 @@ import {
   DrillBreadcrumb,
   useContentCategories,
   useContentLevels,
+  useDrillState,
 } from '@/components/shared/content-drilldown';
 import {
   applyDrill,
+  drillBackUrl,
   drillDone,
-  drillFromParams,
-  type DrillValue,
 } from '@/lib/content-taxonomy';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { ExamAttempt, ExamRow, ExamStatus } from '@/lib/phase3c-types';
@@ -56,9 +56,16 @@ export function ExamListStudent() {
   const searchParams = useSearchParams();
   // Drill Tingkat → Jenjang → Mapel → Tipe, sama seperti halaman konten lain.
   // Posisi drill disimpan di URL supaya tombol kembali tidak me-reset langkah.
-  const [drill, setDrill] = useState<DrillValue>(() =>
-    drillFromParams((k) => searchParams.get(k)),
-  );
+  const [drill, setDrill] = useDrillState();
+  // URL halaman attempt membawa posisi drill — dipakai exam-taker untuk
+  // tombol kembali ke daftar pada posisi yang sama.
+  const attemptUrl = (attemptId: string) =>
+    drillBackUrl(`/siswa/ujian/${attemptId}`, {
+      tingkat: drill.gradeLevelId,
+      levelId: drill.levelId,
+      subjectId: drill.subjectId,
+      category: drill.category,
+    });
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
 
@@ -72,17 +79,40 @@ export function ExamListStudent() {
 
   const [startTarget, setStartTarget] = useState<ExamRow | null>(null);
 
+  // Deep-link dari materi: /siswa/ujian?exam=<id> → langsung buka ujian itu
+  // (dialog mulai bila belum ada attempt, halaman attempt bila sudah ada).
+  useEffect(() => {
+    const target = searchParams.get('exam');
+    const data = dataQ.data;
+    if (!target || !data) return;
+    const exam = data.exams.find((e) => e.id === target);
+    if (!exam) return;
+    const attempt = data.attemptsMap[exam.id];
+    if (attempt) {
+      router.replace(attemptUrl(attempt.id));
+      return;
+    }
+    setStartTarget(exam);
+    // Param sudah dikonsumsi — hapus supaya dialog tidak terbuka ulang
+    // saat query revalidate atau user menekan browser-back.
+    const p = new URLSearchParams(searchParams.toString());
+    p.delete('exam');
+    const qs = p.toString();
+    router.replace(`${window.location.pathname}${qs ? `?${qs}` : ''}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, dataQ.data]);
+
   const startM = useMutation({
     mutationFn: (examId: string) => apiFetch<{ id: string }>('/exam-attempts/start', { method: 'POST', body: { examId } }),
     onSuccess: (data) => {
       setStartTarget(null);
-      router.push(`/siswa/ujian/${data.id}`);
+      router.push(attemptUrl(data.id));
     },
     onError: (e) => toast.error(err(e, 'Gagal memulai ujian')),
   });
 
   const continueExam = (attemptId: string) => {
-    router.push(`/siswa/ujian/${attemptId}`);
+    router.push(attemptUrl(attemptId));
   };
 
   const viewResult = (attemptId: string, resultReleased?: boolean) => {
@@ -90,7 +120,7 @@ export function ExamListStudent() {
       toast.error('Hasil ujian belum dirilis. Silakan tunggu sampai waktu ujian selesai untuk semua peserta.');
       return;
     }
-    router.push(`/siswa/ujian/${attemptId}`);
+    router.push(attemptUrl(attemptId));
   };
 
   const getStatusBadge = (status: ExamStatus) => {
@@ -319,7 +349,9 @@ export function ExamListStudent() {
           startTarget
             ? `${startTarget.items.length} soal · nilai maks ${startTarget.maxScore}` +
               `${startTarget.durationMinutes ? ` · durasi ${startTarget.durationMinutes} menit` : ''}. ` +
-              'Selama ujian jangan berpindah tab/jendela — pelanggaran akan dicatat dan bisa mengunci attempt Anda.'
+              (startTarget.proctoringEnabled === false
+                ? 'Ujian ini tanpa proteksi — Anda bebas keluar-masuk halaman; jawaban tersimpan otomatis.'
+                : 'Ujian ini diproteksi: berjalan layar penuh, dan keluar halaman/aplikasi akan mengunci attempt Anda sampai dibuka pengawas.')
             : undefined
         }
         confirmLabel="Ya, mulai sekarang"

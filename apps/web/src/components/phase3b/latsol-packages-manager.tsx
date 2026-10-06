@@ -1,7 +1,7 @@
 "use client";
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { NotebookPen, Pencil, Play, Plus, Search, Settings2, Tag, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +14,7 @@ import { useDebouncedValue } from '@/lib/use-debounced-value';
 import type { LatsolPackageItem } from '@/lib/phase3b-types';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { EmptyState } from '@/components/shared/empty-state';
-import { ContentDrilldown, DrillBreadcrumb, useContentCategories, useContentLevels } from '@/components/shared/content-drilldown';
+import { ContentDrilldown, DrillBreadcrumb, useContentCategories, useContentLevels, useDrillState } from '@/components/shared/content-drilldown';
 import { ContentCategoriesManager } from '@/components/shared/content-categories-manager';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
 import {
@@ -22,11 +22,10 @@ import {
   categoryLabel,
   categoryOptions,
   drillDone,
-  drillFromParams,
+  drillQuery,
   DRILL_ALL,
   DRILL_EMPTY,
   DRILL_NONE,
-  type DrillValue,
 } from '@/lib/content-taxonomy';
 
 function err(e: unknown, fb: string) {
@@ -45,10 +44,7 @@ export function LatsolPackagesManager({
 }) {
   const qc = useQueryClient();
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const [drill, setDrill] = useState<DrillValue>(() =>
-    drillFromParams((k) => searchParams.get(k)),
-  );
+  const [drill, setDrill] = useDrillState();
   const [catFilter, setCatFilter] = useState('');
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
@@ -86,7 +82,7 @@ export function LatsolPackagesManager({
   const done = drillDone(drill) || !!debouncedSearch;
 
   const createUrl = () => {
-    const p = new URLSearchParams();
+    const p = new URLSearchParams(drillQuery(drill));
     if (drill.levelId && drill.levelId !== DRILL_ALL && drill.levelId !== DRILL_NONE) p.set('levelId', drill.levelId);
     if (drill.subjectId && drill.subjectId !== DRILL_ALL && drill.subjectId !== DRILL_NONE) p.set('subjectId', drill.subjectId);
     if (drill.category && drill.category !== DRILL_ALL && drill.category !== DRILL_NONE) p.set('category', drill.category);
@@ -105,12 +101,9 @@ export function LatsolPackagesManager({
     return (
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Paket Latsol</h1>
-            <p className="text-sm text-muted-foreground">
-              Paket latihan dikategorikan per jenjang → mapel → tipe.
-            </p>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Paket latihan dikategorikan per jenjang → mapel → tipe.
+          </p>
           <div className="relative w-full sm:w-64">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -139,10 +132,7 @@ export function LatsolPackagesManager({
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        {!debouncedSearch && <DrillBreadcrumb items={items} levels={levels} categories={catsQ.data} value={drill} onChange={setDrill} />}
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Paket Latsol</h1>
-      </div>
+      {!debouncedSearch && <DrillBreadcrumb items={items} levels={levels} categories={catsQ.data} value={drill} onChange={setDrill} />}
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex w-full items-end gap-1.5 sm:w-auto">
           <div className="w-full sm:w-44">
@@ -220,7 +210,7 @@ export function LatsolPackagesManager({
                   )}
                   {canManage && (
                     <>
-                      <Button variant="outline" size="sm" onClick={() => router.push(`${basePath}/${pkg.id}/edit`)}>
+                      <Button variant="outline" size="sm" onClick={() => router.push(`${basePath}/${pkg.id}/edit${drillQuery(drill)}`)}>
                         <Pencil /> Edit
                       </Button>
                       <Button

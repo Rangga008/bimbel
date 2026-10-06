@@ -19,7 +19,9 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Phase1aSelectField } from "@/components/phase1a/phase1a-form-dialog";
-import { apiFetch, ApiError } from "@/lib/api-client";
+import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
+import { toast } from "sonner";
+import { Printer, FileSpreadsheet } from "lucide-react";
 
 interface ProgramOption {
 	id: string;
@@ -147,6 +149,25 @@ export function AdminAcademicAnalytics() {
   const selectedExam =
     data?.examAnalytics.find((e) => e.examId === selectedExamId) ?? null;
 
+  /** Buka dokumen cetak HTML di tab baru / unduh xlsx. */
+  async function openPrint(path: string, downloadName?: string) {
+    try {
+      const blob = await apiFetchBlob(path);
+      const url = URL.createObjectURL(blob);
+      if (downloadName) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = downloadName;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      } else {
+        window.open(url, "_blank", "noopener");
+      }
+    } catch (e) {
+      toast.error(err(e, "Gagal membuka dokumen."));
+    }
+  }
+
   // ---- Tampilan detail: analisis soal untuk satu ujian ----
   if (selectedExam) {
     const summary = examSummary(selectedExam);
@@ -173,6 +194,43 @@ export function AdminAcademicAnalytics() {
           <Badge variant={accuracyVariant(summary.avgAccuracy)} className="text-sm">
             Akurasi {summary.avgAccuracy.toFixed(1)}%
           </Badge>
+        </div>
+
+        {/* Rekap & cetak — format mengikuti laporan hasil TO (PDF referensi). */}
+        <div className="flex flex-wrap gap-2 rounded-xl border p-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => openPrint(`/analytics/exam/${selectedExam.examId}/print?part=scores`)}
+          >
+            <Printer className="size-4" /> Rekap Nilai (cetak)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => openPrint(`/analytics/exam/${selectedExam.examId}/print?part=answers`)}
+          >
+            <Printer className="size-4" /> Rekap Jawaban Siswa (cetak)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => openPrint(`/analytics/exam/${selectedExam.examId}/print?part=questions`)}
+          >
+            <Printer className="size-4" /> Cetak Soal
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              openPrint(
+                `/analytics/exam/${selectedExam.examId}/score-recap.xlsx`,
+                `rekap-nilai-${selectedExam.examTitle.replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase()}.xlsx`,
+              )
+            }
+          >
+            <FileSpreadsheet className="size-4" /> Rekap Nilai — Excel
+          </Button>
         </div>
 
         {selectedExam.questionAnalytics.length === 0 ? (

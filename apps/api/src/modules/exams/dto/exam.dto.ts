@@ -1,4 +1,4 @@
-import { IsArray, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export enum ExamStatus {
   DRAFT = 'DRAFT',
@@ -42,6 +42,11 @@ export class CreateExamDto {
   @IsInt()
   @Min(0)
   durationMinutes?: number;
+
+  /** Proteksi fullscreen+kunci saat siswa keluar (default true). */
+  @IsOptional()
+  @IsBoolean()
+  proctoringEnabled?: boolean;
 
   @IsOptional()
   @IsString()
@@ -98,6 +103,10 @@ export class UpdateExamDto {
   @IsInt()
   @Min(0)
   durationMinutes?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  proctoringEnabled?: boolean;
 
   @IsOptional()
   @IsString()

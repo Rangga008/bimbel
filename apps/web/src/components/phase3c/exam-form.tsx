@@ -21,6 +21,8 @@ export interface ExamFormState {
   scheduledStartAt: string;
   scheduledEndAt: string;
   durationMinutes?: number;
+  /** Proteksi fullscreen+kunci saat siswa keluar (default aktif). */
+  proctoringEnabled: boolean;
   notes: string;
   questionIds: string[];
   status?: ExamStatus;
@@ -36,6 +38,7 @@ export function emptyExamForm(): ExamFormState {
     scheduledStartAt: '',
     scheduledEndAt: '',
     durationMinutes: undefined,
+    proctoringEnabled: true,
     notes: '',
     questionIds: [],
     pickerFilters: { ...emptyQuestionPickerFilters },
@@ -138,6 +141,26 @@ export function ExamForm({
             }
           />
         </div>
+        <label
+          htmlFor="ex-proctoring"
+          className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3"
+        >
+          <input
+            id="ex-proctoring"
+            type="checkbox"
+            checked={form.proctoringEnabled}
+            onChange={(e) => onChange({ ...form, proctoringEnabled: e.target.checked })}
+            className="mt-0.5 h-4 w-4 accent-emerald-600"
+          />
+          <span className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium">Proteksi ujian (proctoring)</span>
+            <span className="text-xs text-muted-foreground">
+              Aktif: ujian berjalan fullscreen — siswa yang keluar halaman/aplikasi langsung
+              terkunci dan harus dibuka pengawas. Nonaktif: siswa bebas keluar-masuk,
+              hanya auto-submit saat waktu habis.
+            </span>
+          </span>
+        </label>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="ex-notes">Catatan</Label>
           <Textarea

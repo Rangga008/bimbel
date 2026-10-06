@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -37,7 +37,7 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { ExamStatus } from '@/lib/phase3c-types';
 import { useAuthStore } from '@/stores/auth-store';
-import { categoryLabel, drillBackUrl, tingkatCode } from '@/lib/content-taxonomy';
+import { categoryLabel, drillBackFromUrl, tingkatCode } from '@/lib/content-taxonomy';
 import {
   useContentCategories,
   useContentLevels,
@@ -190,6 +190,7 @@ export function ExamProctoringPage({
   basePath: string;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const qc = useQueryClient();
   const me = useAuthStore((s) => s.user);
   const canUnlock =
@@ -264,7 +265,7 @@ export function ExamProctoringPage({
   };
 
   // Kembali ke daftar ujian di posisi drill yang sama dengan ujian ini.
-  const backUrl = drillBackUrl(basePath, {
+  const backUrl = drillBackFromUrl(basePath, (k) => searchParams.get(k), {
     tingkat: tingkatCode(levelsQ.data?.find((l) => l.id === exam.level?.id)),
     levelId: exam.level?.id,
     subjectId: exam.subject?.id,

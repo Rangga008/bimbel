@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import {
-  drillBackUrl,
+  drillBackFromUrl,
   tingkatCode,
   type HierarchyLevel,
 } from '@/lib/content-taxonomy';
@@ -27,6 +27,7 @@ export function MaterialCreatePage({
 }) {
   const qc = useQueryClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [form, setForm] = useState(() => ({
     ...emptyMaterialForm(),
     levelId: initial?.levelId ?? '',
@@ -69,13 +70,15 @@ export function MaterialCreatePage({
           fileUrl: form.fileUrl || undefined,
           fileType: form.fileType || undefined,
           fileSize: form.fileSize ? Number(form.fileSize) : undefined,
+          examId: form.examId || undefined,
+          latsolPackageId: form.latsolPackageId || undefined,
         },
       }),
     onSuccess: () => {
       toast.success('Materi berhasil ditambahkan.');
       qc.invalidateQueries({ queryKey: ['materials'] });
       router.push(
-        drillBackUrl(basePath, {
+        drillBackFromUrl(basePath, (k) => searchParams.get(k), {
           tingkat: form.tingkat,
           levelId: form.levelId,
           subjectId: form.subjectId,
@@ -103,7 +106,7 @@ export function MaterialCreatePage({
           variant="outline"
           onClick={() =>
             router.push(
-              drillBackUrl(basePath, {
+              drillBackFromUrl(basePath, (k) => searchParams.get(k), {
                 tingkat: form.tingkat,
                 levelId: form.levelId,
                 subjectId: form.subjectId,

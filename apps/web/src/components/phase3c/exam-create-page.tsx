@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import {
-  drillBackUrl,
+  drillBackFromUrl,
   tingkatCode,
   type HierarchyLevel,
 } from '@/lib/content-taxonomy';
@@ -27,6 +27,7 @@ export function ExamCreatePage({
 }) {
   const qc = useQueryClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [form, setForm] = useState(() => {
     const f = emptyExamForm();
     f.category = initial?.category ?? '';
@@ -73,6 +74,7 @@ export function ExamCreatePage({
           scheduledStartAt: form.scheduledStartAt,
           scheduledEndAt: form.scheduledEndAt,
           durationMinutes: form.durationMinutes,
+          proctoringEnabled: form.proctoringEnabled,
           notes: form.notes || undefined,
           questionIds: form.questionIds,
         },
@@ -81,7 +83,7 @@ export function ExamCreatePage({
       toast.success('Ujian berhasil dibuat.');
       qc.invalidateQueries({ queryKey: ['exams'] });
       router.push(
-        drillBackUrl(basePath, {
+        drillBackFromUrl(basePath, (k) => searchParams.get(k), {
           tingkat: form.pickerFilters.tingkat,
           levelId: form.pickerFilters.levelId,
           subjectId: form.pickerFilters.subjectId,
@@ -116,7 +118,7 @@ export function ExamCreatePage({
           variant="outline"
           onClick={() =>
             router.push(
-              drillBackUrl(basePath, {
+              drillBackFromUrl(basePath, (k) => searchParams.get(k), {
                 tingkat: form.pickerFilters.tingkat,
                 levelId: form.pickerFilters.levelId,
                 subjectId: form.pickerFilters.subjectId,

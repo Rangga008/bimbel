@@ -113,6 +113,7 @@ export class ExamAttemptsService {
             title: true,
             scheduledStartAt: true,
             scheduledEndAt: true,
+            proctoringEnabled: true,
           },
         },
       },
@@ -474,8 +475,9 @@ export class ExamAttemptsService {
       data: { status: 'ENDED' },
     });
 
+    // IN_PROGRESS + LOCKED ikut di-submit — jawaban apa adanya ikut dinilai.
     const inProgress = await this.prisma.examAttempt.findMany({
-      where: { examId, status: 'IN_PROGRESS' },
+      where: { examId, status: { in: ['IN_PROGRESS', 'LOCKED'] } },
       select: { id: true },
     });
     for (const a of inProgress) {
@@ -517,8 +519,9 @@ export class ExamAttemptsService {
         },
       },
     });
-    if (!attempt || attempt.status !== 'IN_PROGRESS') {
-      return; // Sudah SUBMITTED/LOCKED oleh worker lain, atau tidak ditemukan.
+    // LOCKED juga di-submit — dipanggil scheduler saat waktu habis / endExam.
+    if (!attempt || !['IN_PROGRESS', 'LOCKED'].includes(attempt.status)) {
+      return; // Sudah SUBMITTED oleh worker lain, atau tidak ditemukan.
     }
 
     const now = new Date();
@@ -528,9 +531,9 @@ export class ExamAttemptsService {
     // Grade the attempt (idempotent: recompute deterministik per answer)
     const graded = await this.gradeAttempt(attemptId);
 
-    // Finalisasi bersyarat: hanya menang bila masih IN_PROGRESS.
+    // Finalisasi bersyarat: hanya menang bila belum SUBMITTED.
     const finalized = await this.prisma.examAttempt.updateMany({
-      where: { id: attemptId, status: 'IN_PROGRESS' },
+      where: { id: attemptId, status: { in: ['IN_PROGRESS', 'LOCKED'] } },
       data: {
         status: 'SUBMITTED',
         submittedAt: now,

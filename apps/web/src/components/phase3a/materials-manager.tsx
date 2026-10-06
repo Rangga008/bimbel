@@ -1,7 +1,7 @@
 "use client";
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { BookOpen, FileText, GraduationCap, Layers, Pencil, Plus, Search, Settings2, Tag, Trash2, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -16,18 +16,17 @@ import type { MaterialRow, GroupItem } from '@/lib/phase3a-types';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { EmptyState } from '@/components/shared/empty-state';
-import { ContentDrilldown, DrillBreadcrumb, useContentCategories, useContentLevels } from '@/components/shared/content-drilldown';
+import { ContentDrilldown, DrillBreadcrumb, useContentCategories, useContentLevels, useDrillState } from '@/components/shared/content-drilldown';
 import { ContentCategoriesManager } from '@/components/shared/content-categories-manager';
 import {
   applyDrill,
   categoryLabel,
   categoryOptions,
   drillDone,
-  drillFromParams,
+  drillQuery,
   DRILL_ALL,
   DRILL_EMPTY,
   DRILL_NONE,
-  type DrillValue,
 } from '@/lib/content-taxonomy';
 
 function err(e: unknown, fb: string) {
@@ -38,10 +37,7 @@ function err(e: unknown, fb: string) {
 export function MaterialsManager({ canManage, basePath = '/materi' }: { canManage: boolean; basePath?: string }) {
   const qc = useQueryClient();
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const [drill, setDrill] = useState<DrillValue>(() =>
-    drillFromParams((k) => searchParams.get(k)),
-  );
+  const [drill, setDrill] = useDrillState();
   const [groupId, setGroupId] = useState('');
   const [catFilter, setCatFilter] = useState('');
   const [search, setSearch] = useState('');
@@ -50,6 +46,9 @@ export function MaterialsManager({ canManage, basePath = '/materi' }: { canManag
   const roles = useAuthStore((s) => s.user?.roles ?? []);
   // Siswa tak punya akses /groups — kelompoknya sudah dibatasi backend.
   const showGroupFilter = canManage || roles.includes('TUTOR');
+  // Portal induk ("/admin-academic/materi" → "/admin-academic") untuk tautan
+  // konten terkait ke halaman latsol/ujian di portal yang sama.
+  const portalBase = basePath.replace(/\/materi.*$/, '') || '';
 
   const listQ = useQuery({
     queryKey: ['materials', groupId, debouncedSearch],
@@ -90,7 +89,7 @@ export function MaterialsManager({ canManage, basePath = '/materi' }: { canManag
   const done = drillDone(drill) || !!debouncedSearch;
 
   const createUrl = () => {
-    const p = new URLSearchParams();
+    const p = new URLSearchParams(drillQuery(drill));
     if (drill.levelId && drill.levelId !== DRILL_ALL && drill.levelId !== DRILL_NONE) p.set('levelId', drill.levelId);
     if (drill.subjectId && drill.subjectId !== DRILL_ALL && drill.subjectId !== DRILL_NONE) p.set('subjectId', drill.subjectId);
     if (drill.category && drill.category !== DRILL_ALL && drill.category !== DRILL_NONE) p.set('category', drill.category);
@@ -242,9 +241,33 @@ export function MaterialsManager({ canManage, basePath = '/materi' }: { canManag
                     <FileText className="size-4" /> Lihat File
                   </a>
                 )}
+                {(m.latsolPackage || m.exam) && (
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {m.latsolPackage && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          router.push(`${portalBase}/latsol?play=${m.latsolPackage!.id}`)
+                        }
+                      >
+                        <FileText /> {m.latsolPackage.title}
+                      </Button>
+                    )}
+                    {m.exam && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => router.push(`${portalBase}/ujian?exam=${m.exam!.id}`)}
+                      >
+                        <GraduationCap /> {m.exam.title}
+                      </Button>
+                    )}
+                  </div>
+                )}
                 {canManage && (
                   <div className="mt-1 flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => router.push(`${basePath}/${m.id}/edit`)}>
+                    <Button variant="outline" size="sm" onClick={() => router.push(`${basePath}/${m.id}/edit${drillQuery(drill)}`)}>
                       <Pencil /> Edit
                     </Button>
                     <Button

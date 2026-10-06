@@ -188,6 +188,7 @@ export class ExamsService {
           status: 'DRAFT',
           maxScore,
           durationMinutes: dto.durationMinutes,
+          proctoringEnabled: dto.proctoringEnabled ?? true,
           notes: dto.notes?.trim(),
           createdBy: actorId,
         },
@@ -340,6 +341,7 @@ export class ExamsService {
             status: dto.status,
             maxScore,
             durationMinutes: dto.durationMinutes,
+            proctoringEnabled: dto.proctoringEnabled,
             notes: dto.notes?.trim(),
           },
           include: {
@@ -372,6 +374,7 @@ export class ExamsService {
         scheduledEndAt: dto.scheduledEndAt ? new Date(dto.scheduledEndAt) : undefined,
         status: dto.status,
         durationMinutes: dto.durationMinutes,
+        proctoringEnabled: dto.proctoringEnabled,
         notes: dto.notes?.trim(),
       },
       include: {
@@ -560,6 +563,7 @@ export class ExamsService {
         status: true,
         maxScore: true,
         durationMinutes: true,
+        proctoringEnabled: true,
         items: {
           select: {
             id: true,

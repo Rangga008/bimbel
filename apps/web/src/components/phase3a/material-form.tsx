@@ -31,6 +31,9 @@ export interface MaterialFormState {
   fileType: string;
   fileSize: string;
   isActive: boolean;
+  /** Tautan manual ke ujian / paket latsol terkait (opsional). */
+  examId: string;
+  latsolPackageId: string;
 }
 
 export function emptyMaterialForm(): MaterialFormState {
@@ -49,6 +52,8 @@ export function emptyMaterialForm(): MaterialFormState {
     fileType: '',
     fileSize: '',
     isActive: true,
+    examId: '',
+    latsolPackageId: '',
   };
 }
 
@@ -115,6 +120,28 @@ export function MaterialForm({
       apiFetch<GroupItem[]>(
         `/groups${form.levelId ? `?levelId=${form.levelId}` : form.programId ? `?programId=${form.programId}` : ''}`,
       ),
+  });
+
+  // Kandidat tautan konten — ujian & paket latsol difilter ke jenjang/mapel
+  // yang dipilih agar tautannya memang relevan dengan materi ini.
+  const linkParams = (() => {
+    const p = new URLSearchParams();
+    if (form.levelId) p.set('levelId', form.levelId);
+    if (form.subjectId) p.set('subjectId', form.subjectId);
+    return p.toString();
+  })();
+  const examsQ = useQuery({
+    queryKey: ['material-link-exams', linkParams],
+    queryFn: () => apiFetch<{ id: string; title: string; status: string }[]>(`/exams${linkParams ? `?${linkParams}` : ''}`),
+    enabled: !!form.levelId,
+  });
+  const latsolQ = useQuery({
+    queryKey: ['material-link-latsol', linkParams],
+    queryFn: () =>
+      apiFetch<{ id: string; title: string; isActive: boolean }[]>(
+        `/latsol/packages${linkParams ? `?${linkParams}` : ''}`,
+      ),
+    enabled: !!form.levelId,
   });
 
   return (
@@ -230,6 +257,34 @@ export function MaterialForm({
           }
           hint="Upload PDF/Word ke pustaka, pilih dari pustaka, atau tempel link eksternal."
         />
+
+        <div className="grid grid-cols-1 gap-3 rounded-lg border border-border p-3 md:grid-cols-2">
+          <p className="text-xs text-muted-foreground md:col-span-2">
+            Tautkan materi ke latsol/ujian terkait — siswa akan melihat tombol menuju konten itu di kartu materi.
+            Daftar difilter mengikuti jenjang/mapel yang dipilih.
+          </p>
+          <Phase1aSelectField
+            id="mat-form-latsol"
+            label="Paket Latsol terkait (opsional)"
+            value={form.latsolPackageId}
+            onChange={(v) => onChange({ ...form, latsolPackageId: v })}
+            options={
+              latsolQ.data?.map((p) => ({
+                value: p.id,
+                label: p.isActive ? p.title : `${p.title} (non-aktif)`,
+              })) || []
+            }
+            placeholder={form.levelId ? 'Pilih paket…' : 'Pilih jenjang dulu'}
+          />
+          <Phase1aSelectField
+            id="mat-form-exam"
+            label="Ujian terkait (opsional)"
+            value={form.examId}
+            onChange={(v) => onChange({ ...form, examId: v })}
+            options={examsQ.data?.map((e) => ({ value: e.id, label: e.title })) || []}
+            placeholder={form.levelId ? 'Pilih ujian…' : 'Pilih jenjang dulu'}
+          />
+        </div>
 
         {showActive && (
           <div className="flex items-center gap-2">

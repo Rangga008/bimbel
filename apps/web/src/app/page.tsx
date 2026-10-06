@@ -4,10 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
 import {
 	ArrowRight,
 	BadgeCheck,
+	Banknote,
 	BookOpenCheck,
 	Building2,
 	CalendarCheck,
@@ -17,18 +17,20 @@ import {
 	CircleCheck,
 	ClipboardList,
 	Clock,
+	CreditCard,
 	DoorOpen,
 	FileCheck2,
 	GraduationCap,
 	MapPin,
-	Menu,
 	NotebookPen,
 	Package2,
 	Presentation,
+	Quote,
 	ShieldCheck,
 	Sparkles,
 	TrendingUp,
 	Users,
+	UserCheck,
 	UserPlus,
 	Wallet,
 } from "lucide-react";
@@ -42,66 +44,18 @@ import {
 	CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-	Sheet,
-	SheetContent,
-	SheetHeader,
-	SheetTitle,
-	SheetTrigger,
-	SheetClose,
-} from "@/components/ui/sheet";
-import { apiFetch, resolveAssetUrl } from "@/lib/api-client";
+import { resolveAssetUrl } from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import { useBranding } from "@/lib/use-branding";
 import { ROLE_KEY_BY_BACKEND_NAME } from "@/config/role-nav";
-
-interface LandingPackage {
-	id: string;
-	name: string;
-	totalSessions: number;
-	durationWeeks: number | null;
-	price: string | null;
-	description: string | null;
-}
-
-interface LandingLevel {
-	id: string;
-	name: string;
-	packages: LandingPackage[];
-}
-
-interface LandingProgram {
-	id: string;
-	name: string;
-	code: string;
-	description: string | null;
-	levels: LandingLevel[];
-}
-
-interface LandingFacility {
-	id: string;
-	name: string;
-	capacity: number | null;
-	photoUrl: string | null;
-	buildingName: string | null;
-}
-
-interface LandingLocation {
-	name: string;
-	address: string | null;
-}
-
-interface LandingData {
-	stats: {
-		students: number;
-		tutors: number;
-		programs: number;
-		packages: number;
-	};
-	catalog: LandingProgram[];
-	facilities: LandingFacility[];
-	locations: LandingLocation[];
-}
+import { SiteHeader } from "@/components/public/site-header";
+import { SiteFooter } from "@/components/public/site-footer";
+import {
+	fmtIDR,
+	programSlug,
+	useLanding,
+	type LandingPackage,
+} from "@/lib/landing";
 
 interface PackageSlide {
 	key: string;
@@ -110,24 +64,22 @@ interface PackageSlide {
 	pkg: LandingPackage;
 }
 
-const fmtIDR = (v: string | null) =>
-	v
-		? new Intl.NumberFormat("id-ID", {
-				style: "currency",
-				currency: "IDR",
-				maximumFractionDigits: 0,
-			}).format(Number(v))
-		: "Hubungi admin";
-
 const SLIDE_ICONS = [GraduationCap, BookOpenCheck, NotebookPen, Presentation];
 
-const NAV_LINKS = [
-	{ href: "#beranda", label: "Beranda" },
-	{ href: "#program", label: "Program" },
-	{ href: "#fasilitas", label: "Fasilitas" },
-	{ href: "#keunggulan", label: "Keunggulan" },
-	{ href: "#kontak", label: "Kontak" },
-];
+/** Jumlah slide paket populer yang ditampilkan di landing. */
+const POPULAR_LIMIT = 9;
+
+const PROGRAM_ICONS: Record<string, typeof GraduationCap> = {
+	REG: GraduationCap,
+	EXT: Sparkles,
+	PRV: Users,
+};
+
+const PROGRAM_TAGLINE: Record<string, string> = {
+	REG: "Kelas reguler multi-mapel per jenjang — belajar rutin bareng teman sekelas.",
+	EXT: "Kelas tambahan fleksibel untuk pendalaman materi di luar jadwal reguler.",
+	PRV: "Bimbingan privat intensif — 1 tutor untuk kelompok kecil atau individu.",
+};
 
 const BENEFITS = [
 	{
@@ -168,24 +120,46 @@ const BENEFITS = [
 	},
 ];
 
-const STEPS = [
+/** Alur pendaftaran online — sesuai flow pendaftaran di sistem ini. */
+const REGISTER_STEPS = [
 	{
 		icon: UserPlus,
-		title: "Daftar & Konsultasi",
+		title: "Buat Akun Orang Tua",
 		description:
-			"Hubungi admin untuk pemetaan kebutuhan, lalu pilih program dan level yang sesuai.",
+			"Daftar online lewat tombol Daftar — bisa juga datang langsung ke kantor GFS untuk dibantu.",
 	},
 	{
 		icon: ClipboardList,
-		title: "Ikuti Jadwal & Evaluasi",
+		title: "Isi Data Anak & Pilih Program",
 		description:
-			"Belajar sesuai jadwal terstruktur, kerjakan latsol, dan ikuti ujian berkala.",
+			"Masuk sebagai orang tua, isi data anak, lalu pilih program sesuai jenjang kelas: Reguler, Extra, atau Privat.",
 	},
 	{
-		icon: TrendingUp,
-		title: "Pantau Perkembangan",
+		icon: CreditCard,
+		title: "Bayar Invoice Pendaftaran",
 		description:
-			"Nilai, kehadiran, dan ranking bisa dipantau siswa maupun orang tua secara real-time.",
+			"Invoice otomatis berisi biaya pendaftaran + periode pertama — bayar dan unggah bukti transfer.",
+	},
+	{
+		icon: UserCheck,
+		title: "Verifikasi & Mulai Belajar",
+		description:
+			"Admin memverifikasi pembayaran lalu menempatkan anak ke kelompok belajar. Jadwal, materi, dan nilai langsung bisa dipantau.",
+	},
+];
+
+const TESTIMONIALS = [
+	{
+		name: "Octaviani Putri",
+		school: "UPI — Jurusan Pend. Kimia",
+		quote:
+			"Belajar di GFS banyak ilmu dan prestasi juga di sekolah. Menyenangkan gabung di GFS.",
+	},
+	{
+		name: "Fazri Adnand",
+		school: "UNPAD — Jurusan Fisika",
+		quote:
+			"Selama di GFS, saya bangga dan senang karena fasilitas yang mendukung pelajaran jadi mudah diterima. Pokoknya GFS bimbel yang recommended.",
 	},
 ];
 
@@ -232,9 +206,17 @@ function PackageSlider({ slides }: { slides: PackageSlide[] }) {
 									<span className="flex size-10 items-center justify-center rounded-lg bg-gradient-to-br from-brand-blue-50 to-brand-blue-100 text-brand-blue-600 transition-colors group-hover:from-brand-blue-600 group-hover:to-brand-blue-700 group-hover:text-white">
 										<Icon className="size-5" />
 									</span>
-									<p className="text-lg font-bold tabular-nums text-brand-blue-700">
-										{fmtIDR(s.pkg.price)}
-									</p>
+									<div className="text-right">
+										<p className="text-lg font-bold tabular-nums text-brand-blue-700">
+											{fmtIDR(s.pkg.price)}
+										</p>
+										{s.pkg.studentCount > 0 ? (
+											<p className="flex items-center justify-end gap-1 text-xs text-muted-foreground">
+												<Users className="size-3" />
+												{s.pkg.studentCount} siswa
+											</p>
+										) : null}
+									</div>
 								</div>
 								<CardTitle className="text-base leading-snug">
 									{s.pkg.name}
@@ -308,11 +290,7 @@ export default function LandingPage() {
 	const isBootstrapping = useAuthStore((state) => state.isBootstrapping);
 
 	const branding = useBranding();
-	const landingQ = useQuery({
-		queryKey: ["public-landing"],
-		queryFn: () => apiFetch<LandingData>("/public/landing", { auth: false }),
-		staleTime: 60_000,
-	});
+	const landingQ = useLanding();
 
 	// Pengguna yang sudah login langsung diarahkan ke dashboard rolenya
 	// (perilaku lama halaman root dipertahankan).
@@ -334,18 +312,23 @@ export default function LandingPage() {
 
 	const stats = landingQ.data?.stats;
 	const facilities = landingQ.data?.facilities ?? [];
-	const locations = landingQ.data?.locations ?? [];
-	const slides: PackageSlide[] =
-		landingQ.data?.catalog.flatMap((p) =>
-			p.levels.flatMap((l) =>
-				l.packages.map((pkg) => ({
-					key: pkg.id,
-					programName: p.name,
-					levelName: l.name,
-					pkg,
-				})),
-			),
-		) ?? [];
+	const programs = landingQ.data?.catalog ?? [];
+
+	// Hanya paket dengan siswa terbanyak yang tampil di landing — katalog
+	// lengkap pindah ke halaman /program dan /program/[code].
+	const allSlides: PackageSlide[] = programs.flatMap((p) =>
+		p.levels.flatMap((l) =>
+			l.packages.map((pkg) => ({
+				key: pkg.id,
+				programName: p.name,
+				levelName: l.name,
+				pkg,
+			})),
+		),
+	);
+	const popularSlides = [...allSlides]
+		.sort((a, b) => (b.pkg.studentCount ?? 0) - (a.pkg.studentCount ?? 0))
+		.slice(0, POPULAR_LIMIT);
 
 	const statItems = [
 		{ icon: Users, value: stats?.students, label: "Siswa aktif terdaftar" },
@@ -356,89 +339,7 @@ export default function LandingPage() {
 
 	return (
 		<div className="min-h-screen bg-background">
-			{/* ---- Navbar ---- */}
-			<header className="sticky top-0 z-40 border-b border-white/10 bg-brand-blue-900/90 text-white backdrop-blur-md">
-				<div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4 sm:px-6">
-					<Image
-						src={branding.resolvedLogoUrl}
-						alt={`Logo ${branding.appName}`}
-						width={36}
-						height={36}
-						className="size-9 object-contain"
-						priority
-						unoptimized
-					/>
-					<div className="min-w-0 flex-1">
-						<p className="text-sm font-semibold leading-tight">
-							{branding.appName}
-						</p>
-						<p className="truncate text-xs text-brand-blue-200">
-							{branding.tagline || "Portal belajar terpadu"}
-						</p>
-					</div>
-					<nav className="hidden items-center gap-1 md:flex">
-						{NAV_LINKS.map((l) => (
-							<Link
-								key={l.href}
-								href={l.href}
-								className="rounded-lg px-3 py-2 text-sm font-medium text-brand-blue-100 transition-colors hover:bg-white/10 hover:text-white"
-							>
-								{l.label}
-							</Link>
-						))}
-					</nav>
-					<div className="ml-2 hidden items-center gap-2 md:flex">
-						<Button
-							variant="outline"
-							render={<Link href="/login" />}
-							className="border-white/30 bg-white/5 text-white hover:bg-white/15 hover:text-white"
-						>
-							Masuk
-						</Button>
-						<Button
-							render={<Link href="/daftar" />}
-							className="gap-2 bg-brand-gold-400 text-brand-blue-900 hover:bg-brand-gold-300"
-						>
-							Daftar
-							<ArrowRight className="size-4" />
-						</Button>
-					</div>
-					<Sheet>
-						<SheetTrigger
-							className="flex size-9 items-center justify-center rounded-lg text-brand-blue-100 transition-colors hover:bg-white/10 md:hidden"
-							aria-label="Buka menu"
-						>
-							<Menu className="size-5" />
-						</SheetTrigger>
-						<SheetContent side="right" className="w-72">
-							<SheetHeader>
-								<SheetTitle>{branding.appName}</SheetTitle>
-							</SheetHeader>
-							<nav className="flex flex-col gap-1 px-6 pb-6">
-								{NAV_LINKS.map((l) => (
-									<SheetClose key={l.href} render={<Link href={l.href} />}>
-										<span className="block rounded-lg px-3 py-2.5 text-sm font-medium hover:bg-muted">
-											{l.label}
-										</span>
-									</SheetClose>
-								))}
-								<div className="mt-4 flex flex-col gap-2">
-									<SheetClose render={<Link href="/daftar" />}>
-										<span className="block rounded-lg bg-brand-gold-400 px-3 py-2.5 text-center text-sm font-semibold text-brand-blue-900">
-											Daftar Sekarang
-										</span>
-									</SheetClose>
-									<SheetClose render={<Link href="/login" />}>
-										<span className="block rounded-lg border px-3 py-2.5 text-center text-sm font-medium">
-											Masuk
-										</span>
-									</SheetClose>
-								</div>
-							</nav>
-						</SheetContent>
-					</Sheet>
-				</div>
-			</header>
+			<SiteHeader />
 
 			{/* ---- Hero ---- */}
 			<section id="beranda" className="relative overflow-hidden bg-brand-blue-900 text-white">
@@ -469,7 +370,7 @@ export default function LandingPage() {
 					<div className="flex flex-col gap-6">
 						<span className="inline-flex w-fit items-center gap-2 rounded-full border border-brand-gold-400/40 bg-brand-gold-400/10 px-3 py-1 text-xs font-medium text-brand-gold-200">
 							<Sparkles className="size-3.5" />
-							Bimbingan belajar terstruktur &amp; terpantau
+							Les murah plus berkualitas — sejak 2011
 						</span>
 						<h1 className="text-3xl font-bold tracking-tight text-balance sm:text-4xl lg:text-5xl">
 							Belajar Lebih Terarah,{" "}
@@ -494,7 +395,7 @@ export default function LandingPage() {
 							<Button
 								size="lg"
 								variant="outline"
-								render={<Link href="#program" />}
+								render={<Link href="/program" />}
 								className="border-white/30 bg-white/5 text-white hover:bg-white/15 hover:text-white"
 							>
 								Lihat Program
@@ -559,48 +460,276 @@ export default function LandingPage() {
 				/>
 			</section>
 
-			{/* ---- Paket Program (slider, data dari database) ---- */}
-			<section id="program" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-16 sm:px-6 md:py-20">
-				<div className="mb-10 flex flex-wrap items-end justify-between gap-4">
-					<div className="max-w-2xl">
+			{/* ---- Tentang ---- */}
+			<section id="tentang" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-16 sm:px-6 md:py-20">
+				<div className="grid items-center gap-10 lg:grid-cols-2">
+					<div>
 						<p className="mb-2 text-xs font-semibold tracking-widest text-brand-gold-600 uppercase">
-							Katalog Kami
+							Tentang Kami
 						</p>
 						<h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
-							Paket Program Belajar
+							Sekilas {branding.appName}
 						</h2>
-						<p className="mt-2 text-muted-foreground">
-							Paket aktif langsung dari katalog {branding.appName} — geser untuk
-							melihat semua pilihan.
+						<p className="mt-4 text-muted-foreground">
+							Bimbingan Belajar Great Formula Solution (Bimbel GFS) berdiri
+							sejak tahun 2011 dan telah membimbing lebih dari 3.000 siswa
+							dengan tutor-tutor berpengalaman di bidangnya, sehingga bisa
+							membimbing dan membantu para siswa semakin berprestasi.
 						</p>
+						<p className="mt-3 text-muted-foreground">
+							Ditunjang fasilitas belajar yang memadai — multimedia, AC, dan
+							free wifi — siswa nyaman belajar. Dan yang paling penting:
+							dengan biaya yang terjangkau.
+						</p>
+						<div className="mt-6 flex flex-wrap gap-3">
+							<Button
+								variant="outline"
+								render={<Link href="/program" />}
+								className="gap-2"
+							>
+								Jelajahi Program
+								<ArrowRight className="size-4" />
+							</Button>
+						</div>
 					</div>
-				</div>
-				{landingQ.isLoading ? (
-					<div className="flex gap-4 overflow-hidden">
-						{[0, 1, 2].map((i) => (
-							<Skeleton
-								key={i}
-								className="h-56 w-[82%] shrink-0 sm:w-[46%] lg:w-[31.5%]"
-							/>
+					<div className="grid gap-4 sm:grid-cols-2">
+						{[
+							{ icon: BadgeCheck, title: "Sejak 2011", text: "Berpengalaman lebih dari satu dekade membimbing siswa." },
+							{ icon: Users, title: "3.000+ Siswa", text: "Telah bergabung dan berkembang bersama Bimbel GFS." },
+							{ icon: Presentation, title: "Tutor Berpengalaman", text: "Tutor ahli di bidangnya, siap membimbing setiap siswa." },
+							{ icon: Banknote, title: "Biaya Terjangkau", text: "Les murah plus berkualitas — investasi belajar yang masuk akal." },
+						].map((f) => (
+							<Card key={f.title} className="transition-shadow hover:shadow-lg">
+								<CardHeader>
+									<span className="flex size-10 items-center justify-center rounded-lg bg-gradient-to-br from-brand-blue-50 to-brand-blue-100 text-brand-blue-600">
+										<f.icon className="size-5" />
+									</span>
+									<CardTitle className="text-base">{f.title}</CardTitle>
+								</CardHeader>
+								<CardContent>
+									<p className="text-sm text-muted-foreground">{f.text}</p>
+								</CardContent>
+							</Card>
 						))}
 					</div>
-				) : slides.length > 0 ? (
-					<PackageSlider slides={slides} />
-				) : (
-					<Card>
-						<CardContent className="flex flex-col items-center gap-2 py-10 text-center">
-							<Package2 className="size-10 text-muted-foreground" />
-							<p className="font-medium">Belum ada paket program aktif</p>
-							<p className="text-sm text-muted-foreground">
-								Hubungi admin untuk informasi paket belajar terbaru.
+				</div>
+			</section>
+
+			{/* ---- Kategori Program + Paket Terpopuler ---- */}
+			<section id="program" className="scroll-mt-20 border-y bg-gradient-to-b from-brand-blue-50/60 to-background">
+				<div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 md:py-20">
+					<div className="mb-10 flex flex-wrap items-end justify-between gap-4">
+						<div className="max-w-2xl">
+							<p className="mb-2 text-xs font-semibold tracking-widest text-brand-gold-600 uppercase">
+								Katalog Kami
 							</p>
-						</CardContent>
-					</Card>
-				)}
+							<h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
+								Program Belajar
+							</h2>
+							<p className="mt-2 text-muted-foreground">
+								Pilih kategori program — masing-masing punya halaman
+								detail dengan jenjang, harga, dan paket lengkapnya.
+							</p>
+						</div>
+						<Button variant="outline" render={<Link href="/program" />} className="gap-2">
+							Semua Program
+							<ArrowRight className="size-4" />
+						</Button>
+					</div>
+
+					{/* Kartu kategori program → halaman detail per program */}
+					{landingQ.isLoading ? (
+						<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+							{[0, 1, 2].map((i) => (
+								<Skeleton key={i} className="h-44 w-full" />
+							))}
+						</div>
+					) : (
+						<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+							{programs.map((p) => {
+								const Icon = PROGRAM_ICONS[p.code] ?? GraduationCap;
+								const pkgCount = p.levels.reduce(
+									(n, l) => n + l.packages.length,
+									0,
+								);
+								const studentTotal = p.levels.reduce(
+									(n, l) =>
+										n + l.packages.reduce((m, pk) => m + (pk.studentCount ?? 0), 0),
+									0,
+								);
+								return (
+									<Link
+										key={p.id}
+										href={`/program/${programSlug(p.code)}`}
+										className="group"
+									>
+										<Card className="h-full transition-all hover:-translate-y-0.5 hover:border-brand-blue-300 hover:shadow-xl">
+											<CardHeader>
+												<div className="flex items-start justify-between gap-2">
+													<span className="flex size-11 items-center justify-center rounded-xl bg-gradient-to-br from-brand-blue-600 to-brand-blue-800 text-white">
+														<Icon className="size-5" />
+													</span>
+													<ArrowRight className="size-5 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-brand-blue-600" />
+												</div>
+												<CardTitle className="text-lg">{p.name}</CardTitle>
+												<CardDescription>
+													{p.description || PROGRAM_TAGLINE[p.code] || "Program belajar."}
+												</CardDescription>
+											</CardHeader>
+											<CardContent className="flex flex-wrap gap-2">
+												<Badge variant="secondary">{p.levels.length} jenjang</Badge>
+												<Badge variant="secondary">{pkgCount} paket</Badge>
+												{studentTotal > 0 ? (
+													<Badge variant="secondary" className="gap-1.5">
+														<Users className="size-3.5" />
+														{studentTotal} siswa
+													</Badge>
+												) : null}
+											</CardContent>
+										</Card>
+									</Link>
+								);
+							})}
+						</div>
+					)}
+
+					{/* Paket terpopuler (berdasar jumlah siswa) */}
+					<div className="mt-14">
+						<div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+							<div>
+								<h3 className="text-xl font-bold tracking-tight">
+									Paket Terpopuler
+								</h3>
+								<p className="mt-1 text-sm text-muted-foreground">
+									Paket dengan siswa terbanyak saat ini — geser untuk
+									melihat.
+								</p>
+							</div>
+						</div>
+						{landingQ.isLoading ? (
+							<div className="flex gap-4 overflow-hidden">
+								{[0, 1, 2].map((i) => (
+									<Skeleton
+										key={i}
+										className="h-56 w-[82%] shrink-0 sm:w-[46%] lg:w-[31.5%]"
+									/>
+								))}
+							</div>
+						) : popularSlides.length > 0 ? (
+							<PackageSlider slides={popularSlides} />
+						) : (
+							<Card>
+								<CardContent className="flex flex-col items-center gap-2 py-10 text-center">
+									<Package2 className="size-10 text-muted-foreground" />
+									<p className="font-medium">Belum ada paket program aktif</p>
+									<p className="text-sm text-muted-foreground">
+										Hubungi admin untuk informasi paket belajar terbaru.
+									</p>
+								</CardContent>
+							</Card>
+						)}
+					</div>
+				</div>
+			</section>
+
+			{/* ---- Cara Daftar ---- */}
+			<section id="cara-daftar" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-16 sm:px-6 md:py-20">
+				<div className="mb-10 max-w-2xl">
+					<p className="mb-2 text-xs font-semibold tracking-widest text-brand-gold-600 uppercase">
+						Cara Daftar
+					</p>
+					<h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
+						Daftar Les dalam 4 Langkah
+					</h2>
+					<p className="mt-2 text-muted-foreground">
+						Semua bisa dilakukan online dari rumah — atau datang langsung ke
+						kantor GFS dan kami bantu prosesnya.
+					</p>
+				</div>
+				<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+					{REGISTER_STEPS.map((s, i) => (
+						<div key={s.title} className="relative">
+							<Card className="h-full">
+								<CardHeader>
+									<div className="flex items-center justify-between">
+										<span className="flex size-11 items-center justify-center rounded-xl bg-gradient-to-br from-brand-blue-600 to-brand-blue-800 text-white">
+											<s.icon className="size-5" />
+										</span>
+										<span className="text-4xl font-bold text-brand-blue-100">
+											{i + 1}
+										</span>
+									</div>
+									<CardTitle className="text-base">{s.title}</CardTitle>
+								</CardHeader>
+								<CardContent>
+									<p className="text-sm text-muted-foreground">{s.description}</p>
+								</CardContent>
+							</Card>
+							{i < REGISTER_STEPS.length - 1 ? (
+								<ArrowRight
+									aria-hidden
+									className="absolute top-1/2 -right-4 hidden size-5 -translate-y-1/2 text-brand-blue-300 lg:block"
+								/>
+							) : null}
+						</div>
+					))}
+				</div>
+				<div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-brand-gold-300/50 bg-brand-gold-50 p-5">
+					<div className="flex items-start gap-3">
+						<MapPin className="mt-0.5 size-5 shrink-0 text-brand-gold-600" />
+						<div>
+							<p className="font-medium">Mau datang langsung?</p>
+							<p className="text-sm text-muted-foreground">
+								Kantor GFS: Jl. Hj. Saodah No. 125, Jatihandap – Cicaheum,
+								Bandung — Senin–Sabtu, 09.00–18.00.
+							</p>
+						</div>
+					</div>
+					<Button
+						render={<Link href="/daftar" />}
+						className="gap-2 bg-brand-gold-400 font-semibold text-brand-blue-900 hover:bg-brand-gold-300"
+					>
+						Daftar Online Sekarang
+						<ArrowRight className="size-4" />
+					</Button>
+				</div>
+			</section>
+
+			{/* ---- Testimoni ---- */}
+			<section id="testimoni" className="scroll-mt-20 border-y bg-card">
+				<div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 md:py-20">
+					<div className="mb-10 max-w-2xl">
+						<p className="mb-2 text-xs font-semibold tracking-widest text-brand-gold-600 uppercase">
+							Testimoni
+						</p>
+						<h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
+							Kata Alumni &amp; Siswa GFS
+						</h2>
+					</div>
+					<div className="grid gap-4 sm:grid-cols-2">
+						{TESTIMONIALS.map((t) => (
+							<Card key={t.name} className="relative overflow-hidden">
+								<Quote
+									aria-hidden
+									className="absolute -top-2 -right-2 size-20 text-brand-blue-50"
+								/>
+								<CardHeader>
+									<CardTitle className="text-base">{t.name}</CardTitle>
+									<CardDescription>{t.school}</CardDescription>
+								</CardHeader>
+								<CardContent>
+									<p className="text-sm leading-relaxed text-muted-foreground italic">
+										&ldquo;{t.quote}&rdquo;
+									</p>
+								</CardContent>
+							</Card>
+						))}
+					</div>
+				</div>
 			</section>
 
 			{/* ---- Fasilitas & Ruangan ---- */}
-			<section id="fasilitas" className="scroll-mt-20 border-y bg-gradient-to-b from-brand-blue-50/60 to-background">
+			<section id="fasilitas" className="scroll-mt-20">
 				<div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 md:py-20">
 					<div className="mb-10 max-w-2xl">
 						<p className="mb-2 text-xs font-semibold tracking-widest text-brand-gold-600 uppercase">
@@ -682,46 +811,6 @@ export default function LandingPage() {
 				</div>
 			</section>
 
-			{/* ---- Alur belajar ---- */}
-			<section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 md:py-20">
-				<div className="mb-10 max-w-2xl">
-					<p className="mb-2 text-xs font-semibold tracking-widest text-brand-gold-600 uppercase">
-						Cara Kerja
-					</p>
-					<h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
-						Mulai dalam 3 Langkah
-					</h2>
-				</div>
-				<div className="grid gap-4 sm:grid-cols-3">
-					{STEPS.map((s, i) => (
-						<div key={s.title} className="relative">
-							<Card className="h-full">
-								<CardHeader>
-									<div className="flex items-center justify-between">
-										<span className="flex size-11 items-center justify-center rounded-xl bg-gradient-to-br from-brand-blue-600 to-brand-blue-800 text-white">
-											<s.icon className="size-5" />
-										</span>
-										<span className="text-4xl font-bold text-brand-blue-100">
-											{i + 1}
-										</span>
-									</div>
-									<CardTitle className="text-base">{s.title}</CardTitle>
-								</CardHeader>
-								<CardContent>
-									<p className="text-sm text-muted-foreground">{s.description}</p>
-								</CardContent>
-							</Card>
-							{i < STEPS.length - 1 ? (
-								<ArrowRight
-									aria-hidden
-									className="absolute top-1/2 -right-4 hidden size-5 -translate-y-1/2 text-brand-blue-300 sm:block"
-								/>
-							) : null}
-						</div>
-					))}
-				</div>
-			</section>
-
 			{/* ---- Keunggulan / Kebutuhan ---- */}
 			<section id="keunggulan" className="scroll-mt-20 border-y bg-card">
 				<div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 md:py-20">
@@ -758,7 +847,7 @@ export default function LandingPage() {
 				</div>
 			</section>
 
-			{/* ---- CTA ---- */}
+			{/* ---- CTA / Kontak ---- */}
 			<section id="kontak" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-16 sm:px-6">
 				<div className="relative overflow-hidden rounded-3xl bg-brand-blue-900 px-6 py-14 text-center sm:px-12">
 					<div
@@ -775,11 +864,12 @@ export default function LandingPage() {
 					/>
 					<div className="relative mx-auto flex max-w-xl flex-col items-center gap-4">
 						<h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
-							Siap mulai belajar dengan lebih terarah?
+							Jadilah siswa GFS berikutnya!
 						</h2>
 						<p className="text-sm text-brand-blue-100 sm:text-base">
-							Daftar sebagai orang tua, lalu hubungkan anak Anda ke program
-							belajar — jadwal, ujian, latihan, dan pembayaran dalam satu tempat.
+							Sudah lebih dari 3.000 siswa bergabung sejak 2011. Daftar sebagai
+							orang tua, lalu hubungkan anak Anda ke program belajar — jadwal,
+							ujian, latihan, dan pembayaran dalam satu tempat.
 						</p>
 						<div className="mt-2 flex flex-wrap justify-center gap-3">
 							<Button
@@ -803,87 +893,7 @@ export default function LandingPage() {
 				</div>
 			</section>
 
-			{/* ---- Footer ---- */}
-			<footer className="border-t text-white" style={{ backgroundColor: "#032a41" }}>
-				<div className="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-3">
-					<div className="flex flex-col gap-3">
-						<div className="flex items-center gap-3">
-							<Image
-								src={branding.resolvedLogoUrl}
-								alt={`Logo ${branding.appName}`}
-								width={32}
-								height={32}
-								className="size-8 object-contain"
-								unoptimized
-							/>
-							<div>
-								<p className="text-sm font-semibold">{branding.appName}</p>
-								<p className="text-xs text-brand-blue-200">
-									{branding.tagline || "Portal belajar terpadu"}
-								</p>
-							</div>
-						</div>
-						<p className="text-xs leading-relaxed text-brand-blue-200">
-							Bimbingan belajar terstruktur dengan pemantauan perkembangan
-							siswa secara real-time untuk siswa dan orang tua.
-						</p>
-					</div>
-					<div>
-						<p className="mb-3 text-xs font-semibold tracking-widest text-brand-gold-300 uppercase">
-							Navigasi
-						</p>
-						<nav className="flex flex-col gap-2 text-sm text-brand-blue-100">
-							{NAV_LINKS.map((l) => (
-								<Link
-									key={l.href}
-									href={l.href}
-									className="w-fit transition-colors hover:text-white"
-								>
-									{l.label}
-								</Link>
-							))}
-							<Link href="/daftar" className="w-fit transition-colors hover:text-white">
-								Daftar
-							</Link>
-							<Link href="/login" className="w-fit transition-colors hover:text-white">
-								Masuk
-							</Link>
-						</nav>
-					</div>
-					<div>
-						<p className="mb-3 text-xs font-semibold tracking-widest text-brand-gold-300 uppercase">
-							Lokasi
-						</p>
-						{locations.length > 0 ? (
-							<ul className="flex flex-col gap-3 text-sm text-brand-blue-100">
-								{locations.map((loc) => (
-									<li key={loc.name} className="flex items-start gap-2">
-										<MapPin className="mt-0.5 size-4 shrink-0 text-brand-gold-300" />
-										<span>
-											<span className="font-medium text-white">{loc.name}</span>
-											{loc.address ? (
-												<span className="block text-xs text-brand-blue-200">
-													{loc.address}
-												</span>
-											) : null}
-										</span>
-									</li>
-								))}
-							</ul>
-						) : (
-							<p className="text-sm text-brand-blue-200">
-								Hubungi admin untuk informasi lokasi.
-							</p>
-						)}
-					</div>
-				</div>
-				<div className="border-t border-white/10">
-					<p className="mx-auto max-w-6xl px-4 py-5 text-center text-xs text-brand-blue-300 sm:px-6">
-						© {new Date().getFullYear()} {branding.appName}. Semua hak
-						dilindungi.
-					</p>
-				</div>
-			</footer>
+			<SiteFooter />
 		</div>
 	);
 }

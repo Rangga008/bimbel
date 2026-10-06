@@ -1,7 +1,7 @@
 "use client";
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { CircleCheck, FileQuestion, FileUp, ImageIcon, Pencil, Plus, Search, Settings2, Tag, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -17,7 +17,7 @@ import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { EmptyState } from '@/components/shared/empty-state';
 import { MathContent } from '@/components/shared/math-content';
-import { ContentDrilldown, DrillBreadcrumb, useContentCategories, useContentLevels } from '@/components/shared/content-drilldown';
+import { ContentDrilldown, DrillBreadcrumb, useContentCategories, useContentLevels, useDrillState } from '@/components/shared/content-drilldown';
 import { ContentCategoriesManager } from '@/components/shared/content-categories-manager';
 import { QuestionImportDialog } from '@/components/phase3a/question-import-dialog';
 import {
@@ -25,11 +25,10 @@ import {
   categoryLabel,
   categoryOptions,
   drillDone,
-  drillFromParams,
+  drillQuery,
   DRILL_ALL,
   DRILL_EMPTY,
   DRILL_NONE,
-  type DrillValue,
 } from '@/lib/content-taxonomy';
 
 function err(e: unknown, fb: string) {
@@ -40,10 +39,7 @@ function err(e: unknown, fb: string) {
 export function QuestionsManager({ canManage, basePath }: { canManage: boolean; basePath: string }) {
   const qc = useQueryClient();
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const [drill, setDrill] = useState<DrillValue>(() =>
-    drillFromParams((k) => searchParams.get(k)),
-  );
+  const [drill, setDrill] = useDrillState();
   const [type, setType] = useState('');
   const [difficulty, setDifficulty] = useState('');
   const [catFilter, setCatFilter] = useState('');
@@ -92,7 +88,7 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
   const done = drillDone(drill) || !!debouncedSearch || !!type || !!difficulty || !!catFilter;
 
   const createUrl = () => {
-    const p = new URLSearchParams();
+    const p = new URLSearchParams(drillQuery(drill));
     if (drill.levelId && drill.levelId !== DRILL_ALL && drill.levelId !== DRILL_NONE) p.set('levelId', drill.levelId);
     if (drill.subjectId && drill.subjectId !== DRILL_ALL && drill.subjectId !== DRILL_NONE) p.set('subjectId', drill.subjectId);
     if (drill.category && drill.category !== DRILL_ALL && drill.category !== DRILL_NONE) p.set('category', drill.category);
@@ -303,7 +299,7 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => router.push(`${basePath}/${q.id}/edit`)}
+                      onClick={() => router.push(`${basePath}/${q.id}/edit${drillQuery(drill)}`)}
                     >
                       <Pencil /> Edit
                     </Button>

@@ -28,9 +28,11 @@ export default async function SiswaMenuPage({
 				hideList
 			/>
 		);
-	if (slug === "materi") return <MaterialsManager canManage={false} />;
+	if (slug === "materi")
+		return <MaterialsManager canManage={false} basePath="/siswa/materi" />;
 	if (slug === "ujian") return <ExamListStudent />;
-	if (slug === "latsol") return <LatsolPage canManage={false} />;
+	if (slug === "latsol")
+		return <LatsolPage canManage={false} basePath="/siswa/latsol" />;
 	if (slug === "performa") return <StudentPerformance />;
 	if (slug === "feedback") return <FeedbackForm />;
 	if (slug === "ranking") return <StudentRankingPage />;

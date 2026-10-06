@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { ProgramItem, QuestionRow } from '@/lib/phase3a-types';
-import { drillBackUrl, tingkatCode } from '@/lib/content-taxonomy';
+import { drillBackFromUrl, tingkatCode } from '@/lib/content-taxonomy';
 import { useContentLevels } from '@/components/shared/content-drilldown';
 import { QuestionFormCard, type QuestionDraft } from './question-form-card';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -73,6 +73,7 @@ function QuestionEditForm({
 }) {
   const qc = useQueryClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [draft, setDraft] = useState<QuestionDraft>(() => questionToDraft(initial));
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -84,7 +85,7 @@ function QuestionEditForm({
     if (lvl) setDraft((d) => ({ ...d, tingkat: tingkatCode(lvl) ?? 'none' }));
   }, [levelsQ.data, draft.levelId, draft.tingkat]);
 
-  const backUrl = drillBackUrl(basePath, {
+  const backUrl = drillBackFromUrl(basePath, (k) => searchParams.get(k), {
     tingkat: draft.tingkat,
     levelId: draft.levelId,
     subjectId: draft.subjectId,

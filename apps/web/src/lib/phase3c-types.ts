@@ -40,6 +40,7 @@ export interface ExamRow {
   status: ExamStatus;
   maxScore: number;
   durationMinutes: number | null;
+  proctoringEnabled: boolean;
   notes: string | null;
   createdBy: string;
   createdAt: string;
@@ -104,6 +105,7 @@ export interface ExamAttemptDetail extends ProctoringFields {
     title: string;
     scheduledStartAt: string;
     scheduledEndAt: string;
+    proctoringEnabled?: boolean;
   };
   items: ExamAttemptItem[];
 }
@@ -142,6 +144,7 @@ export interface CreateExamDto {
   scheduledStartAt: string;
   scheduledEndAt: string;
   durationMinutes?: number;
+  proctoringEnabled?: boolean;
   notes?: string;
   questionIds: string[];
   points?: number[];
@@ -158,6 +161,7 @@ export interface UpdateExamDto {
   scheduledEndAt?: string;
   status?: ExamStatus;
   durationMinutes?: number;
+  proctoringEnabled?: boolean;
   notes?: string;
   questionIds?: string[];
   points?: number[];

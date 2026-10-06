@@ -52,6 +52,8 @@ export class MaterialsService {
         level: { select: { id: true, name: true, code: true } },
         group: { select: { id: true, name: true, code: true } },
         subject: { select: { id: true, name: true, code: true } },
+        exam: { select: { id: true, title: true, status: true, scheduledStartAt: true } },
+        latsolPackage: { select: { id: true, title: true, isActive: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 100,
@@ -66,6 +68,8 @@ export class MaterialsService {
         level: { select: { id: true, name: true, code: true } },
         group: { select: { id: true, name: true, code: true } },
         subject: { select: { id: true, name: true, code: true } },
+        exam: { select: { id: true, title: true, status: true, scheduledStartAt: true } },
+        latsolPackage: { select: { id: true, title: true, isActive: true } },
       },
     });
     if (!material) throw new NotFoundException('Materi tidak ditemukan.');
@@ -141,6 +145,7 @@ export class MaterialsService {
 
     const subjectId = await this.resolveSubjectId(dto.subjectId, dto.levelId, dto.programId);
     await this.contentCategories.assertUsable(dto.category);
+    await this.assertLinkedRefs(dto.examId, dto.latsolPackageId);
 
     return this.prisma.material.create({
       data: {
@@ -149,6 +154,8 @@ export class MaterialsService {
         groupId: dto.groupId,
         subjectId,
         category: dto.category,
+        examId: dto.examId || null,
+        latsolPackageId: dto.latsolPackageId || null,
         title: dto.title.trim(),
         description: dto.description?.trim(),
         content: dto.content?.trim() || null,
@@ -198,6 +205,12 @@ export class MaterialsService {
           : undefined;
 
     await this.contentCategories.assertUsable(dto.category);
+    if (dto.examId !== undefined || dto.latsolPackageId !== undefined) {
+      await this.assertLinkedRefs(
+        dto.examId !== undefined ? dto.examId : (material.examId ?? undefined),
+        dto.latsolPackageId !== undefined ? dto.latsolPackageId : (material.latsolPackageId ?? undefined),
+      );
+    }
 
     return this.prisma.material.update({
       where: { id },
@@ -207,6 +220,10 @@ export class MaterialsService {
         groupId: dto.groupId,
         ...(subjectId !== undefined ? { subjectId } : {}),
         category: dto.category,
+        ...(dto.examId !== undefined ? { examId: dto.examId || null } : {}),
+        ...(dto.latsolPackageId !== undefined
+          ? { latsolPackageId: dto.latsolPackageId || null }
+          : {}),
         title: dto.title?.trim(),
         description: dto.description?.trim(),
         content: dto.content?.trim() || null,
@@ -223,6 +240,18 @@ export class MaterialsService {
         subject: { select: { id: true, name: true, code: true } },
       },
     });
+  }
+
+  /** Validasi tautan manual materi → ujian / paket latsol. */
+  private async assertLinkedRefs(examId?: string | null, latsolPackageId?: string | null) {
+    if (examId) {
+      const exam = await this.prisma.exam.findUnique({ where: { id: examId } });
+      if (!exam) throw new BadRequestException('Ujian tertaut tidak ditemukan.');
+    }
+    if (latsolPackageId) {
+      const pkg = await this.prisma.latsolPackage.findUnique({ where: { id: latsolPackageId } });
+      if (!pkg) throw new BadRequestException('Paket latsol tertaut tidak ditemukan.');
+    }
   }
 
   async delete(id: string) {

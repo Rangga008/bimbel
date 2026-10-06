@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch, ApiError } from "@/lib/api-client";
+import { CategoryProgressChart, type CategoryProgressData } from "@/components/shared/category-progress-chart";
 
 function err(e: unknown, fb: string) {
   return e instanceof ApiError ? e.message : fb;
@@ -42,6 +43,7 @@ interface StudentPerformanceData {
   studentName: string;
   examHistory: ExamHistoryItem[];
   topicAnalysis: TopicAnalysis[];
+  categoryProgress?: CategoryProgressData;
   overallStats: OverallStats;
 }
 
@@ -170,6 +172,21 @@ export function StudentPerformance() {
           )}
         </CardContent>
       </Card>
+
+      {/* Perkembangan nilai per bab */}
+      {data.categoryProgress && data.categoryProgress.points.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Perkembangan Nilai per Bab</CardTitle>
+            <CardDescription>
+              Persen skor per bab/tipe dari ujian ke ujian — arahkan kursor ke titik untuk detail.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CategoryProgressChart data={data.categoryProgress} />
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Topic Analysis */}
       <Card>

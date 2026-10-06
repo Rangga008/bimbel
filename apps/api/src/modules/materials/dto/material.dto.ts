@@ -23,6 +23,14 @@ export class CreateMaterialDto {
   // Kategori materi tidak valid.
   category?: string;
 
+  @IsOptional()
+  @IsUUID('4', { message: 'examId tidak valid.' })
+  examId?: string | null;
+
+  @IsOptional()
+  @IsUUID('4', { message: 'latsolPackageId tidak valid.' })
+  latsolPackageId?: string | null;
+
   @IsString()
   @IsNotEmpty({ message: 'Judul materi wajib diisi.' })
   @MaxLength(200, { message: 'Judul maksimal 200 karakter.' })
@@ -79,6 +87,14 @@ export class UpdateMaterialDto {
   @IsString()
   // Kategori materi tidak valid.
   category?: string;
+
+  @IsOptional()
+  @IsUUID('4', { message: 'examId tidak valid.' })
+  examId?: string | null;
+
+  @IsOptional()
+  @IsUUID('4', { message: 'latsolPackageId tidak valid.' })
+  latsolPackageId?: string | null;
 
   @IsOptional()
   @IsString()

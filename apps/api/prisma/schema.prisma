@@ -1145,6 +1145,7 @@ model LatsolPackage {
   subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
   items    LatsolPackageItem[]
   attempts LatsolAttempt[]
+  materials Material[]
 
   @@index([programId])
   @@index([levelId])
@@ -1241,6 +1242,10 @@ model Material {
   fileType    String?  // MIME type file
   fileSize    Int?     // Ukuran file dalam bytes
   isActive    Boolean  @default(true)
+  /// Tautan manual ke paket latsol & ujian terkait — materi bisa
+  /// mengarahkan siswa langsung ke latihan/ujian yang dipilih admin.
+  latsolPackageId String?
+  examId          String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -1248,6 +1253,8 @@ model Material {
   level   Level?          @relation(fields: [levelId], references: [id], onDelete: SetNull)
   group   LearningGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
   subject Subject?        @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  latsolPackage LatsolPackage? @relation(fields: [latsolPackageId], references: [id], onDelete: SetNull)
+  exam          Exam?          @relation(fields: [examId], references: [id], onDelete: SetNull)
 
   @@index([programId])
   @@index([levelId])
@@ -1371,6 +1378,10 @@ model Exam {
   status           ExamStatus @default(DRAFT)
   maxScore         Int        @default(0) // Total poin dari semua soal
   durationMinutes  Int?       // Durasi dalam menit (opsional, untuk display saja)
+  /// Proteksi ujian: fullscreen + kunci attempt saat siswa keluar
+  /// aplikasi/halaman. Mati = siswa bebas keluar masuk, hanya auto-submit
+  /// saat waktu habis yang tetap berlaku.
+  proctoringEnabled Boolean  @default(true)
   notes            String?
   resultsNotifiedAt DateTime?
   createdBy        String
@@ -1382,6 +1393,7 @@ model Exam {
   subject   Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
   items       ExamItem[]
   attempts    ExamAttempt[]
+  materials   Material[]
 
   @@index([status])
   @@index([scheduledStartAt])

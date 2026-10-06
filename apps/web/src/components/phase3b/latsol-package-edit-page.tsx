@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
-import { drillBackUrl, tingkatCode } from '@/lib/content-taxonomy';
+import { drillBackFromUrl, tingkatCode } from '@/lib/content-taxonomy';
 import { useContentLevels } from '@/components/shared/content-drilldown';
 import { LatsolPackageForm, type LatsolPackageFormState } from './latsol-package-form';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -52,6 +52,7 @@ function LatsolPackageEditForm({
 }) {
   const qc = useQueryClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [form, setForm] = useState<LatsolPackageFormState>(() => toForm(initial));
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -63,7 +64,7 @@ function LatsolPackageEditForm({
     if (lvl) setForm((f) => ({ ...f, tingkat: tingkatCode(lvl) ?? 'none' }));
   }, [levelsQ.data, form.levelId, form.tingkat]);
 
-  const backUrl = drillBackUrl(basePath, {
+  const backUrl = drillBackFromUrl(basePath, (k) => searchParams.get(k), {
     tingkat: form.tingkat,
     levelId: form.levelId,
     subjectId: form.subjectId,

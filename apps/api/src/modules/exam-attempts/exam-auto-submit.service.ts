@@ -64,11 +64,13 @@ export class ExamAutoSubmitService implements OnModuleInit, OnModuleDestroy {
     try {
       const now = new Date();
 
-      // Cari semua attempts IN_PROGRESS yang exam-nya sudah selesai (scheduled_end_at < now)
-      // Fase 3d: exclude LOCKED attempts - mereka harus di-unlock manual dulu
+      // Cari semua attempts IN_PROGRESS + LOCKED yang exam-nya sudah selesai
+      // (scheduled_end_at < now). Attempt LOCKED ikut di-submit dengan jawaban
+      // apa adanya — siswa yang terkunci dan tidak di-unlock sebelum waktu
+      // habis tetap dinilai sejauh soal terakhir yang dia jawab.
       const attemptsToSubmit = await this.prisma.examAttempt.findMany({
         where: {
-          status: 'IN_PROGRESS',
+          status: { in: ['IN_PROGRESS', 'LOCKED'] },
           exam: {
             scheduledEndAt: {
               lt: now,

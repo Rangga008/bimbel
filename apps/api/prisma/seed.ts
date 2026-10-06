@@ -1243,6 +1243,584 @@ async function main() {
     }
   }
 
+  // ===== Seed konten demo lengkap =====
+  // Tujuan: semua halaman/fungsi punya data nyata — landing (paket),
+  // bank soal per bab, materi, latsol + attempt, ujian + attempt multi-siswa,
+  // sesi lampau + absensi, feedback mingguan. Semuanya idempotent.
+  const seedAdminUser = await prisma.user.findFirst({
+    where: { email: 'adminacademic1@bimbel.test' },
+  });
+  const seededBy = seedAdminUser?.id || 'seed';
+
+  // a) Paket belajar per jenjang — mengisi slider "Paket Program" di landing.
+  const allActiveLevels = await prisma.level.findMany({
+    where: { isActive: true },
+    include: { program: { select: { name: true } } },
+  });
+  for (const lvl of allActiveLevels) {
+    const pkgName = `Paket ${lvl.name}`;
+    const exists = await prisma.package.findFirst({
+      where: { levelId: lvl.id, name: pkgName },
+      select: { id: true },
+    });
+    if (exists) continue;
+    const [totalSessions, durationWeeks] =
+      lvl.priceUnit === 'YEAR'
+        ? [40, 40]
+        : lvl.priceUnit === 'SESSION'
+          ? [8, 4]
+          : [4, 4];
+    await prisma.package.create({
+      data: {
+        levelId: lvl.id,
+        name: pkgName,
+        code: `PKG-${lvl.id.slice(0, 8).toUpperCase()}`,
+        totalSessions,
+        durationWeeks,
+        price: lvl.price ?? null,
+        description: `Paket ${lvl.program.name} — ${lvl.name}.`,
+      },
+    });
+  }
+
+  // a2) Tautkan kelompok demo ke paket — landing mengurutkan "paket
+  // terpopuler" dari jumlah anggota kelompok yang memakai paket itu.
+  // Ext/privat pakai subset siswa supaya urutan populer terlihat.
+  const pkgByLevel = async (levelId?: string | null) =>
+    levelId
+      ? prisma.package.findFirst({
+          where: { levelId, name: { startsWith: 'Paket ' } },
+          select: { id: true },
+        })
+      : null;
+  const sd5Pkg = await pkgByLevel(sd5LevelId);
+  if (sd5Pkg) {
+    await prisma.learningGroup.update({
+      where: { id: demoGroup.id },
+      data: { packageId: sd5Pkg.id },
+    });
+  }
+  // extProgram & prvProgram sudah dideklarasikan di bagian katalog di atas.
+  const extLevel = extProgram
+    ? await prisma.level.findFirst({
+        where: { programId: extProgram.id, isActive: true },
+        orderBy: { name: 'asc' },
+      })
+    : null;
+  const prvLevel = prvProgram
+    ? await prisma.level.findFirst({
+        where: { programId: prvProgram.id, isActive: true },
+        orderBy: { name: 'asc' },
+      })
+    : null;
+  const extPkg = await pkgByLevel(extLevel?.id);
+  const prvPkg = await pkgByLevel(prvLevel?.id);
+  const demoGroupSeeds = [
+    {
+      code: 'EXT-DEMO-A',
+      name: 'Extra Demo - Kelas A',
+      programId: extProgram?.id,
+      levelId: extLevel?.id,
+      packageId: extPkg?.id,
+      members: studentProfiles.slice(0, 3),
+    },
+    {
+      code: 'PRV-DEMO-A',
+      name: 'Privat Demo - Kelas A',
+      programId: prvProgram?.id,
+      levelId: prvLevel?.id,
+      packageId: prvPkg?.id,
+      members: studentProfiles.slice(0, 1),
+    },
+  ];
+  for (const g of demoGroupSeeds) {
+    if (!g.programId) continue;
+    const grp = await prisma.learningGroup.upsert({
+      where: { code: g.code },
+      create: {
+        name: g.name,
+        code: g.code,
+        programId: g.programId,
+        levelId: g.levelId,
+        packageId: g.packageId,
+        capacity: 10,
+      },
+      update: { programId: g.programId, levelId: g.levelId, packageId: g.packageId },
+    });
+    for (const student of g.members) {
+      await prisma.groupMember.upsert({
+        where: { groupId_studentId: { groupId: grp.id, studentId: student.id } },
+        create: { groupId: grp.id, studentId: student.id },
+        update: {},
+      });
+    }
+  }
+
+  // b) Kategori "Bab" untuk drill-down & grafik perkembangan per bab.
+  const babSeeds = [
+    { code: 'BAB-1', name: 'Bab 1', sortOrder: 51 },
+    { code: 'BAB-2', name: 'Bab 2', sortOrder: 52 },
+    { code: 'BAB-3', name: 'Bab 3', sortOrder: 53 },
+  ];
+  for (const c of babSeeds) {
+    await prisma.contentCategoryDef.upsert({
+      where: { code: c.code },
+      create: c,
+      update: { name: c.name, sortOrder: c.sortOrder },
+    });
+  }
+
+  // c) Bank soal SD Kelas 5 lintas mapel & bab — cukup untuk ujian, latsol,
+  // rekap jawaban, dan grafik perkembangan.
+  type SeedQ = {
+    id: string;
+    subject: string;
+    category: string;
+    content: string;
+    difficulty: 'EASY' | 'MEDIUM' | 'HARD';
+    points: number;
+    explanation?: string;
+    options: Array<{ content: string; isCorrect: boolean }>;
+  };
+  const seedQuestionDefs: SeedQ[] = [
+    { id: 'seed-qm-b1-1', subject: 'MTK', category: 'BAB-1', content: 'Hasil dari 3/4 + 1/2 adalah…', difficulty: 'EASY', points: 1, explanation: 'Samakan penyebut: 3/4 + 2/4 = 5/4 = 1¼.', options: [{ content: '1¼', isCorrect: true }, { content: '4/6', isCorrect: false }, { content: '1⅛', isCorrect: false }, { content: '5/8', isCorrect: false }] },
+    { id: 'seed-qm-b1-2', subject: 'MTK', category: 'BAB-1', content: 'Bentuk desimal dari 7/8 adalah…', difficulty: 'MEDIUM', points: 1, explanation: '7 ÷ 8 = 0,875.', options: [{ content: '0,875', isCorrect: true }, { content: '0,78', isCorrect: false }, { content: '0,785', isCorrect: false }, { content: '0,87', isCorrect: false }] },
+    { id: 'seed-qm-b2-1', subject: 'MTK', category: 'BAB-2', content: 'Luas persegi panjang dengan panjang 12 cm dan lebar 7 cm adalah…', difficulty: 'EASY', points: 1, explanation: 'L = p × l = 12 × 7 = 84 cm².', options: [{ content: '84 cm²', isCorrect: true }, { content: '38 cm²', isCorrect: false }, { content: '96 cm²', isCorrect: false }, { content: '74 cm²', isCorrect: false }] },
+    { id: 'seed-qm-b2-2', subject: 'MTK', category: 'BAB-2', content: 'Keliling persegi dengan sisi 9 cm adalah…', difficulty: 'EASY', points: 1, explanation: 'K = 4 × s = 36 cm.', options: [{ content: '36 cm', isCorrect: true }, { content: '18 cm', isCorrect: false }, { content: '81 cm', isCorrect: false }, { content: '27 cm', isCorrect: false }] },
+    { id: 'seed-qb-b1-1', subject: 'BIN', category: 'BAB-1', content: 'Kalimat yang menggunakan huruf kapital dengan benar adalah…', difficulty: 'MEDIUM', points: 1, explanation: 'Nama orang dan awal kalimat memakai huruf kapital.', options: [{ content: 'Adik pergi ke Sekolah Dasar Negeri 1', isCorrect: false }, { content: 'Siti belajar di kelas lima', isCorrect: true }, { content: 'ibu Membeli Sayur di pasar', isCorrect: false }, { content: 'Kami Berlibur Ke Bandung', isCorrect: false }] },
+    { id: 'seed-qb-b1-2', subject: 'BIN', category: 'BAB-1', content: 'Antonim dari kata "rajin" adalah…', difficulty: 'EASY', points: 1, explanation: 'Rajin ↔ malas.', options: [{ content: 'Malas', isCorrect: true }, { content: 'Pandai', isCorrect: false }, { content: 'Cerdas', isCorrect: false }, { content: 'Tekun', isCorrect: false }] },
+    { id: 'seed-qe-b1-1', subject: 'BIG', category: 'BAB-1', content: '"She ___ to school every day."', difficulty: 'MEDIUM', points: 1, explanation: 'Subjek she → verb + s: goes.', options: [{ content: 'goes', isCorrect: true }, { content: 'go', isCorrect: false }, { content: 'going', isCorrect: false }, { content: 'gone', isCorrect: false }] },
+    { id: 'seed-qe-b1-2', subject: 'BIG', category: 'BAB-1', content: 'The capital city of Indonesia is…', difficulty: 'EASY', points: 1, explanation: 'Jakarta adalah ibu kota Indonesia.', options: [{ content: 'Jakarta', isCorrect: true }, { content: 'Bandung', isCorrect: false }, { content: 'Surabaya', isCorrect: false }, { content: 'Medan', isCorrect: false }] },
+    { id: 'seed-qi-b2-1', subject: 'IPA', category: 'BAB-2', content: 'Proses tumbuhan membuat makanan sendiri disebut…', difficulty: 'EASY', points: 1, explanation: 'Fotosintesis: CO2 + air + cahaya → glukosa + O2.', options: [{ content: 'Fotosintesis', isCorrect: true }, { content: 'Respirasi', isCorrect: false }, { content: 'Fermentasi', isCorrect: false }, { content: 'Transpirasi', isCorrect: false }] },
+    { id: 'seed-qi-b2-2', subject: 'IPA', category: 'BAB-2', content: 'Planet terdekat dari Matahari adalah…', difficulty: 'EASY', points: 1, explanation: 'Urutan: Merkurius, Venus, Bumi, Mars, …', options: [{ content: 'Merkurius', isCorrect: true }, { content: 'Venus', isCorrect: false }, { content: 'Bumi', isCorrect: false }, { content: 'Mars', isCorrect: false }] },
+  ];
+  const seedQuestions = new Map<string, { id: string; points: number; correctOptionIds: string[] }>();
+  for (const q of seedQuestionDefs) {
+    const row = await prisma.question.upsert({
+      where: { id: q.id },
+      create: {
+        id: q.id,
+        programId: regProgram.id,
+        levelId: sd5LevelId,
+        subjectId: subjects.get(q.subject),
+        category: q.category,
+        type: 'SINGLE_CHOICE',
+        content: q.content,
+        difficulty: q.difficulty,
+        points: q.points,
+        explanation: q.explanation ?? null,
+        createdBy: seededBy,
+      },
+      update: {
+        programId: regProgram.id,
+        levelId: sd5LevelId,
+        subjectId: subjects.get(q.subject),
+        category: q.category,
+        explanation: q.explanation ?? null,
+      },
+    });
+    const existingOpts = await prisma.questionOption.findMany({
+      where: { questionId: row.id },
+      orderBy: { sortOrder: 'asc' },
+    });
+    if (existingOpts.length === 0) {
+      await prisma.questionOption.createMany({
+        data: q.options.map((o, i) => ({
+          id: `${q.id}-o${i}`,
+          questionId: row.id,
+          sortOrder: i,
+          content: o.content,
+          isCorrect: o.isCorrect,
+        })),
+      });
+    }
+    const opts = await prisma.questionOption.findMany({
+      where: { questionId: row.id, isCorrect: true },
+      select: { id: true },
+    });
+    seedQuestions.set(q.id, {
+      id: row.id,
+      points: q.points,
+      correctOptionIds: opts.map((o) => o.id),
+    });
+  }
+
+  // Tagging ujian seed lama supaya muncul di drill-down dan grafik
+  // per bab (jenjang/mapel/tipe/kategori).
+  const mtkSubjectId = subjects.get('MTK') ?? null;
+  await prisma.exam.update({
+    where: { id: 'seed-exam1' },
+    data: { programId: regProgram.id, levelId: sd5LevelId, subjectId: mtkSubjectId, category: 'HARIAN' },
+  }).catch(() => undefined);
+  await prisma.exam.update({
+    where: { id: 'seed-exam2' },
+    data: { programId: regProgram.id, levelId: sd5LevelId, subjectId: mtkSubjectId, category: 'UTS' },
+  }).catch(() => undefined);
+
+  // d) Try Out campuran (lintas mapel) — untuk rekap nilai per mapel (PDF1)
+  // dan rekap jawaban per nomor (PDF2).
+  const exam3Start = new Date(now);
+  exam3Start.setDate(exam3Start.getDate() - 3);
+  const exam3End = new Date(exam3Start);
+  exam3End.setHours(exam3End.getHours() + 2);
+  const exam3 = await prisma.exam.upsert({
+    where: { id: 'seed-exam3' },
+    create: {
+      id: 'seed-exam3',
+      title: 'Try Out Campuran SD Kelas 5',
+      description: 'Simulasi lintas mapel: MTK, BIN, BIG, IPA.',
+      programId: regProgram.id,
+      levelId: sd5LevelId,
+      subjectId: mtkSubjectId,
+      category: 'TO',
+      scheduledStartAt: exam3Start,
+      scheduledEndAt: exam3End,
+      status: 'PUBLISHED',
+      maxScore: 10,
+      durationMinutes: 90,
+      proctoringEnabled: true,
+      createdBy: seededBy,
+    },
+    update: {
+      programId: regProgram.id,
+      levelId: sd5LevelId,
+      subjectId: mtkSubjectId,
+      category: 'TO',
+      proctoringEnabled: true,
+    },
+  });
+  const exam3QuestionIds = seedQuestionDefs.map((q) => q.id);
+  for (const [i, qid] of exam3QuestionIds.entries()) {
+    const qMeta = seedQuestions.get(qid);
+    await prisma.examItem.upsert({
+      where: { examId_questionId: { examId: exam3.id, questionId: qid } },
+      create: { examId: exam3.id, questionId: qid, sortOrder: i, points: qMeta?.points ?? 1 },
+      update: { sortOrder: i },
+    });
+  }
+
+  // Attempt exam3 untuk 5 siswa — jawaban deterministik campur benar/salah
+  // supaya rekap jawaban & rekap nilai punya variasi.
+  for (const [si, student] of studentProfiles.entries()) {
+    const attempt = await prisma.examAttempt.upsert({
+      where: { id: `seed-attempt3-${student.id}` },
+      create: {
+        id: `seed-attempt3-${student.id}`,
+        examId: exam3.id,
+        studentId: student.id,
+        status: 'SUBMITTED',
+        score: 0,
+        maxScore: exam3.maxScore,
+        startedAt: exam3Start,
+        submittedAt: exam3End,
+      },
+      update: {},
+    });
+    let score = 0;
+    for (const [qi, qid] of exam3QuestionIds.entries()) {
+      const qMeta = seedQuestions.get(qid);
+      if (!qMeta) continue;
+      // Siswa 0 selalu benar; siswa lain salah bila (si+qi) mod 3 === 0.
+      const correct = si === 0 || (si + qi) % 3 !== 0;
+      const correctOpt = qMeta.correctOptionIds[0];
+      let wrongOpt: string | null = null;
+      if (!correct) {
+        const wrong = await prisma.questionOption.findFirst({
+          where: { questionId: qid, isCorrect: false },
+          orderBy: { sortOrder: 'asc' },
+          select: { id: true },
+        });
+        wrongOpt = wrong?.id ?? null;
+      }
+      const sel = correct ? correctOpt : wrongOpt;
+      if (!sel) continue;
+      const earned = correct ? qMeta.points : 0;
+      score += earned;
+      await prisma.examAnswer.upsert({
+        where: { attemptId_questionId: { attemptId: attempt.id, questionId: qid } },
+        create: {
+          attemptId: attempt.id,
+          questionId: qid,
+          selectedOptionIds: [sel],
+          isCorrect: correct,
+          score: earned,
+        },
+        update: {},
+      });
+    }
+    await prisma.examAttempt.update({ where: { id: attempt.id }, data: { score } });
+  }
+
+  // e) Paket latsol MTK Bab 1 + attempt (1 selesai, 1 sedang berjalan —
+  // mendemokan fitur simpan-lanjutkan).
+  const latsol1 = await prisma.latsolPackage.upsert({
+    where: { id: 'seed-latsol1' },
+    create: {
+      id: 'seed-latsol1',
+      title: 'Latsol Matematika — Bab 1 (SD Kelas 5)',
+      description: 'Latihan pecahan: penjumlahan, desimal, dan kawan-kawannya.',
+      programId: regProgram.id,
+      levelId: sd5LevelId,
+      subjectId: mtkSubjectId,
+      category: 'BAB-1',
+      createdBy: seededBy,
+    },
+    update: { programId: regProgram.id, levelId: sd5LevelId, subjectId: mtkSubjectId, category: 'BAB-1' },
+  });
+  const latsolQuestionIds = ['seed-qm-b1-1', 'seed-qm-b1-2', 'seed-qm-b2-1', 'seed-qm-b2-2'];
+  for (const [i, qid] of latsolQuestionIds.entries()) {
+    await prisma.latsolPackageItem.upsert({
+      where: { packageId_questionId: { packageId: latsol1.id, questionId: qid } },
+      create: { packageId: latsol1.id, questionId: qid, sortOrder: i },
+      update: { sortOrder: i },
+    });
+  }
+  // Attempt selesai (siswa 0) — jawaban semua benar.
+  if (studentProfiles[0]) {
+    const att = await prisma.latsolAttempt.upsert({
+      where: { id: `seed-latsol-att-${studentProfiles[0].id}` },
+      create: {
+        id: `seed-latsol-att-${studentProfiles[0].id}`,
+        packageId: latsol1.id,
+        studentId: studentProfiles[0].id,
+        status: 'SUBMITTED',
+        score: 4,
+        maxScore: 4,
+        submittedAt: new Date(now.getTime() - 2 * 86400000),
+      },
+      update: {},
+    });
+    for (const qid of latsolQuestionIds) {
+      const qMeta = seedQuestions.get(qid);
+      if (!qMeta?.correctOptionIds[0]) continue;
+      await prisma.latsolAnswer.upsert({
+        where: { attemptId_questionId: { attemptId: att.id, questionId: qid } },
+        create: {
+          attemptId: att.id,
+          questionId: qid,
+          selectedOptionIds: [qMeta.correctOptionIds[0]],
+          isCorrect: true,
+          score: 1,
+        },
+        update: {},
+      });
+    }
+  }
+  // Attempt berjalan (siswa 1) — baru 2 soal terjawab (1 benar, 1 salah).
+  if (studentProfiles[1]) {
+    const att = await prisma.latsolAttempt.upsert({
+      where: { id: `seed-latsol-att-${studentProfiles[1].id}` },
+      create: {
+        id: `seed-latsol-att-${studentProfiles[1].id}`,
+        packageId: latsol1.id,
+        studentId: studentProfiles[1].id,
+        status: 'IN_PROGRESS',
+        score: 1,
+        maxScore: 4,
+      },
+      update: {},
+    });
+    const partial = latsolQuestionIds.slice(0, 2);
+    for (const [i, qid] of partial.entries()) {
+      const qMeta = seedQuestions.get(qid);
+      if (!qMeta) continue;
+      const correct = i === 0;
+      const sel = correct
+        ? qMeta.correctOptionIds[0]
+        : (await prisma.questionOption.findFirst({
+            where: { questionId: qid, isCorrect: false },
+            orderBy: { sortOrder: 'asc' },
+            select: { id: true },
+          }))?.id;
+      if (!sel) continue;
+      await prisma.latsolAnswer.upsert({
+        where: { attemptId_questionId: { attemptId: att.id, questionId: qid } },
+        create: {
+          attemptId: att.id,
+          questionId: qid,
+          selectedOptionIds: [sel],
+          isCorrect: correct,
+          score: correct ? 1 : 0,
+        },
+        update: {},
+      });
+    }
+  }
+
+  // f) Materi pembelajaran SD5 — satu tertaut ke latsol & try out di atas.
+  const materialSeeds = [
+    {
+      id: 'seed-mat-1',
+      title: 'Ringkasan Bab 1 — Pecahan',
+      subject: 'MTK',
+      category: 'BAB-1',
+      content: 'Pecahan adalah bagian dari keseluruhan. Materi mencakup pecahan senilai, penjumlahan pecahan, dan bentuk desimal.',
+      latsolPackageId: latsol1.id,
+      examId: exam3.id,
+    },
+    {
+      id: 'seed-mat-2',
+      title: 'Bangun Datar — Luas & Keliling',
+      subject: 'MTK',
+      category: 'BAB-2',
+      content: 'Rumus luas dan keliling persegi, persegi panjang, dan segitiga beserta contoh soal.',
+      latsolPackageId: null,
+      examId: null,
+    },
+    {
+      id: 'seed-mat-3',
+      title: 'Tata Bahasa Dasar — Simple Present',
+      subject: 'BIG',
+      category: 'BAB-1',
+      content: 'Pola kalimat Simple Present Tense: S + V1 (s/es untuk he/she/it). Contoh: She goes to school.',
+      latsolPackageId: null,
+      examId: null,
+    },
+  ];
+  for (const m of materialSeeds) {
+    await prisma.material.upsert({
+      where: { id: m.id },
+      create: {
+        id: m.id,
+        title: m.title,
+        content: m.content,
+        programId: regProgram.id,
+        levelId: sd5LevelId,
+        subjectId: subjects.get(m.subject),
+        category: m.category,
+        latsolPackageId: m.latsolPackageId,
+        examId: m.examId,
+      },
+      update: {
+        programId: regProgram.id,
+        levelId: sd5LevelId,
+        subjectId: subjects.get(m.subject),
+        category: m.category,
+        latsolPackageId: m.latsolPackageId,
+        examId: m.examId,
+      },
+    });
+  }
+
+  // g) Sesi lampau + absensi — untuk laporan kehadiran, performa bulanan,
+  // dan rekap WA. 8 sesi dalam 4 minggu terakhir (Senin & Rabu sore).
+  const pastSubjects = ['MTK', 'BIN', 'IPA', 'BIG'];
+  const pastSessions: Array<{ weekBack: number; dow: number; subjectIdx: number; tutorIdx: number }> = [
+    { weekBack: 4, dow: 1, subjectIdx: 0, tutorIdx: 0 },
+    { weekBack: 4, dow: 3, subjectIdx: 1, tutorIdx: 1 },
+    { weekBack: 3, dow: 1, subjectIdx: 2, tutorIdx: 1 },
+    { weekBack: 3, dow: 3, subjectIdx: 3, tutorIdx: 0 },
+    { weekBack: 2, dow: 1, subjectIdx: 0, tutorIdx: 0 },
+    { weekBack: 2, dow: 3, subjectIdx: 1, tutorIdx: 1 },
+    { weekBack: 1, dow: 1, subjectIdx: 2, tutorIdx: 1 },
+    { weekBack: 1, dow: 3, subjectIdx: 3, tutorIdx: 0 },
+  ];
+  const attPattern: Array<'HADIR' | 'TERLAMBAT' | 'IZIN' | 'SAKIT' | 'ALFA'> = [
+    'HADIR', 'HADIR', 'HADIR', 'TERLAMBAT', 'HADIR', 'IZIN', 'HADIR', 'SAKIT',
+  ];
+  for (const [si2, ps] of pastSessions.entries()) {
+    const refMonday = nextWeekday(new Date(now.getTime() - ps.weekBack * 7 * 86400000), 1);
+    const startsAt = new Date(refMonday);
+    startsAt.setDate(startsAt.getDate() + (ps.dow - 1));
+    startsAt.setHours(16, 0, 0, 0);
+    const endsAt = new Date(startsAt);
+    endsAt.setMinutes(endsAt.getMinutes() + 90);
+    let session = await prisma.session.findFirst({
+      where: { groupId: demoGroup.id, startsAt },
+    });
+    if (!session) {
+      session = await prisma.session.create({
+        data: {
+          groupId: demoGroup.id,
+          tutorId: tutorProfiles[ps.tutorIdx]?.id,
+          roomId: roomA.id,
+          subjectId: subjects.get(pastSubjects[ps.subjectIdx]),
+          startsAt,
+          endsAt,
+          status: 'COMPLETED',
+        },
+      });
+    } else if (session.status !== 'COMPLETED') {
+      session = await prisma.session.update({
+        where: { id: session.id },
+        data: { status: 'COMPLETED' },
+      });
+    }
+    for (const [mi, student] of studentProfiles.entries()) {
+      await prisma.attendance.upsert({
+        where: { sessionId_studentId: { sessionId: session.id, studentId: student.id } },
+        create: {
+          sessionId: session.id,
+          studentId: student.id,
+          status: attPattern[(si2 + mi) % attPattern.length],
+          markedBy: tutorProfiles[ps.tutorIdx]?.id,
+        },
+        update: {},
+      });
+    }
+  }
+
+  // h) Feedback mingguan — minggu ini & minggu lalu, diisi ortu & siswa.
+  const ortuUser = await prisma.user.findFirst({ where: { email: 'ortu1@bimbel.test' } });
+  const mondayThisWeek = nextWeekday(now, 1);
+  const mondayLastWeek = new Date(mondayThisWeek.getTime() - 7 * 86400000);
+  const feedbackSeeds: Array<{
+    studentIdx: number;
+    subjectCode: string;
+    weekStart: Date;
+    content: string;
+    authorUserId?: string;
+    authorRole: 'SISWA' | 'ORANG_TUA';
+  }> = [
+    { studentIdx: 0, subjectCode: 'MTK', weekStart: mondayThisWeek, content: 'Anak sudah mulai paham pecahan senilai, tapi masih lambat saat soal cerita. Mohon latihan tambahan.', authorUserId: ortuUser?.id, authorRole: 'ORANG_TUA' },
+    { studentIdx: 0, subjectCode: 'BIN', weekStart: mondayThisWeek, content: 'Sudah rajin membaca 15 menit tiap malam.', authorUserId: ortuUser?.id, authorRole: 'ORANG_TUA' },
+    { studentIdx: 1, subjectCode: 'MTK', weekStart: mondayThisWeek, content: 'Minggu ini saya bisa menyelesaikan soal luas bangun datar sendiri.', authorRole: 'SISWA' },
+    { studentIdx: 0, subjectCode: 'MTK', weekStart: mondayLastWeek, content: 'Anak masih bingung membedakan pecahan biasa dan campuran.', authorUserId: ortuUser?.id, authorRole: 'ORANG_TUA' },
+    { studentIdx: 2, subjectCode: 'IPA', weekStart: mondayLastWeek, content: 'Percobaan fotosintesis di kelas sangat menarik!', authorRole: 'SISWA' },
+  ];
+  for (const f of feedbackSeeds) {
+    const student = studentProfiles[f.studentIdx];
+    const subjectId = subjects.get(f.subjectCode);
+    const studentUser = student
+      ? await prisma.student.findUnique({
+          where: { id: student.id },
+          select: { userId: true },
+        })
+      : null;
+    const authorUserId = f.authorUserId ?? studentUser?.userId;
+    if (!student || !subjectId || !authorUserId) continue;
+    await prisma.feedbackEntry.upsert({
+      where: {
+        groupId_studentId_subjectId_weekStart: {
+          groupId: demoGroup.id,
+          studentId: student.id,
+          subjectId,
+          weekStart: f.weekStart,
+        },
+      },
+      create: {
+        groupId: demoGroup.id,
+        studentId: student.id,
+        subjectId,
+        weekStart: f.weekStart,
+        content: f.content,
+        authorUserId,
+        authorRole: f.authorRole,
+        parentId: f.authorRole === 'ORANG_TUA' ? seedParent?.id : null,
+      },
+      update: {},
+    });
+  }
+
+  // i) Asal sekolah siswa demo — mengisi kolom "Asal Sekolah" di rekap cetak.
+  const schoolByIdx = ['SDN 1 Merdeka', 'SDN 2 Pahlawan', 'SDIT Al-Ikhlas', 'SDN 5 Melati', 'SD Kristen Bina'];
+  for (const [i, student] of studentProfiles.entries()) {
+    await prisma.student.update({
+      where: { id: student.id },
+      data: { schoolOrigin: schoolByIdx[i] ?? 'SDN 1 Merdeka' },
+    }).catch(() => undefined);
+  }
+
   // Fase 4b: Create default score rules
   console.log('Creating score rules...');
   await prisma.scoreRule.upsert({
@@ -1293,7 +1871,11 @@ async function main() {
       points: 1,
       createdBy: adminUser?.id || 'seed',
     },
-    update: {},
+    update: {
+      subjectId: subjects.get('MTK'),
+      category: 'BAB-1',
+      levelId: sd5LevelId,
+    },
   });
 
   const q1Options = await ensureQuestionOptions(question1.id, 'seed-q1', [
@@ -1315,7 +1897,11 @@ async function main() {
       points: 2,
       createdBy: adminUser?.id || 'seed',
     },
-    update: {},
+    update: {
+      subjectId: subjects.get('MTK'),
+      category: 'BAB-1',
+      levelId: sd5LevelId,
+    },
   });
 
   const q2Options = await ensureQuestionOptions(question2.id, 'seed-q2', [
@@ -1337,7 +1923,11 @@ async function main() {
       points: 3,
       createdBy: adminUser?.id || 'seed',
     },
-    update: {},
+    update: {
+      subjectId: subjects.get('MTK'),
+      category: 'BAB-1',
+      levelId: sd5LevelId,
+    },
   });
 
   const q3Options = await ensureQuestionOptions(question3.id, 'seed-q3', [

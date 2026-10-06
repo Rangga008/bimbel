@@ -17,7 +17,7 @@ export class PublicController {
 
   @Get('landing')
   async landing() {
-    const [students, tutors, programCount, packageCount, catalog, rooms, buildings] =
+    const [students, tutors, programCount, packageCount, catalog, rooms, buildings, pkgGroups] =
       await Promise.all([
         this.prisma.student.count({ where: { isActive: true } }),
         this.prisma.tutor.count({ where: { isActive: true } }),
@@ -39,7 +39,32 @@ export class PublicController {
           orderBy: { name: 'asc' },
           select: { name: true, address: true },
         }),
+        // Jumlah siswa per paket — dipakai landing untuk menampilkan
+        // "paket terpopuler" (paket dengan anggota kelompok terbanyak).
+        this.prisma.learningGroup.findMany({
+          where: { packageId: { not: null } },
+          select: { packageId: true, _count: { select: { members: true } } },
+        }),
       ]);
+
+    const pkgStudents = new Map<string, number>();
+    for (const g of pkgGroups) {
+      if (!g.packageId) continue;
+      pkgStudents.set(
+        g.packageId,
+        (pkgStudents.get(g.packageId) ?? 0) + g._count.members,
+      );
+    }
+    const catalogWithCounts = catalog.map((p) => ({
+      ...p,
+      levels: p.levels.map((l) => ({
+        ...l,
+        packages: l.packages.map((pkg) => ({
+          ...pkg,
+          studentCount: pkgStudents.get(pkg.id) ?? 0,
+        })),
+      })),
+    }));
 
     return {
       stats: {
@@ -48,7 +73,7 @@ export class PublicController {
         programs: programCount,
         packages: packageCount,
       },
-      catalog,
+      catalog: catalogWithCounts,
       facilities: rooms.map((r) => ({
         id: r.id,
         name: r.name,

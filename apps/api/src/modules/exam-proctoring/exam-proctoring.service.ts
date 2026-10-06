@@ -209,6 +209,16 @@ export class ExamProctoringService {
       throw new BadRequestException('Attempt ini sudah selesai atau dikunci.');
     }
 
+    // Proteksi nonaktif untuk ujian ini — pelanggaran tidak dicatat/dikunci.
+    if (!attempt.exam.proctoringEnabled) {
+      return {
+        success: true,
+        violationCount: attempt.violationCount,
+        locked: false,
+        message: 'Proteksi ujian nonaktif.',
+      };
+    }
+
     // Increment violation count
     const updated = await this.prisma.examAttempt.update({
       where: { id: attemptId },
@@ -217,22 +227,19 @@ export class ExamProctoringService {
       },
     });
 
-    // Check if should auto-lock
-    if (updated.violationCount >= this.VIOLATION_THRESHOLD) {
-      await this.lockAttempt(attemptId, 'SYSTEM', `Auto-lock due to ${dto.violationType} (threshold: ${this.VIOLATION_THRESHOLD})`);
-      return {
-        success: true,
-        violationCount: updated.violationCount,
-        locked: true,
-        message: `Attempt dikunci karena mencapai ${this.VIOLATION_THRESHOLD} pelanggaran.`,
-      };
-    }
-
+    // Proteksi aktif: keluar aplikasi/halaman langsung mengunci attempt —
+    // siswa tidak bisa lanjut sampai pengawas membuka kembali.
+    await this.lockAttempt(
+      attemptId,
+      'SYSTEM',
+      `Terkunci otomatis: siswa ${dto.violationType}.`,
+    );
     return {
       success: true,
       violationCount: updated.violationCount,
-      locked: false,
-      message: `Pelanggaran tercatat (${updated.violationCount}/${this.VIOLATION_THRESHOLD}).`,
+      locked: true,
+      message:
+        'Attempt dikunci karena Anda keluar dari ujian. Hubungi pengawas untuk melanjutkan.',
     };
   }
 

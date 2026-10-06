@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { ExamRow, UpdateExamDto } from '@/lib/phase3c-types';
-import { drillBackUrl, tingkatCode } from '@/lib/content-taxonomy';
+import { drillBackFromUrl, tingkatCode } from '@/lib/content-taxonomy';
 import { useContentLevels } from '@/components/shared/content-drilldown';
 import { ExamForm, emptyExamForm, type ExamFormState } from './exam-form';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -33,6 +33,7 @@ function toForm(exam: ExamRow): ExamFormState {
     scheduledStartAt: exam.scheduledStartAt.slice(0, 16),
     scheduledEndAt: exam.scheduledEndAt.slice(0, 16),
     durationMinutes: exam.durationMinutes || undefined,
+    proctoringEnabled: exam.proctoringEnabled ?? true,
     notes: exam.notes || '',
     questionIds: exam.items.map((item) => item.questionId),
     status: exam.status,
@@ -50,6 +51,7 @@ function ExamEditForm({
 }) {
   const qc = useQueryClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [form, setForm] = useState<ExamFormState>(() => toForm(initial));
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -65,7 +67,7 @@ function ExamEditForm({
       }));
   }, [levelsQ.data, form.pickerFilters.levelId, form.pickerFilters.tingkat]);
 
-  const backUrl = drillBackUrl(basePath, {
+  const backUrl = drillBackFromUrl(basePath, (k) => searchParams.get(k), {
     tingkat: form.pickerFilters.tingkat,
     levelId: form.pickerFilters.levelId,
     subjectId: form.pickerFilters.subjectId,
@@ -84,6 +86,7 @@ function ExamEditForm({
         scheduledStartAt: form.scheduledStartAt,
         scheduledEndAt: form.scheduledEndAt,
         durationMinutes: form.durationMinutes,
+        proctoringEnabled: form.proctoringEnabled,
         notes: form.notes || undefined,
         questionIds: form.questionIds,
         status: form.status,

@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { ProgramItem, QuestionRow } from '@/lib/phase3a-types';
 import {
-  drillBackUrl,
+  drillBackFromUrl,
   tingkatCode,
   type HierarchyLevel,
 } from '@/lib/content-taxonomy';
@@ -51,6 +51,7 @@ export function QuestionCreatePage({
 }) {
   const qc = useQueryClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [drafts, setDrafts] = useState<QuestionDraft[]>([
     {
       ...emptyQuestionDraft(),
@@ -106,7 +107,7 @@ export function QuestionCreatePage({
       qc.invalidateQueries({ queryKey: ['questions'] });
       qc.invalidateQueries({ queryKey: ['questions-summary'] });
       router.push(
-        drillBackUrl(basePath, {
+        drillBackFromUrl(basePath, (k) => searchParams.get(k), {
           tingkat: drafts[0]?.tingkat,
           levelId: drafts[0]?.levelId,
           subjectId: drafts[0]?.subjectId,
@@ -155,7 +156,7 @@ export function QuestionCreatePage({
           variant="outline"
           onClick={() =>
             router.push(
-              drillBackUrl(basePath, {
+              drillBackFromUrl(basePath, (k) => searchParams.get(k), {
                 tingkat: drafts[0]?.tingkat,
                 levelId: drafts[0]?.levelId,
                 subjectId: drafts[0]?.subjectId,

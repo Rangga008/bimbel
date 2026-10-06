@@ -2,19 +2,26 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { CalendarClock, CircleAlert, FileCheck2, FileQuestion, MonitorCheck, Pencil, Plus, Send, Settings2, Star, StopCircle, Trash2, Users } from 'lucide-react';
+import { CalendarClock, CircleAlert, FileCheck2, FileQuestion, MonitorCheck, Pencil, Plus, Printer, Send, Settings2, Star, StopCircle, Trash2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/shared/empty-state';
-import { apiFetch, ApiError } from '@/lib/api-client';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { apiFetch, apiFetchBlob, ApiError } from '@/lib/api-client';
 import { ExamRow, ExamStatus } from '@/lib/phase3c-types';
 import { useAuthStore } from '@/stores/auth-store';
-import { ContentDrilldown, DrillBreadcrumb, useContentCategories, useContentLevels } from '@/components/shared/content-drilldown';
+import { ContentDrilldown, DrillBreadcrumb, useContentCategories, useContentLevels, useDrillState } from '@/components/shared/content-drilldown';
 import { ContentCategoriesManager } from '@/components/shared/content-categories-manager';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
 import {
@@ -22,11 +29,10 @@ import {
   categoryLabel,
   categoryOptions,
   drillDone,
-  drillFromParams,
+  drillQuery,
   DRILL_ALL,
   DRILL_EMPTY,
   DRILL_NONE,
-  type DrillValue,
 } from '@/lib/content-taxonomy';
 import { Tag } from 'lucide-react';
 
@@ -45,10 +51,7 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
   const router = useRouter();
   const me = useAuthStore((s) => s.user);
   const canUnlockProctoring = me?.permissions.includes('exam_proctor.unlock') ?? false;
-  const searchParams = useSearchParams();
-  const [drill, setDrill] = useState<DrillValue>(() =>
-    drillFromParams((k) => searchParams.get(k)),
-  );
+  const [drill, setDrill] = useDrillState();
   const [catFilter, setCatFilter] = useState('');
 
   const examsQ = useQuery({
@@ -100,6 +103,25 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
     setDeleteTarget(id);
   };
 
+  /** Buka dokumen cetak HTML di tab baru, atau unduh file biner (xlsx). */
+  async function openPrint(path: string, downloadName?: string) {
+    try {
+      const blob = await apiFetchBlob(path);
+      const url = URL.createObjectURL(blob);
+      if (downloadName) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = downloadName;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      } else {
+        window.open(url, '_blank', 'noopener');
+      }
+    } catch (e) {
+      toast.error(err(e, 'Gagal membuka dokumen cetak.'));
+    }
+  }
+
   const getStatusBadge = (status: ExamStatus) => {
     const cfg = {
       DRAFT: { variant: 'secondary', label: 'Draft' },
@@ -132,7 +154,7 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
   const done = drillDone(drill);
 
   const createUrl = () => {
-    const p = new URLSearchParams();
+    const p = new URLSearchParams(drillQuery(drill));
     if (drill.levelId && drill.levelId !== DRILL_ALL && drill.levelId !== DRILL_NONE) p.set('levelId', drill.levelId);
     if (drill.subjectId && drill.subjectId !== DRILL_ALL && drill.subjectId !== DRILL_NONE) p.set('subjectId', drill.subjectId);
     if (drill.category && drill.category !== DRILL_ALL && drill.category !== DRILL_NONE) p.set('category', drill.category);
@@ -247,14 +269,58 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => router.push(`${basePath}/${exam.id}/proctoring`)}
+                      onClick={() => router.push(`${basePath}/${exam.id}/proctoring${drillQuery(drill)}`)}
                     >
                       <MonitorCheck /> Proctoring
                     </Button>
                   )}
+                  {(canManage || canUnlockProctoring) && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button size="sm" variant="outline">
+                            <Printer /> Cetak
+                          </Button>
+                        }
+                      />
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => openPrint(`/analytics/exam/${exam.id}/print?part=questions`)}
+                        >
+                          Cetak Soal
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => openPrint(`/analytics/exam/${exam.id}/print?part=questions&key=1`)}
+                        >
+                          Cetak Soal + Kunci
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => openPrint(`/analytics/exam/${exam.id}/print?part=answers`)}
+                        >
+                          Rekap Jawaban Siswa (cetak)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => openPrint(`/analytics/exam/${exam.id}/print?part=scores`)}
+                        >
+                          Rekap Nilai Semua Siswa (cetak)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() =>
+                            openPrint(
+                              `/analytics/exam/${exam.id}/score-recap.xlsx`,
+                              `rekap-nilai-${exam.title.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}.xlsx`,
+                            )
+                          }
+                        >
+                          Rekap Nilai — Excel (.xlsx)
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                   {canManage && exam.status === 'DRAFT' && (
                     <>
-                      <Button size="sm" variant="outline" onClick={() => router.push(`${basePath}/${exam.id}/edit`)}>
+                      <Button size="sm" variant="outline" onClick={() => router.push(`${basePath}/${exam.id}/edit${drillQuery(drill)}`)}>
                         <Pencil /> Edit
                       </Button>
                       <Button size="sm" onClick={() => setPublishTarget(exam)}>
@@ -267,7 +333,7 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
                   )}
                   {canManage && exam.status === 'PUBLISHED' && (
                     <>
-                      <Button size="sm" variant="outline" onClick={() => router.push(`${basePath}/${exam.id}/edit`)}>
+                      <Button size="sm" variant="outline" onClick={() => router.push(`${basePath}/${exam.id}/edit${drillQuery(drill)}`)}>
                         <Settings2 /> Kelola
                       </Button>
                       <Button size="sm" variant="destructive" onClick={() => setEndTarget(exam)}>
