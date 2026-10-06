@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiFetch, ApiError } from "@/lib/api-client";
+import { useAuthStore } from "@/stores/auth-store";
 import {
 	Card,
 	CardContent,
@@ -126,6 +127,16 @@ const WA_TOGGLES: Array<{
  */
 export function FinanceSettings() {
 	const qc = useQueryClient();
+	// Halaman ini dipakai admin finance & admin akademik — bagian kas/bank dan
+	// outbox WA butuh permission finance yang tidak dimiliki admin akademik,
+	// jadi query & kartunya digate supaya tidak memicu 403.
+	const canViewAccounts =
+		useAuthStore((s) => s.user?.permissions.includes("invoice.view")) ??
+		false;
+	const canViewOutbox =
+		useAuthStore((s) =>
+			s.user?.permissions.includes("whatsapp_outbox.view"),
+		) ?? false;
 	const settingsQ = useQuery({
 		queryKey: ["app-settings"],
 		queryFn: () => apiFetch<AppSettings>("/settings"),
@@ -133,6 +144,7 @@ export function FinanceSettings() {
 	const accountsQ = useQuery({
 		queryKey: ["financial-accounts"],
 		queryFn: () => apiFetch<FinancialAccount[]>("/financial-accounts"),
+		enabled: canViewAccounts,
 	});
 
 	// Lazy-init dari cache: saat kembali ke halaman ini React Query bisa
@@ -922,6 +934,7 @@ export function FinanceSettings() {
 			</Card>
 
 			{/* ---- Akun Kas / Bank ---- */}
+			{canViewAccounts ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Akun Kas / Bank</CardTitle>
@@ -1039,7 +1052,9 @@ export function FinanceSettings() {
 				</CardContent>
 			</Card>
 
-			<WhatsAppOutboxManager />
+			) : null}
+
+			{canViewOutbox ? <WhatsAppOutboxManager /> : null}
 
 			<ConfirmDialog
 				open={accToDelete !== null}

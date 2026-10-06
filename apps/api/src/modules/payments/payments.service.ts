@@ -1,7 +1,9 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -85,6 +87,7 @@ export const paymentDetailInclude = {
  */
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
   private readonly dummyGateway: DummyGatewayProvider;
   private midtransGateway: MidtransGatewayProvider | null = null;
   private midtransKey = '';
@@ -720,7 +723,23 @@ export class PaymentsService {
       // Provider tanpa status API (DUMMY) — status hanya berubah via webhook/simulasi.
       return this.get(payment.id);
     }
-    const parsed = await gateway.checkStatus(payment.providerRef);
+    let parsed;
+    try {
+      parsed = await gateway.checkStatus(payment.providerRef);
+    } catch (err) {
+      // Endpoint ini dipanggil berulang saat ortu kembali dari Snap menunggu
+      // status berubah — kegagalan menghubungi Midtrans (timeout, egress,
+      // respons non-OK) bukan status final, jadi jangan balas 502 ke klien.
+      // Cukup catat server-side dan biarkan payment tetap PENDING; webhook /
+      // percobaan berikutnya yang menyelesaikan transaksi.
+      if (err instanceof BadGatewayException) {
+        this.logger.warn(
+          `check-status payment ${payment.id}: ${err.message}`,
+        );
+        return this.get(payment.id);
+      }
+      throw err;
+    }
     if (!parsed.valid || !parsed.status) {
       // Transaksi belum final di Midtrans (pending) — status tetap PENDING.
       return this.get(payment.id);
