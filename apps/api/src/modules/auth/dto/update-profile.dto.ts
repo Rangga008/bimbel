@@ -13,4 +13,16 @@ export class UpdateProfileDto {
     message: 'Nomor HP tidak valid (maks 20 karakter).',
   })
   phone?: string;
+
+  /** Pilihan kampus/jurusan 1 (khusus siswa) — tercetak di laporan hasil belajar. */
+  @IsOptional()
+  @IsString()
+  @Length(0, 120, { message: 'Pilihan 1 maks 120 karakter.' })
+  majorChoice1?: string;
+
+  /** Pilihan kampus/jurusan 2 (khusus siswa). */
+  @IsOptional()
+  @IsString()
+  @Length(0, 120, { message: 'Pilihan 2 maks 120 karakter.' })
+  majorChoice2?: string;
 }

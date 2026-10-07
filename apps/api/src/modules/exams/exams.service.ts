@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { TutorScopeService } from '../../common/tutor-scope/tutor-scope.service';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { CreateExamDto, UpdateExamDto } from './dto/exam.dto';
+import { PERMISSION_CODES } from '../rbac/permissions.constants';
 
 /**
  * Fase 3c — Exam management dengan timing global server-side.
@@ -23,7 +24,7 @@ export class ExamsService {
     private readonly contentCategories: ContentCategoriesService,
   ) {}
 
-  async list(actor: AuthenticatedUser, query: { status?: string; programId?: string; levelId?: string; subjectId?: string; category?: string } = {}) {
+  async list(actor: AuthenticatedUser, query: { status?: string; programId?: string; levelId?: string; subjectId?: string; category?: string; all?: string } = {}) {
     const where: Record<string, unknown> = {};
     if (query.status) where.status = query.status;
     if (query.programId) where.programId = query.programId;
@@ -31,18 +32,27 @@ export class ExamsService {
     if (query.subjectId) where.subjectId = query.subjectId;
     if (query.category) where.category = query.category;
 
-    // Tutor hanya melihat ujian program/jenjang/mapel yang dia ampu.
+    // Tutor hanya melihat ujian program/jenjang kelompok yang dia ampu +
+    // ujian yang dia buat sendiri. Mapel saja tidak cukup — ujian mapel
+    // yang sama di jenjang lain bukan tanggung jawabnya.
+    // `all=1` melewati scope ini — hanya untuk pengawas proctoring
+    // (tutor bisa ditugasi mengawas ujian di luar kelompoknya).
     const scope = await this.tutorScope.for(actor);
     if (scope) {
-      where.AND = [
-        {
-          OR: [
-            { programId: { in: scope.programIds } },
-            { levelId: { in: scope.levelIds } },
-            { subjectId: { in: scope.subjectIds } },
-          ],
-        },
-      ];
+      const asProctor =
+        query.all === '1' &&
+        actor.permissions.includes(PERMISSION_CODES.EXAM_PROCTOR_UNLOCK);
+      if (!asProctor) {
+        where.AND = [
+          {
+            OR: [
+              { programId: { in: scope.programIds } },
+              { levelId: { in: scope.levelIds } },
+              { createdBy: actor.id },
+            ],
+          },
+        ];
+      }
     }
     // Siswa hanya melihat ujian jenjang/mapel/kelompok yang dia ikuti
     // (ujian tanpa taksonomi = umum, tetap terlihat).

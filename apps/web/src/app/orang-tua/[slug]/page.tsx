@@ -5,6 +5,7 @@ import { ParentAttendanceView } from "@/components/phase1d/parent-attendance-vie
 import { NotificationsInbox } from "@/components/phase1d/notifications-inbox";
 import { ParentPayments } from "@/components/phase2b/parent-payments";
 import { ParentPerformancePage } from "@/components/phase4a/parent-performance-page";
+import { LearningReportPage } from "@/components/shared/learning-report-page";
 import { ParentRankingPage } from "@/components/phase4b/parent-ranking";
 import { FeedbackForm } from "@/components/feedback/feedback-form";
 import { ProgramCatalog } from "@/components/shared/program-catalog";
@@ -36,6 +37,7 @@ export default async function OrangTuaMenuPage({
 	if (slug === "program") return <ProgramCatalog />;
 	if (slug === "performa-anak") return <ParentPerformancePage />;
 	if (slug === "ranking") return <ParentRankingPage />;
+	if (slug === "laporan") return <LearningReportPage audience="parent" />;
 	if (slug === "pengumuman") return <NotificationsInbox />;
 	if (slug === "profil") return <ProfilePage />;
 	return <SkeletonPage role="orang-tua" title={item.label} />;

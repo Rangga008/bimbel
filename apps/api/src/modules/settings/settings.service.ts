@@ -16,6 +16,12 @@ export interface CompanySettings {
 export interface FinanceSettings {
   /** Jatuh tempo default (hari) saat invoice diterbitkan tanpa dueDate eksplisit. */
   invoiceDueDays: number;
+  /** Nama penandatangan kwitansi (mis. bendahara). Kosong = nama verifikator. */
+  receiptSignerName: string;
+  /** Jabatan penandatangan (mis. "Bendahara"). Kosong = "Admin Finance". */
+  receiptSignerTitle: string;
+  /** URL gambar tanda tangan (/api/media/…/file atau eksternal). Kosong = tanpa gambar. */
+  receiptSignatureUrl: string;
 }
 
 export interface WhatsAppSettings {
@@ -161,7 +167,12 @@ export const SETTING_DEFS: {
     },
   },
   finance: {
-    defaults: { invoiceDueDays: 14 },
+    defaults: {
+      invoiceDueDays: 14,
+      receiptSignerName: '',
+      receiptSignerTitle: '',
+      receiptSignatureUrl: '',
+    },
     validate(raw) {
       const o = (raw ?? {}) as Record<string, unknown>;
       return {
@@ -170,6 +181,21 @@ export const SETTING_DEFS: {
           'finance.invoiceDueDays',
           0,
           365,
+        ),
+        receiptSignerName: asString(
+          o.receiptSignerName,
+          'finance.receiptSignerName',
+          100,
+        ),
+        receiptSignerTitle: asString(
+          o.receiptSignerTitle,
+          'finance.receiptSignerTitle',
+          80,
+        ),
+        receiptSignatureUrl: asString(
+          o.receiptSignatureUrl,
+          'finance.receiptSignatureUrl',
+          500,
         ),
       };
     },

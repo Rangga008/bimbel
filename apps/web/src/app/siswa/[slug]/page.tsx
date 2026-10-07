@@ -5,6 +5,7 @@ import { MaterialsManager } from "@/components/phase3a/materials-manager";
 import { LatsolPage } from "@/components/phase3b/latsol-page";
 import { ExamListStudent } from "@/components/phase3c/exam-list-student";
 import { StudentPerformance } from "@/components/phase4a/student-performance";
+import { LearningReportPage } from "@/components/shared/learning-report-page";
 import { StudentRankingPage } from "@/components/phase4b/student-ranking";
 import { FeedbackForm } from "@/components/feedback/feedback-form";
 import { ProfilePage } from "@/components/shared/profile-page";
@@ -36,6 +37,7 @@ export default async function SiswaMenuPage({
 	if (slug === "performa") return <StudentPerformance />;
 	if (slug === "feedback") return <FeedbackForm />;
 	if (slug === "ranking") return <StudentRankingPage />;
+	if (slug === "laporan") return <LearningReportPage audience="self" />;
 	if (slug === "pengumuman") return <NotificationsInbox />;
 	if (slug === "profil") return <ProfilePage />;
 	return <SkeletonPage role="siswa" title={item.label} />;

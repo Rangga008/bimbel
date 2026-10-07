@@ -5,6 +5,7 @@ import { KasBankManager } from "@/components/phase2c/kas-bank-manager";
 import { BudgetManager } from "@/components/phase2d/budget-manager";
 import { ExpenseManager } from "@/components/phase2d/expense-manager";
 import { AdvancedReportsManager } from "@/components/phase6/advanced-reports";
+import { AuditLogsViewer } from "@/components/phase6/audit-logs-viewer";
 import { ProfilePage } from "@/components/shared/profile-page";
 import { NotificationsInbox } from "@/components/phase1d/notifications-inbox";
 import { SkeletonPage } from "@/components/skeleton-page";
@@ -36,6 +37,7 @@ export default async function OwnerMenuPage({
 			</div>
 		);
 	if (slug === "laporan") return <AdvancedReportsManager />;
+	if (slug === "audit") return <AuditLogsViewer />;
 	return <SkeletonPage role="owner" title={item.label} />;
 }
 

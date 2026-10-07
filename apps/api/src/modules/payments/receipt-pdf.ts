@@ -37,6 +37,11 @@ export interface ReceiptCompanyInfo {
   address: string;
   phone: string;
   email: string;
+  /** Nama & jabatan penandatangan kwitansi (dari Pengaturan > Keuangan). */
+  signerName?: string;
+  signerTitle?: string;
+  /** Path file gambar tanda tangan di disk (jika dari media library). */
+  signaturePath?: string;
 }
 
 const rp = (n: Money) =>
@@ -162,7 +167,37 @@ export function buildReceiptPdf(
     doc.fontSize(8.5).font('Helvetica').fillColor('#555555');
     doc.text(`Status: ${r.status}   •   Diverifikasi oleh: ${r.verifier?.name ?? 'Sistem'}`);
     doc.moveDown(0.4);
-    doc.text('Kwitansi ini diterbitkan otomatis oleh sistem dan sah tanpa tanda tangan basah.');
+
+    // Blok tanda tangan — nama/jabatan/gambar dari Pengaturan > Keuangan.
+    // Posisi di kanan bawah slip seperti kwitansi umum.
+    const signerName = c?.signerName?.trim() || r.verifier?.name || 'Admin';
+    const signerTitle = c?.signerTitle?.trim() || 'Admin Finance';
+    const sigX = 400;
+    const sigW = 160;
+    const sigY = doc.y;
+    doc.fillColor('#000000').fontSize(8.5).font('Helvetica');
+    doc.text(signerTitle, sigX, sigY, { width: sigW, align: 'center' });
+    let nameY = sigY + 12;
+    if (c?.signaturePath) {
+      try {
+        doc.image(c.signaturePath, sigX + 40, sigY + 12, { fit: [80, 44] });
+        nameY = sigY + 60;
+      } catch {
+        // Gambar ttd gagal dimuat — lanjut tanpa gambar (nama tetap tercetak).
+      }
+    }
+    doc
+      .font('Helvetica-Bold')
+      .text(signerName, sigX, nameY, { width: sigW, align: 'center' });
+    doc
+      .moveTo(sigX + 10, nameY - 2)
+      .lineTo(sigX + sigW - 10, nameY - 2)
+      .strokeColor('#999999')
+      .stroke();
+
+    doc.moveDown(1.2);
+    doc.fontSize(8.5).font('Helvetica').fillColor('#555555');
+    doc.text('Kwitansi ini diterbitkan otomatis oleh sistem.');
 
     doc.end();
   });

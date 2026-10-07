@@ -150,6 +150,11 @@ model Student {
   dateOfBirth DateTime?
   address   String?
   schoolOrigin String?
+  /// Nomor induk siswa bimbel (mis. GFS….) — opsional, tampil di laporan cetak.
+  nis       String?
+  /// Pilihan jurusan sekolah lanjut (khusus jenjang SMA/UTBK) — tampil di laporan.
+  majorChoice1 String?
+  majorChoice2 String?
   gender    Gender?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())

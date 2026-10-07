@@ -113,22 +113,25 @@ export class PublicController {
       include: receiptDetailInclude,
     });
     if (!receipt) throw new NotFoundException('Kwitansi tidak ditemukan.');
-    const [student, verifier, companyRow, brandingRow] = await Promise.all([
-      this.prisma.student.findUnique({
-        where: { id: receipt.studentId },
-        select: { user: { select: { name: true } } },
-      }),
-      receipt.verifierId && receipt.verifierId !== 'GATEWAY-WEBHOOK'
-        ? this.prisma.user.findUnique({
-            where: { id: receipt.verifierId },
-            select: { name: true },
-          })
-        : Promise.resolve(null),
-      this.prisma.appSetting.findUnique({ where: { key: 'company' } }),
-      this.prisma.appSetting.findUnique({ where: { key: 'branding' } }),
-    ]);
+    const [student, verifier, companyRow, brandingRow, financeRow] =
+      await Promise.all([
+        this.prisma.student.findUnique({
+          where: { id: receipt.studentId },
+          select: { user: { select: { name: true } } },
+        }),
+        receipt.verifierId && receipt.verifierId !== 'GATEWAY-WEBHOOK'
+          ? this.prisma.user.findUnique({
+              where: { id: receipt.verifierId },
+              select: { name: true },
+            })
+          : Promise.resolve(null),
+        this.prisma.appSetting.findUnique({ where: { key: 'company' } }),
+        this.prisma.appSetting.findUnique({ where: { key: 'branding' } }),
+        this.prisma.appSetting.findUnique({ where: { key: 'finance' } }),
+      ]);
     const company = (companyRow?.value ?? {}) as Record<string, unknown>;
     const branding = (brandingRow?.value ?? {}) as Record<string, unknown>;
+    const finance = (financeRow?.value ?? {}) as Record<string, unknown>;
     // Nomor angsuran: urutan invoice pendaftaran yang sama (fallback: paket).
     let installmentNo: number | null = null;
     const inv = receipt.invoice;
@@ -167,6 +170,19 @@ export class PublicController {
         address: typeof company.address === 'string' ? company.address : '',
         phone: typeof company.phone === 'string' ? company.phone : '',
         email: typeof company.email === 'string' ? company.email : '',
+        // Penandatangan kwitansi — diatur admin di Pengaturan > Keuangan.
+        signerName:
+          typeof finance.receiptSignerName === 'string'
+            ? finance.receiptSignerName
+            : '',
+        signerTitle:
+          typeof finance.receiptSignerTitle === 'string'
+            ? finance.receiptSignerTitle
+            : '',
+        signatureUrl:
+          typeof finance.receiptSignatureUrl === 'string'
+            ? finance.receiptSignatureUrl
+            : '',
       },
     };
   }

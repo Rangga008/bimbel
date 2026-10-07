@@ -231,6 +231,18 @@ export function AdminAcademicAnalytics() {
           >
             <FileSpreadsheet className="size-4" /> Rekap Nilai — Excel
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              openPrint(
+                `/analytics/exam/${selectedExam.examId}/answer-recap.xlsx`,
+                `rekap-jawaban-${selectedExam.examTitle.replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase()}.xlsx`,
+              )
+            }
+          >
+            <FileSpreadsheet className="size-4" /> Rekap Jawaban — Excel
+          </Button>
         </div>
 
         {selectedExam.questionAnalytics.length === 0 ? (

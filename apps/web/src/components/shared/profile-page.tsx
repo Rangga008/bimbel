@@ -30,7 +30,50 @@ interface ProfileData {
 	phone: string | null;
 	avatarUrl: string | null;
 	roles: string[];
+	/** Ada hanya untuk akun siswa — dipakai di laporan hasil belajar. */
+	student?: {
+		nis: string | null;
+		majorChoice1: string | null;
+		majorChoice2: string | null;
+	};
 }
+
+/** Saran pilihan "Jurusan — PTN" untuk datalist siswa (bisa tetap ketik bebas). */
+const MAJOR_SUGGESTIONS = [
+	"Teknik Informatika — Universitas Indonesia",
+	"Sistem Informasi — Universitas Indonesia",
+	"Teknik Elektro — Institut Teknologi Bandung",
+	"Teknik Informatika — Institut Teknologi Bandung",
+	"Teknik Industri — Institut Teknologi Bandung",
+	"Teknik Sipil — Universitas Gadjah Mada",
+	"Ilmu Komputer — Universitas Gadjah Mada",
+	"Kedokteran — Universitas Gadjah Mada",
+	"Kedokteran — Universitas Indonesia",
+	"Manajemen — Universitas Gadjah Mada",
+	"Akuntansi — Universitas Gadjah Mada",
+	"Hukum — Universitas Indonesia",
+	"Hukum — Universitas Padjadjaran",
+	"Psikologi — Universitas Indonesia",
+	"Psikologi — Universitas Padjadjaran",
+	"Agroteknologi — Institut Pertanian Bogor",
+	"Statistika — Institut Pertanian Bogor",
+	"Teknik Komputer — Universitas Diponegoro",
+	"Teknik Informatika — Universitas Diponegoro",
+	"Teknik Mesin — Universitas Diponegoro",
+	"Informatika — Institut Teknologi Sepuluh Nopember",
+	"Teknik Elektro — Institut Teknologi Sepuluh Nopember",
+	"Teknik Industri — Institut Teknologi Sepuluh Nopember",
+	"Desain Komunikasi Visual — Institut Teknologi Bandung",
+	"Pendidikan Dokter — Universitas Airlangga",
+	"Farmasi — Universitas Airlangga",
+	"Teknik Informatika — Universitas Brawijaya",
+	"Pendidikan Guru — Universitas Pendidikan Indonesia",
+	"Ilmu Komunikasi — Universitas Padjadjaran",
+	"Manajemen — Universitas Airlangga",
+	"Ekonomi Pembangunan — Universitas Indonesia",
+	"Arsitektur — Institut Teknologi Bandung",
+	"Matematika — Institut Teknologi Bandung",
+];
 
 /**
  * Halaman Profil untuk semua role (sesuai docs/ROLE_PAGES.md):
@@ -49,6 +92,10 @@ export function ProfilePage() {
 		queryFn: () => apiFetch<ProfileData>("/auth/profile"),
 	});
 	const [form, setForm] = useState<{ name: string; phone: string } | null>(null);
+	const [majors, setMajors] = useState<{
+		majorChoice1: string;
+		majorChoice2: string;
+	} | null>(null);
 	const [logoutOpen, setLogoutOpen] = useState(false);
 	const fileRef = useRef<HTMLInputElement>(null);
 
@@ -101,6 +148,21 @@ export function ProfilePage() {
 		onError: (e) =>
 			toast.error(
 				e instanceof ApiError ? e.message : "Gagal menyimpan profil.",
+			),
+	});
+
+	// Pilihan kampus/jurusan (khusus siswa) — tercetak di laporan hasil belajar.
+	const saveMajorsM = useMutation({
+		mutationFn: (body: { majorChoice1?: string; majorChoice2?: string }) =>
+			apiFetch<ProfileData>("/auth/profile", { method: "PATCH", body }),
+		onSuccess: () => {
+			toast.success("Pilihan kampus/jurusan disimpan.");
+			setMajors(null);
+			void profileQ.refetch();
+		},
+		onError: (e) =>
+			toast.error(
+				e instanceof ApiError ? e.message : "Gagal menyimpan pilihan.",
 			),
 	});
 
@@ -261,6 +323,85 @@ export function ProfilePage() {
 					) : null}
 				</CardContent>
 			</Card>
+
+			{p?.student ? (
+				<Card>
+					<CardHeader>
+						<CardTitle>Pilihan Kampus / Jurusan</CardTitle>
+						<CardDescription>
+							Pilihan 1 &amp; 2 tercetak di Laporan Hasil Belajar (Pil. 1 /
+							Pil. 2) — diisi untuk jenjang SMA/UTBK, boleh dikosongkan.
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="flex flex-col gap-4">
+						<div className="grid max-w-md gap-3">
+							<div className="grid gap-1.5">
+								<Label htmlFor="profile-major1">Pilihan 1</Label>
+								<Input
+									id="profile-major1"
+									list="major-suggestions"
+									placeholder="cth: Teknik Informatika — Universitas Indonesia"
+									value={
+										majors?.majorChoice1 ?? p.student.majorChoice1 ?? ""
+									}
+									onChange={(e) =>
+										setMajors({
+											majorChoice1: e.target.value,
+											majorChoice2:
+												majors?.majorChoice2 ??
+												p.student!.majorChoice2 ??
+												"",
+										})
+									}
+								/>
+							</div>
+							<div className="grid gap-1.5">
+								<Label htmlFor="profile-major2">Pilihan 2</Label>
+								<Input
+									id="profile-major2"
+									list="major-suggestions"
+									placeholder="cth: Sistem Informasi — ITS"
+									value={
+										majors?.majorChoice2 ?? p.student.majorChoice2 ?? ""
+									}
+									onChange={(e) =>
+										setMajors({
+											majorChoice1:
+												majors?.majorChoice1 ??
+												p.student!.majorChoice1 ??
+												"",
+											majorChoice2: e.target.value,
+										})
+									}
+								/>
+							</div>
+							<datalist id="major-suggestions">
+								{MAJOR_SUGGESTIONS.map((s) => (
+									<option key={s} value={s} />
+								))}
+							</datalist>
+						</div>
+						<div>
+							<Button
+								disabled={
+									saveMajorsM.isPending ||
+									!majors ||
+									(majors.majorChoice1 === (p.student.majorChoice1 ?? "") &&
+										majors.majorChoice2 === (p.student.majorChoice2 ?? ""))
+								}
+								onClick={() =>
+									saveMajorsM.mutate({
+										majorChoice1: majors?.majorChoice1.trim(),
+										majorChoice2: majors?.majorChoice2.trim(),
+									})
+								}
+							>
+								{saveMajorsM.isPending ? "Menyimpan…" : "Simpan Pilihan"}
+							</Button>
+						</div>
+					</CardContent>
+				</Card>
+			) : null}
 
 			<ChangePasswordCard />
 

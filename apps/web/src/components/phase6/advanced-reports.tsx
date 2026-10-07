@@ -11,6 +11,7 @@ import { apiFetch } from "@/lib/api-client";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Phase1aSelectField } from "@/components/phase1a/phase1a-form-dialog";
 import { useAuthStore } from "@/stores/auth-store";
+import { LearningReportPage } from "@/components/shared/learning-report-page";
 import type {
 	ReportDoc,
 	ReportKind,
@@ -330,6 +331,10 @@ export function AdvancedReportsManager() {
 	})).filter((g) => g.kinds.length > 0);
 
 	const inputCls = "h-9 rounded-md border border-input bg-background px-2 text-sm";
+	const canStudentReport =
+		useAuthStore((s) =>
+			s.user?.permissions.includes("analytics_student_performance.view"),
+		) ?? false;
 
 	return (
 		<div className="flex flex-col gap-4">
@@ -342,6 +347,8 @@ export function AdvancedReportsManager() {
 					CSV/PDF atau dibekukan sebagai snapshot arsip.
 				</p>
 			</div>
+
+			{canStudentReport ? <LearningReportPage audience="staff" /> : null}
 
 			<Card>
 				<CardContent className="flex flex-col gap-3 py-4">

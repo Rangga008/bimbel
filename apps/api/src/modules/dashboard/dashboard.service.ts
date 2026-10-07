@@ -12,6 +12,11 @@ const SESSION_BRIEF = {
   room: { select: { id: true, name: true } },
 } as const;
 
+const MONTH_SHORT = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+  'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des',
+];
+
 @Injectable()
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
@@ -24,6 +29,86 @@ export class DashboardService {
     return { start, end };
   }
 
+  /** 6 bulan terakhir — key YYYY-MM + label pendek (grafik dashboard). */
+  private last6Months() {
+    const now = new Date();
+    return Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+      return {
+        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+        label: MONTH_SHORT[d.getMonth()],
+        year: d.getFullYear(),
+        month: d.getMonth(),
+      };
+    });
+  }
+
+  /** Timezone lokal app — dipakai agar bucketing bulan/minggu di SQL
+   *  identik dengan new Date() server (DB session-nya UTC). */
+  private appTz() {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  }
+
+  /** Kas masuk/keluar per bulan (6 bulan terakhir) dari ledger — grafik finance. */
+  private async cashTrend() {
+    const months = this.last6Months();
+    const from = new Date(`${months[0].key}-01T00:00:00`);
+    const rows = await this.prisma.$queryRaw<
+      { ym: string; direction: string; total: number }[]
+    >`
+      SELECT to_char("occurredAt" AT TIME ZONE ${this.appTz()}, 'YYYY-MM') AS ym,
+             direction,
+             SUM(amount)::float AS total
+      FROM ledger_entries
+      WHERE "occurredAt" >= ${from}
+      GROUP BY ym, direction
+    `;
+    const sums = new Map(rows.map((r) => [`${r.ym}:${r.direction}`, r.total]));
+    return months.map((m) => ({
+      label: m.label,
+      in: Math.round((sums.get(`${m.key}:IN`) ?? 0) * 100) / 100,
+      out: Math.round((sums.get(`${m.key}:OUT`) ?? 0) * 100) / 100,
+    }));
+  }
+
+  /** Persen kehadiran (HADIR+TERLAMBAT) per minggu — 6 minggu terakhir. */
+  private async attendanceTrend() {
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay()); // mulai Senin
+    const from = new Date(weekStart);
+    from.setDate(from.getDate() - 35); // 5 minggu sebelumnya + minggu ini
+    const rows = await this.prisma.$queryRaw<
+      { wk: string; status: string; n: number }[]
+    >`
+      -- Bucket minggu mulai MINGGU (getDay(): 0=Minggu) sesuai label JS;
+      -- date_trunc('week') Postgres mulai Senin, jadi geser +1 hari.
+      SELECT to_char(date_trunc('week', (s."startsAt" AT TIME ZONE ${this.appTz()}) + interval '1 day') - interval '1 day', 'YYYY-MM-DD') AS wk,
+             a.status,
+             COUNT(*)::int AS n
+      FROM attendances a
+      JOIN sessions s ON s.id = a."sessionId"
+      WHERE s."startsAt" >= ${from}
+      GROUP BY wk, a.status
+    `;
+    return Array.from({ length: 6 }, (_, i) => {
+      const ws = new Date(from);
+      ws.setDate(ws.getDate() + i * 7);
+      const key = `${ws.getFullYear()}-${String(ws.getMonth() + 1).padStart(2, '0')}-${String(ws.getDate()).padStart(2, '0')}`;
+      const wk = rows.filter((r) => r.wk === key);
+      const total = wk.reduce((s, r) => s + r.n, 0);
+      const ok = wk
+        .filter((r) => r.status === 'HADIR' || r.status === 'TERLAMBAT')
+        .reduce((s, r) => s + r.n, 0);
+      return {
+        label: `${ws.getDate()}/${ws.getMonth() + 1}`,
+        value: total ? Math.round((ok / total) * 100) : 0,
+        count: total,
+      };
+    });
+  }
+
   /** Siswa: jadwal terdekat + ringkasan kehadiran sendiri. */
   async siswaHome(userId: string) {
     const student = await this.prisma.student.findUnique({ where: { userId }, include: { user: { select: { name: true } } } });
@@ -31,16 +116,52 @@ export class DashboardService {
     const memberships = await this.prisma.groupMember.findMany({ where: { studentId: student.id }, select: { groupId: true } });
     const groupIds = memberships.map((m) => m.groupId);
     const { start } = this.weekRange();
-    const [upcoming, attendances, groups] = await Promise.all([
+    const [upcoming, attendances, groups, recentAttempts, pointsAgg, latsolDone, unread] = await Promise.all([
       this.prisma.session.findMany({
         where: { groupId: { in: groupIds.length ? groupIds : ['__none__'] }, startsAt: { gte: start }, status: { not: 'CANCELLED' } },
         select: SESSION_BRIEF, orderBy: { startsAt: 'asc' }, take: 5,
       }),
-      this.prisma.attendance.findMany({ where: { studentId: student.id }, select: { status: true } }),
+      this.prisma.attendance.groupBy({
+        by: ['status'],
+        where: { studentId: student.id },
+        _count: { status: true },
+      }),
       this.prisma.groupMember.findMany({ where: { studentId: student.id }, select: { group: { select: { id: true, name: true } } }, take: 10 }),
+      // 8 ujian terakhir untuk grafik tren nilai siswa.
+      this.prisma.examAttempt.findMany({
+        where: { studentId: student.id, status: 'SUBMITTED' },
+        orderBy: { submittedAt: 'desc' },
+        take: 8,
+        select: {
+          score: true, maxScore: true, submittedAt: true,
+          exam: { select: { title: true } },
+        },
+      }),
+      this.prisma.pointTransaction.aggregate({
+        _sum: { points: true },
+        where: { studentId: student.id },
+      }),
+      this.prisma.latsolAttempt.count({ where: { studentId: student.id, status: 'SUBMITTED' } }),
+      this.prisma.notification.count({ where: { userId, isRead: false } }),
     ]);
-    const hadir = attendances.filter((a) => a.status === 'HADIR' || a.status === 'TERLAMBAT').length;
-    return { role: 'SISWA', user: student.user.name, groups: groups.map((g) => g.group), upcomingSessions: upcoming, attendanceSummary: { total: attendances.length, hadir } };
+    const totalAtt = attendances.reduce((s, a) => s + a._count.status, 0);
+    const hadir = attendances
+      .filter((a) => a.status === 'HADIR' || a.status === 'TERLAMBAT')
+      .reduce((s, a) => s + a._count.status, 0);
+    const scoreTrend = recentAttempts.reverse().map((a) => ({
+      label: a.exam.title.length > 12 ? `${a.exam.title.slice(0, 12)}…` : a.exam.title,
+      value: a.maxScore > 0 ? Math.round((Number(a.score) / Number(a.maxScore)) * 100) : 0,
+    }));
+    return {
+      role: 'SISWA', user: student.user.name,
+      groups: groups.map((g) => g.group), upcomingSessions: upcoming,
+      attendanceSummary: { total: totalAtt, hadir },
+      scoreTrend,
+      points: pointsAgg._sum.points ?? 0,
+      examCount: recentAttempts.length,
+      latsolDone,
+      unreadNotifications: unread,
+    };
   }
 
   /** Orang tua: anak + jadwal terdekat + kehadiran minggu ini. */
@@ -67,7 +188,7 @@ export class DashboardService {
       namesByGroup.set(m.groupId, arr);
     }
     const { start, end } = this.weekRange();
-    const [upcoming, weekAttendance, dueInvoices] = await Promise.all([
+    const [upcoming, weekAttendance, dueInvoices, childAttempts, unread] = await Promise.all([
       this.prisma.session.findMany({
         where: { groupId: { in: groupIds.length ? groupIds : ['__none__'] }, startsAt: { gte: start, lte: end }, status: { not: 'CANCELLED' } },
         select: SESSION_BRIEF, orderBy: { startsAt: 'asc' }, take: 10,
@@ -89,8 +210,33 @@ export class DashboardService {
         orderBy: { dueDate: 'asc' },
         take: 10,
       }),
+      // Attempt ujian terkini semua anak — ringkasan nilai per anak.
+      this.prisma.examAttempt.findMany({
+        where: { studentId: { in: studentIds.length ? studentIds : ['__none__'] }, status: 'SUBMITTED' },
+        orderBy: { submittedAt: 'desc' },
+        take: 60,
+        select: { studentId: true, score: true, maxScore: true, exam: { select: { title: true } }, submittedAt: true },
+      }),
+      this.prisma.notification.count({ where: { userId, isRead: false } }),
     ]);
     const hadir = weekAttendance.filter((a) => a.status === 'HADIR' || a.status === 'TERLAMBAT').length;
+    // Ringkasan nilai per anak: rata-rata % + ujian terakhir.
+    const childrenScores = parent.parentStudents.map((p) => {
+      const rows = childAttempts.filter((a) => a.studentId === p.student.id);
+      const pcts = rows.map((a) =>
+        Number(a.maxScore) > 0 ? (Number(a.score) / Number(a.maxScore)) * 100 : 0,
+      );
+      return {
+        studentId: p.student.id,
+        name: p.student.user.name,
+        examCount: rows.length,
+        avgPct: pcts.length
+          ? Math.round((pcts.reduce((s, v) => s + v, 0) / pcts.length) * 10) / 10
+          : null,
+        lastPct: pcts.length ? Math.round(pcts[0] * 10) / 10 : null,
+        lastExam: rows[0]?.exam.title ?? null,
+      };
+    });
     // Performa minggu ini per anak — hadir+terlambat / total catatan.
     const childPerformance = parent.parentStudents.map((p) => {
       const rows = weekAttendance.filter((a) => a.studentId === p.student.id);
@@ -120,7 +266,9 @@ export class DashboardService {
       upcomingSessions: upcoming.map((s) => ({ ...s, childNames: namesByGroup.get(s.group.id) ?? [] })),
       weekAttendance: { total: weekAttendance.length, hadir },
       childPerformance,
+      childrenScores,
       dueInvoices: outstanding,
+      unreadNotifications: unread,
     };
   }
 
@@ -130,12 +278,31 @@ export class DashboardService {
     if (!tutor) return { role: 'TUTOR', empty: true };
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(dayStart); dayEnd.setDate(dayEnd.getDate() + 1);
-    const [todaySessions, groups, pendingAttendance] = await Promise.all([
+    const weekAhead = new Date(dayStart); weekAhead.setDate(weekAhead.getDate() + 7);
+    const [todaySessions, groups, pendingAttendance, weekSessions, upcomingWeek, unread] = await Promise.all([
       this.prisma.session.findMany({ where: { tutorId: tutor.id, startsAt: { gte: dayStart, lte: dayEnd }, status: { not: 'CANCELLED' } }, select: SESSION_BRIEF, orderBy: { startsAt: 'asc' } }),
       this.prisma.learningGroup.findMany({ where: { tutors: { some: { tutorId: tutor.id } } }, select: { id: true, name: true, _count: { select: { members: true } } }, take: 20 }),
       this.prisma.session.findMany({ where: { tutorId: tutor.id, status: 'SCHEDULED', startsAt: { lt: new Date() }, attendances: { none: {} } }, select: { id: true, startsAt: true, group: { select: { id: true, name: true } } }, orderBy: { startsAt: 'desc' }, take: 5 }),
+      // Beban mengajar minggu ini per status sesi.
+      this.prisma.session.groupBy({
+        by: ['status'],
+        where: { tutorId: tutor.id, startsAt: { gte: dayStart, lte: weekAhead }, status: { not: 'CANCELLED' } },
+        _count: { status: true },
+      }),
+      this.prisma.session.findMany({ where: { tutorId: tutor.id, startsAt: { gt: dayEnd, lte: weekAhead }, status: { not: 'CANCELLED' } }, select: SESSION_BRIEF, orderBy: { startsAt: 'asc' }, take: 5 }),
+      this.prisma.notification.count({ where: { userId, isRead: false } }),
     ]);
-    return { role: 'TUTOR', user: tutor.user.name, todaySessions, groups, pendingAttendance };
+    const sessionWeek: Record<string, number> = {};
+    let weekTotal = 0;
+    for (const g of weekSessions) { sessionWeek[g.status] = g._count.status; weekTotal += g._count.status; }
+    const studentsTotal = groups.reduce((s, g) => s + g._count.members, 0);
+    return {
+      role: 'TUTOR', user: tutor.user.name, todaySessions, groups, pendingAttendance,
+      upcomingSessions: upcomingWeek,
+      sessionWeek: { ...sessionWeek, TOTAL: weekTotal },
+      studentsTotal,
+      unreadNotifications: unread,
+    };
   }
 
   /** Admin finance: invoice + outstanding + kas/bank + RAB ringkas,
@@ -145,7 +312,7 @@ export class DashboardService {
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
     const weekAhead = new Date(dayStart); weekAhead.setDate(weekAhead.getDate() + 7);
     const weekAgo = new Date(dayStart); weekAgo.setDate(weekAgo.getDate() - 7);
-    const [students, parents, tutors, groups, programs, upcomingSessions, weekAttendance, packageUsage] = await Promise.all([
+    const [students, parents, tutors, groups, programs, upcomingSessions, weekAttendance, packageUsage, cashTrend, invoiceStatus, unread] = await Promise.all([
       this.prisma.student.count({ where: { isActive: true } }),
       this.prisma.parent.count({ where: { isActive: true } }),
       this.prisma.tutor.count({ where: { isActive: true } }),
@@ -154,23 +321,23 @@ export class DashboardService {
       this.prisma.session.findMany({ where: { startsAt: { gte: dayStart, lte: weekAhead }, status: { not: 'CANCELLED' } }, select: SESSION_BRIEF, orderBy: { startsAt: 'asc' }, take: 8 }),
       this.prisma.attendance.groupBy({ by: ['status'], where: { session: { startsAt: { gte: weekAgo } } }, _count: { status: true } }),
       this.packageUsage(),
+      this.cashTrend(),
+      // Status invoice: gambaran tunggakan vs lunas.
+      this.prisma.invoice.groupBy({ by: ['status'], _count: { id: true } }),
+      this.prisma.notification.count({ where: { userId, isRead: false } }),
     ]);
-    const issued = await this.prisma.invoice.findMany({
-      where: { status: 'ISSUED' },
-      select: { totalAmount: true, amountPaid: true, dueDate: true },
-      take: 1000,
-    });
-    let outstandingTotal = 0;
-    let overdueCount = 0;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    for (const inv of issued) {
-      const outstanding = Math.max(0, Math.round((Number(inv.totalAmount) - Number(inv.amountPaid)) * 100) / 100);
-      if (outstanding > 0.009) {
-        outstandingTotal = Math.round((outstandingTotal + outstanding) * 100) / 100;
-        if (inv.dueDate && new Date(inv.dueDate) < today) overdueCount += 1;
-      }
-    }
+    const [issuedAgg] = await this.prisma.$queryRaw<
+      { outstanding: number | null; overdue: number }[]
+    >`
+      SELECT SUM(ROUND(GREATEST("totalAmount" - "amountPaid", 0)::numeric, 2))::float AS outstanding,
+             COUNT(*) FILTER (WHERE "dueDate" IS NOT NULL AND "dueDate" < ${today})::int AS overdue
+      FROM invoices
+      WHERE status = 'ISSUED' AND "totalAmount" - "amountPaid" > 0.009
+    `;
+    const outstandingTotal = Math.round((issuedAgg?.outstanding ?? 0) * 100) / 100;
+    const overdueCount = issuedAgg?.overdue ?? 0;
     const pendingProofs = await this.prisma.payment.count({ where: { status: 'PENDING' } });
     const accounts = await this.prisma.financialAccount.findMany({ select: { id: true } });
     const sums = await this.prisma.ledgerEntry.groupBy({
@@ -196,6 +363,8 @@ export class DashboardService {
     const totalExpense = monthExpenses.reduce((s, e) => s + Number(e.amount), 0);
     const attendanceByStatus: Record<string, number> = {};
     for (const g of weekAttendance) attendanceByStatus[g.status] = g._count.status;
+    const invoiceByStatus: Record<string, number> = {};
+    for (const g of invoiceStatus) invoiceByStatus[g.status] = g._count.id;
     return {
       role: 'ADMIN_FINANCE',
       user: user?.name,
@@ -203,9 +372,12 @@ export class DashboardService {
       upcomingSessions,
       weekAttendance: attendanceByStatus,
       packageUsage,
+      cashTrend,
+      invoiceStatus: invoiceByStatus,
+      unreadNotifications: unread,
       finance: {
         period,
-        issuedCount: issued.length,
+        issuedCount: invoiceByStatus['ISSUED'] ?? 0,
         outstandingTotal: Math.round(outstandingTotal * 100) / 100,
         overdueCount,
         pendingProofs,
@@ -227,7 +399,9 @@ export class DashboardService {
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
     const weekAhead = new Date(dayStart); weekAhead.setDate(weekAhead.getDate() + 7);
     const weekAgo = new Date(dayStart); weekAgo.setDate(weekAgo.getDate() - 7);
-    const [groups, tutors, students, programs, upcomingSessions, weekAttendance, pendingAttendance, packageUsage] = await Promise.all([
+    const monthStart = new Date(dayStart.getFullYear(), dayStart.getMonth(), 1, 0, 0, 0, 0);
+    const monthEnd = new Date(dayStart.getFullYear(), dayStart.getMonth() + 1, 0, 23, 59, 59, 999);
+    const [groups, tutors, students, programs, upcomingSessions, weekAttendance, pendingAttendance, packageUsage, attendanceTrend, enrollmentStatus, examsMonth, unread] = await Promise.all([
       this.prisma.learningGroup.count({ where: { isActive: true } }),
       this.prisma.tutor.count({ where: { isActive: true } }),
       this.prisma.student.count({ where: { isActive: true } }),
@@ -236,10 +410,23 @@ export class DashboardService {
       this.prisma.attendance.groupBy({ by: ['status'], where: { session: { startsAt: { gte: weekAgo } } }, _count: { status: true } }),
       this.prisma.session.findMany({ where: { status: 'SCHEDULED', startsAt: { lt: new Date() }, attendances: { none: {} } }, select: { id: true, startsAt: true, group: { select: { id: true, name: true } } }, orderBy: { startsAt: 'desc' }, take: 5 }),
       this.packageUsage(),
+      this.attendanceTrend(),
+      // Funnel pendaftaran: pending → paid → accepted → placed.
+      this.prisma.enrollment.groupBy({ by: ['status'], _count: { id: true } }),
+      this.prisma.exam.count({ where: { scheduledStartAt: { gte: monthStart, lte: monthEnd } } }),
+      this.prisma.notification.count({ where: { userId, isRead: false } }),
     ]);
     const attendanceByStatus: Record<string, number> = {};
     for (const g of weekAttendance) attendanceByStatus[g.status] = g._count.status;
-    return { role: 'ADMIN_ACADEMIC', user: user?.name, counts: { programs, groups, tutors, students }, upcomingSessions, weekAttendance: attendanceByStatus, pendingAttendance, packageUsage };
+    const enrollmentByStatus: Record<string, number> = {};
+    for (const g of enrollmentStatus) enrollmentByStatus[g.status] = g._count.id;
+    return {
+      role: 'ADMIN_ACADEMIC', user: user?.name,
+      counts: { programs, groups, tutors, students },
+      upcomingSessions, weekAttendance: attendanceByStatus, pendingAttendance, packageUsage,
+      attendanceTrend, enrollmentStatus: enrollmentByStatus, examsMonth,
+      unreadNotifications: unread,
+    };
   }
 
   /** Pemakaian paket per kelompok aktif: sesi terpakai vs total sesi paket. */
@@ -286,7 +473,7 @@ export class DashboardService {
     const sessionMonth: Record<string, number> = {};
     for (const s of byStatus) sessionMonth[s.status] = s._count.status;
     const { upcomingSessions: _u, pendingAttendance: _p, ...report } = academic;
-    return { ...report, role: 'OWNER', unreadNotifications: unread, finance: financeHome.finance, sessionMonth };
+    return { ...report, role: 'OWNER', unreadNotifications: unread, finance: financeHome.finance, cashTrend: financeHome.cashTrend, invoiceStatus: financeHome.invoiceStatus, sessionMonth };
   }
 
   /**
@@ -304,59 +491,68 @@ export class DashboardService {
     const lastYearStart = new Date(now.getFullYear() - 1, 0, 1);
     const lastYearEnd = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59, 999);
 
-    const payments = await this.prisma.payment.findMany({
-      where: { status: 'VERIFIED' },
-      select: { amount: true, paidAt: true, verifiedAt: true, createdAt: true },
-      take: 5000,
-    });
-    const revenueAt = (p: { paidAt: Date | null; verifiedAt: Date | null; createdAt: Date }) =>
-      p.paidAt ?? p.verifiedAt ?? p.createdAt;
-
-    const [students, sessions, attendances, expenses, invoices] = await Promise.all([
-      this.prisma.student.findMany({ select: { createdAt: true }, take: 5000 }),
-      this.prisma.session.findMany({
-        where: { startsAt: { gte: lastYearStart } },
-        select: { startsAt: true, status: true },
-        take: 10000,
-      }),
-      this.prisma.attendance.findMany({
-        where: { session: { startsAt: { gte: lastYearStart } } },
-        select: { status: true, session: { select: { startsAt: true } } },
-        take: 20000,
-      }),
-      this.prisma.expense.findMany({
-        where: { occurredAt: { gte: lastYearStart } },
-        select: { amount: true, occurredAt: true },
-        take: 5000,
-      }),
-      this.prisma.invoice.findMany({
-        where: { status: { in: ['ISSUED', 'VOID'] } },
-        select: { totalAmount: true, status: true, issuedAt: true, createdAt: true },
-        take: 5000,
-      }),
+    // Agregasi per bulan (YYYY-MM) langsung di DB — sebelumnya endpoint ini
+    // menarik puluhan ribu baris ke memori per request.
+    const tz = this.appTz();
+    const [payments, students, sessions, attendances, expenses, invoices] = await Promise.all([
+      this.prisma.$queryRaw<{ ym: string; total: number }[]>`
+        SELECT to_char(COALESCE("paidAt", "verifiedAt", "createdAt") AT TIME ZONE ${tz}, 'YYYY-MM') AS ym,
+               SUM(amount)::float AS total
+        FROM payments WHERE status = 'VERIFIED' GROUP BY ym`,
+      this.prisma.$queryRaw<{ ym: string; n: number }[]>`
+        SELECT to_char("createdAt" AT TIME ZONE ${tz}, 'YYYY-MM') AS ym, COUNT(*)::int AS n
+        FROM students GROUP BY ym`,
+      this.prisma.$queryRaw<{ ym: string; n: number }[]>`
+        SELECT to_char("startsAt" AT TIME ZONE ${tz}, 'YYYY-MM') AS ym, COUNT(*)::int AS n
+        FROM sessions WHERE "startsAt" >= ${lastYearStart} AND status = 'COMPLETED' GROUP BY ym`,
+      this.prisma.$queryRaw<{ ym: string; total: number; hadir: number }[]>`
+        SELECT to_char(s."startsAt" AT TIME ZONE ${tz}, 'YYYY-MM') AS ym,
+               COUNT(*)::int AS total,
+               COUNT(*) FILTER (WHERE a.status IN ('HADIR', 'TERLAMBAT'))::int AS hadir
+        FROM attendances a JOIN sessions s ON s.id = a."sessionId"
+        WHERE s."startsAt" >= ${lastYearStart} GROUP BY ym`,
+      this.prisma.$queryRaw<{ ym: string; total: number }[]>`
+        SELECT to_char("occurredAt" AT TIME ZONE ${tz}, 'YYYY-MM') AS ym, SUM(amount)::float AS total
+        FROM expenses WHERE "occurredAt" >= ${lastYearStart} GROUP BY ym`,
+      this.prisma.$queryRaw<{ ym: string; total: number }[]>`
+        SELECT to_char(COALESCE("issuedAt", "createdAt") AT TIME ZONE ${tz}, 'YYYY-MM') AS ym,
+               SUM("totalAmount")::float AS total
+        FROM invoices WHERE status = 'ISSUED' GROUP BY ym`,
     ]);
 
-    const sumPayments = (from: Date, to: Date) =>
-      payments.reduce((s, p) => (revenueAt(p) >= from && revenueAt(p) <= to ? s + Number(p.amount) : s), 0);
-    const countNewStudents = (from: Date, to: Date) =>
-      students.filter((s) => s.createdAt >= from && s.createdAt <= to).length;
-    const countSessions = (from: Date, to: Date) =>
-      sessions.filter((s) => s.startsAt >= from && s.startsAt <= to && s.status === 'COMPLETED').length;
-    const sumExpenses = (from: Date, to: Date) =>
-      expenses.reduce((s, e) => (e.occurredAt >= from && e.occurredAt <= to ? s + Number(e.amount) : s), 0);
-    const sumBilled = (from: Date, to: Date) =>
-      invoices.reduce(
-        (s, i) =>
-          i.status === 'ISSUED' && (i.issuedAt ?? i.createdAt) >= from && (i.issuedAt ?? i.createdAt) <= to
-            ? s + Number(i.totalAmount)
-            : s,
-        0,
-      );
+    // Semua pemanggil memakai batas bulan-penuh, jadi lookup per YM
+    // ekuivalen dengan filter tanggal versi sebelumnya.
+    const ymRange = (from: Date, to: Date) => {
+      const keys: string[] = [];
+      const cur = new Date(from.getFullYear(), from.getMonth(), 1);
+      const end = new Date(to.getFullYear(), to.getMonth(), 1);
+      while (cur <= end) {
+        keys.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}`);
+        cur.setMonth(cur.getMonth() + 1);
+      }
+      return keys;
+    };
+    const monthMaps = {
+      payments: new Map(payments.map((r) => [r.ym, r.total])),
+      students: new Map(students.map((r) => [r.ym, r.n])),
+      sessions: new Map(sessions.map((r) => [r.ym, r.n])),
+      expenses: new Map(expenses.map((r) => [r.ym, r.total])),
+      invoices: new Map(invoices.map((r) => [r.ym, r.total])),
+    };
+    const sumMap = (map: Map<string, number>, from: Date, to: Date) =>
+      ymRange(from, to).reduce((s, k) => s + (map.get(k) ?? 0), 0);
+    const sumPayments = sumMap.bind(null, monthMaps.payments);
+    const countNewStudents = sumMap.bind(null, monthMaps.students);
+    const countSessions = sumMap.bind(null, monthMaps.sessions);
+    const sumExpenses = sumMap.bind(null, monthMaps.expenses);
+    const sumBilled = sumMap.bind(null, monthMaps.invoices);
     const attendanceRate = (from: Date, to: Date) => {
-      const rows = attendances.filter((a) => a.session.startsAt >= from && a.session.startsAt <= to);
-      if (rows.length === 0) return null;
-      const hadir = rows.filter((a) => a.status === 'HADIR' || a.status === 'TERLAMBAT').length;
-      return Math.round((hadir / rows.length) * 1000) / 10;
+      const keys = new Set(ymRange(from, to));
+      const rows = attendances.filter((a) => keys.has(a.ym));
+      const total = rows.reduce((s, r) => s + r.total, 0);
+      if (total === 0) return null;
+      const hadir = rows.reduce((s, r) => s + r.hadir, 0);
+      return Math.round((hadir / total) * 1000) / 10;
     };
 
     const delta = (current: number, previous: number) =>

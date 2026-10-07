@@ -33,6 +33,9 @@ interface CompanySettings {
 
 interface FinanceSettingsData {
 	invoiceDueDays: number;
+	receiptSignerName: string;
+	receiptSignerTitle: string;
+	receiptSignatureUrl: string;
 }
 
 interface WhatsAppSettings {
@@ -444,13 +447,14 @@ export function FinanceSettings() {
 				<CardHeader>
 					<CardTitle>Parameter Keuangan</CardTitle>
 					<CardDescription>
-						Default jatuh tempo invoice saat diterbitkan tanpa tanggal eksplisit.
+						Default jatuh tempo invoice saat diterbitkan tanpa tanggal
+						eksplisit, dan penandatangan kwitansi.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
 					{finance ? (
 						<form
-							className="flex flex-wrap items-end gap-4"
+							className="grid gap-4"
 							onSubmit={(e) => {
 								e.preventDefault();
 								saveMutation.mutate({ key: "finance", value: finance });
@@ -473,7 +477,51 @@ export function FinanceSettings() {
 									}
 								/>
 							</div>
-							<Button type="submit" disabled={saving}>
+							<div className="grid gap-4 border-t pt-4 sm:grid-cols-2">
+								<div className="grid gap-1.5">
+									<Label htmlFor="fin-signer">Nama penandatangan kwitansi</Label>
+									<Input
+										id="fin-signer"
+										value={finance.receiptSignerName}
+										onChange={(e) =>
+											setFinance({
+												...finance,
+												receiptSignerName: e.target.value,
+											})
+										}
+										placeholder="cth: Dra. Hj. Aminah"
+									/>
+								</div>
+								<div className="grid gap-1.5">
+									<Label htmlFor="fin-signer-title">Jabatan penandatangan</Label>
+									<Input
+										id="fin-signer-title"
+										value={finance.receiptSignerTitle}
+										onChange={(e) =>
+											setFinance({
+												...finance,
+												receiptSignerTitle: e.target.value,
+											})
+										}
+										placeholder="cth: Bendahara"
+									/>
+								</div>
+							</div>
+							<ImagePickerField
+								id="fin-signature"
+								label="Gambar tanda tangan kwitansi"
+								value={finance.receiptSignatureUrl}
+								onChange={(url) =>
+									setFinance({ ...finance, receiptSignatureUrl: url })
+								}
+								category="FINANCE"
+								hint="Scan/foto tanda tangan (PNG latar transparan paling bagus). Otomatis tercetak di semua kwitansi; kosongkan untuk tanpa gambar."
+							/>
+							<Button
+								type="submit"
+								className="w-fit"
+								disabled={saving}
+							>
 								{saving ? "Menyimpan…" : "Simpan"}
 							</Button>
 						</form>

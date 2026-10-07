@@ -57,6 +57,11 @@ export interface CompanyInfo {
 	phone: string;
 	email: string;
 	logoUrl?: string;
+	/** Penandatangan kwitansi — dari Pengaturan > Keuangan. */
+	signerName?: string;
+	signerTitle?: string;
+	/** Gambar tanda tangan (URL media). */
+	signatureUrl?: string;
 }
 
 /** Terbilang sederhana Bahasa Indonesia untuk nominal kwitansi. */
@@ -130,6 +135,10 @@ export function buildReceiptHtml(r: ReceiptDetail, c: CompanyInfo | null): strin
 			? Number(r.invoice.totalAmount) - Number(r.invoice.amountPaid)
 			: null);
 	const logo = resolveAssetUrl(c?.logoUrl ?? '') || '/logo-gfs.png';
+	// Tanda tangan dari Pengaturan > Keuangan; fallback nama verifikator.
+	const signerName = c?.signerName?.trim() || r.verifier?.name || 'Admin';
+	const signerTitle = c?.signerTitle?.trim() || 'Admin Finance';
+	const sigImg = resolveAssetUrl(c?.signatureUrl ?? '');
 	return `<!doctype html>
 <html><head><meta charset="utf-8"><title>Kwitansi ${esc(r.number)}</title>
 <style>
@@ -151,7 +160,9 @@ export function buildReceiptHtml(r: ReceiptDetail, c: CompanyInfo | null): strin
   .amountbox { border:2px solid #1e3a5f; border-radius:6px; padding:10px 18px; font-size:20px; font-weight:800; color:#1e3a5f; }
   .sig { text-align:center; min-width:200px; }
   .sig .role { font-size:12px; color:#444; }
+  .sig .sigimg { display:block; height:56px; margin:6px auto -4px; object-fit:contain; }
   .sig .name { margin-top:56px; font-weight:700; border-bottom:1px solid #333; display:inline-block; min-width:170px; }
+  .sig .sigimg + .name { margin-top:6px; }
   @media print { body { padding:0; } .slip { border-radius:0; } }
 </style></head><body>
 <div class="slip">
@@ -180,8 +191,9 @@ export function buildReceiptHtml(r: ReceiptDetail, c: CompanyInfo | null): strin
     <div class="amountbox">${rupiah(r.amount)}</div>
     <div class="sig">
       <div>${esc(city ? `${city}, ` : '')}${dateStr}</div>
-      <div class="role">Admin Finance</div>
-      <div class="name">${esc(r.verifier?.name ?? 'Admin')}</div>
+      <div class="role">${esc(signerTitle)}</div>
+      ${sigImg ? `<img class="sigimg" src="${esc(sigImg)}" alt="Tanda tangan" onerror="this.style.display='none'">` : ''}
+      <div class="name">${esc(signerName)}</div>
     </div>
   </div>
 </div>

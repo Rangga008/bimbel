@@ -67,7 +67,7 @@ export function ProctoringHubPage({ examBasePath }: { examBasePath: string }) {
 
   const examsQ = useQuery({
     queryKey: ['exams'],
-    queryFn: () => apiFetch<ExamRow[]>('/exams'),
+    queryFn: () => apiFetch<ExamRow[]>('/exams?all=1'),
     refetchInterval: 30000,
   });
 

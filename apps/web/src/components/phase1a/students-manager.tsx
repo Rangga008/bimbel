@@ -31,6 +31,9 @@ const CREATE_FIELDS: Phase1aField[] = [
   { name: 'dateOfBirth', label: 'Tanggal lahir (opsional)', type: 'date' },
   { name: 'address', label: 'Alamat (opsional)', placeholder: 'Jl. ...' },
   { name: 'schoolOrigin', label: 'Asal sekolah (opsional)', placeholder: 'SMPN 1 ...' },
+  { name: 'nis', label: 'NIS bimbel (opsional)', placeholder: 'GFS262712-...' },
+  { name: 'majorChoice1', label: 'Pilihan jurusan 1 (opsional)', placeholder: 'Teknologi Pangan (Universitas ...)' },
+  { name: 'majorChoice2', label: 'Pilihan jurusan 2 (opsional)', placeholder: 'Gizi (Universitas ...)' },
 ];
 
 const GENDER_OPTIONS = [
@@ -50,6 +53,9 @@ const EDIT_FIELDS: Phase1aField[] = [
   { name: 'dateOfBirth', label: 'Tanggal lahir', type: 'date' },
   { name: 'address', label: 'Alamat', placeholder: 'Jl. ...' },
   { name: 'schoolOrigin', label: 'Asal sekolah', placeholder: 'SMPN 1 ...' },
+  { name: 'nis', label: 'NIS bimbel', placeholder: 'GFS262712-...' },
+  { name: 'majorChoice1', label: 'Pilihan jurusan 1', placeholder: 'Teknologi Pangan (Universitas ...)' },
+  { name: 'majorChoice2', label: 'Pilihan jurusan 2', placeholder: 'Gizi (Universitas ...)' },
   { name: 'isActive', label: 'Aktif? (true/false)', placeholder: 'true' },
 ];
 
@@ -98,6 +104,9 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
           gender: form.gender || undefined,
           address: form.address || undefined,
           schoolOrigin: form.schoolOrigin || undefined,
+          nis: form.nis || undefined,
+          majorChoice1: form.majorChoice1 || undefined,
+          majorChoice2: form.majorChoice2 || undefined,
           parentIds: form.parentId ? [form.parentId] : undefined,
         },
       }),
@@ -123,6 +132,9 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
           gender: editForm.gender || null,
           address: editForm.address || undefined,
           schoolOrigin: editForm.schoolOrigin || undefined,
+          nis: editForm.nis || null,
+          majorChoice1: editForm.majorChoice1 || null,
+          majorChoice2: editForm.majorChoice2 || null,
           isActive:
             editForm.isActive === ''
               ? undefined
@@ -263,6 +275,9 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
                               gender: student.gender ?? '',
                               address: student.address ?? '',
                               schoolOrigin: student.schoolOrigin ?? '',
+                              nis: student.nis ?? '',
+                              majorChoice1: student.majorChoice1 ?? '',
+                              majorChoice2: student.majorChoice2 ?? '',
                               isActive: String(student.isActive),
                             });
                           }}

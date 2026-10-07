@@ -40,6 +40,21 @@ export class UpdateStudentDto {
   schoolOrigin?: string | null;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  nis?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  majorChoice1?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  majorChoice2?: string | null;
+
+  @IsOptional()
   @IsIn(['M', 'F', 'OTHER'], { message: 'Gender tidak valid.' })
   gender?: 'M' | 'F' | 'OTHER' | null;
 

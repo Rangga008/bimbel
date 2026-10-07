@@ -56,12 +56,30 @@ export class NotificationEventsService {
     companyName: string,
   ) {
     try {
-      const company = await this.settings.get('company');
+      const [company, finance] = await Promise.all([
+        this.settings.get('company'),
+        this.settings.get('finance'),
+      ]);
+      // Tanda tangan kwitansi — gambar media lokal (/api/media/<id>/file)
+      // dipetakan ke path disk agar pdfkit bisa menyematkannya.
+      let signaturePath: string | undefined;
+      const sigUrl = finance.receiptSignatureUrl ?? '';
+      const mediaMatch = sigUrl.match(/\/api\/media\/([0-9a-f-]+)\/file/i);
+      if (mediaMatch) {
+        try {
+          signaturePath = (await this.media.getFile(mediaMatch[1])).path;
+        } catch {
+          signaturePath = undefined;
+        }
+      }
       const pdf = await buildReceiptPdf(receipt, {
         name: company.name || companyName,
         address: company.address,
         phone: company.phone,
         email: company.email,
+        signerName: finance.receiptSignerName,
+        signerTitle: finance.receiptSignerTitle,
+        signaturePath,
       });
       const asset = await this.media.saveBuffer(pdf, {
         mime: 'application/pdf',

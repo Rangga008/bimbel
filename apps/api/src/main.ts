@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import compression from 'compression';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -12,6 +13,10 @@ async function bootstrap() {
 
   app.use(helmet());
   app.use(cookieParser());
+  // Kompresi gzip response JSON — payload dashboard/list besar (10-100 KB)
+  // turun ~80% di jaringan. Streaming (media file, xlsx) tetap lewat apa
+  // adanya karena compression melewatkan content-type binary non-teks.
+  app.use(compression());
   // CORS_ORIGIN boleh berisi beberapa origin dipisah koma — mis.
   // "https://bimbel.example.com,https://www.bimbel.example.com" saat deploy.
   app.enableCors({

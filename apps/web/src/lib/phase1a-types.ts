@@ -12,6 +12,9 @@ export interface StudentItem {
   dateOfBirth: string | null;
   address: string | null;
   schoolOrigin?: string | null;
+  nis?: string | null;
+  majorChoice1?: string | null;
+  majorChoice2?: string | null;
   gender: 'M' | 'F' | 'OTHER' | null;
   isActive: boolean;
   createdAt: string;

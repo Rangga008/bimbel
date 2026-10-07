@@ -50,6 +50,21 @@ export class CreateStudentDto {
   schoolOrigin?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  nis?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  majorChoice1?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  majorChoice2?: string;
+
+  @IsOptional()
   @IsIn(['M', 'F', 'OTHER'], { message: 'Gender tidak valid.' })
   gender?: 'M' | 'F' | 'OTHER';
 

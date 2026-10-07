@@ -315,6 +315,16 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
                         >
                           Rekap Nilai — Excel (.xlsx)
                         </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() =>
+                            openPrint(
+                              `/analytics/exam/${exam.id}/answer-recap.xlsx`,
+                              `rekap-jawaban-${exam.title.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}.xlsx`,
+                            )
+                          }
+                        >
+                          Rekap Jawaban — Excel (.xlsx)
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   )}

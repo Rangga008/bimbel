@@ -247,6 +247,7 @@ const ROLE_PERMISSION_MAP: Record<string, string[]> = {
   ],
   [ROLE_NAMES.OWNER]: [
     PERMISSION_CODES.DASHBOARD_OWNER_VIEW,
+    PERMISSION_CODES.AUDIT_VIEW,
     PERMISSION_CODES.DASHBOARD_SISWA_VIEW,
     PERMISSION_CODES.DASHBOARD_ORANG_TUA_VIEW,
     PERMISSION_CODES.DASHBOARD_TUTOR_VIEW,
@@ -557,6 +558,9 @@ async function main() {
     { code: 'HARIAN', name: 'Latihan / Ujian Harian', sortOrder: 10 },
     { code: 'UTS', name: 'UTS', sortOrder: 20 },
     { code: 'TO', name: 'Try Out (TO)', sortOrder: 30 },
+    { code: 'TKA', name: 'Tes Kemampuan Akademik (TKA)', sortOrder: 32 },
+    { code: 'UTBK', name: 'UTBK / SNBT', sortOrder: 34 },
+    { code: 'TKD', name: 'Tes Kemampuan Dasar', sortOrder: 38 },
     { code: 'UAS', name: 'UAS', sortOrder: 40 },
     { code: 'BAB', name: 'Ujian Bab / Materi', sortOrder: 50 },
   ];
@@ -820,7 +824,7 @@ async function main() {
     { email: 'siswa5@bimbel.test', name: 'Siswa Lima' },
   ];
   const studentProfiles: Array<{ id: string }> = [];
-  for (const s of demoStudents) {
+  for (const [si, s] of demoStudents.entries()) {
     const existing = await prisma.user.findUnique({ where: { email: s.email } });
     const passwordHash = await bcrypt.hash('Siswa123!', SEED_PASSWORD_SALT_ROUNDS);
     const user =
@@ -834,8 +838,19 @@ async function main() {
     });
     const profile = await prisma.student.upsert({
       where: { userId: user.id },
-      create: { userId: user.id, address: 'Jl. Contoh No. 1' },
-      update: {},
+      create: {
+        userId: user.id,
+        address: 'Jl. Contoh No. 1',
+        nis: `GFS262712-${String(si + 1).padStart(3, '0')}`,
+        majorChoice1: 'Teknologi Pangan (Universitas Contoh)',
+        majorChoice2: 'Gizi (Universitas Contoh)',
+      },
+      // NIS + pilihan jurusan untuk kop laporan hasil belajar cetak.
+      update: {
+        nis: `GFS262712-${String(si + 1).padStart(3, '0')}`,
+        majorChoice1: 'Teknologi Pangan (Universitas Contoh)',
+        majorChoice2: 'Gizi (Universitas Contoh)',
+      },
     });
     studentProfiles.push(profile);
   }
@@ -1549,6 +1564,133 @@ async function main() {
       });
     }
     await prisma.examAttempt.update({ where: { id: attempt.id }, data: { score } });
+  }
+
+  // d2) Simulasi TKA + Tes Kemampuan Dasar — konten untuk laporan hasil
+  // belajar siswa per tipe ujian (matriks nilai per mapel + TKD).
+  const exam4Start = new Date(now);
+  exam4Start.setDate(exam4Start.getDate() - 1);
+  const exam4End = new Date(exam4Start);
+  exam4End.setHours(exam4End.getHours() + 2);
+  const exam4 = await prisma.exam.upsert({
+    where: { id: 'seed-exam4-tka' },
+    create: {
+      id: 'seed-exam4-tka',
+      title: 'Simulasi TKA SD Kelas 5',
+      description: 'Tes Kemampuan Akademik lintas mapel: MTK, BIN, BIG, IPA.',
+      programId: regProgram.id,
+      levelId: sd5LevelId,
+      subjectId: mtkSubjectId,
+      category: 'TKA',
+      scheduledStartAt: exam4Start,
+      scheduledEndAt: exam4End,
+      status: 'PUBLISHED',
+      maxScore: 10,
+      durationMinutes: 90,
+      proctoringEnabled: true,
+      createdBy: seededBy,
+    },
+    update: { category: 'TKA', proctoringEnabled: true },
+  });
+  for (const [i, qid] of exam3QuestionIds.entries()) {
+    const qMeta = seedQuestions.get(qid);
+    await prisma.examItem.upsert({
+      where: { examId_questionId: { examId: exam4.id, questionId: qid } },
+      create: { examId: exam4.id, questionId: qid, sortOrder: i, points: qMeta?.points ?? 1 },
+      update: { sortOrder: i },
+    });
+  }
+
+  const exam5Start = new Date(now);
+  exam5Start.setDate(exam5Start.getDate() - 8);
+  const exam5End = new Date(exam5Start);
+  exam5End.setHours(exam5End.getHours() + 1);
+  const exam5 = await prisma.exam.upsert({
+    where: { id: 'seed-exam5-tkd' },
+    create: {
+      id: 'seed-exam5-tkd',
+      title: 'Tes Kemampuan Dasar — Numerasi & Literasi',
+      description: 'TKD: Matematika dasar + Bahasa Indonesia.',
+      programId: regProgram.id,
+      levelId: sd5LevelId,
+      subjectId: mtkSubjectId,
+      category: 'TKD',
+      scheduledStartAt: exam5Start,
+      scheduledEndAt: exam5End,
+      status: 'PUBLISHED',
+      maxScore: 4,
+      durationMinutes: 45,
+      proctoringEnabled: true,
+      createdBy: seededBy,
+    },
+    update: { category: 'TKD', proctoringEnabled: true },
+  });
+  // TKD pakai 2 soal MTK + 2 soal BIN (numerasi & literasi).
+  const exam5QuestionIds = [0, 1, 4, 5]
+    .map((i) => exam3QuestionIds[i])
+    .filter((id): id is string => Boolean(id));
+  for (const [i, qid] of exam5QuestionIds.entries()) {
+    const qMeta = seedQuestions.get(qid);
+    await prisma.examItem.upsert({
+      where: { examId_questionId: { examId: exam5.id, questionId: qid } },
+      create: { examId: exam5.id, questionId: qid, sortOrder: i, points: qMeta?.points ?? 1 },
+      update: { sortOrder: i },
+    });
+  }
+
+  // Attempt untuk TKA & TKD — pola jawaban sama seperti TO campuran.
+  for (const [si, student] of studentProfiles.entries()) {
+    for (const [exam, qids, tag] of [
+      [exam4, exam3QuestionIds, 'tka'],
+      [exam5, exam5QuestionIds, 'tkd'],
+    ] as const) {
+      const attempt = await prisma.examAttempt.upsert({
+        where: { id: `seed-attempt-${tag}-${student.id}` },
+        create: {
+          id: `seed-attempt-${tag}-${student.id}`,
+          examId: exam.id,
+          studentId: student.id,
+          status: 'SUBMITTED',
+          score: 0,
+          maxScore: exam.maxScore,
+          startedAt: exam.scheduledStartAt,
+          submittedAt: exam.scheduledEndAt,
+        },
+        update: {},
+      });
+      let score = 0;
+      for (const [qi, qid] of qids.entries()) {
+        const qMeta = seedQuestions.get(qid);
+        if (!qMeta) continue;
+        const correct = si === 0 || (si + qi + (tag === 'tkd' ? 1 : 0)) % 3 !== 0;
+        const correctOpt = qMeta.correctOptionIds[0];
+        let wrongOpt: string | null = null;
+        if (!correct) {
+          const wrong = await prisma.questionOption.findFirst({
+            where: { questionId: qid, isCorrect: false },
+            orderBy: { sortOrder: 'asc' },
+            select: { id: true },
+          });
+          wrongOpt = wrong?.id ?? null;
+        }
+        const sel = correct ? correctOpt : wrongOpt;
+        if (!sel) continue;
+        const earned = correct ? qMeta.points : 0;
+        score += earned;
+        await prisma.examAnswer.upsert({
+          where: { attemptId_questionId: { attemptId: attempt.id, questionId: qid } },
+          create: {
+            attemptId: attempt.id,
+            questionId: qid,
+            selectedOptionIds: [sel],
+            isCorrect: correct,
+            score: earned,
+          },
+          update: {},
+        });
+      }
+      await prisma.examAttempt.update({ where: { id: attempt.id }, data: { score } });
+    }
   }
 
   // e) Paket latsol MTK Bab 1 + attempt (1 selesai, 1 sedang berjalan —

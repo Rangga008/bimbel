@@ -31,8 +31,10 @@ export class ExamsController {
     @Query('levelId') levelId?: string,
     @Query('subjectId') subjectId?: string,
     @Query('category') category?: string,
+    // `all=1` = tanpa scope ampunan — hanya pengawas proctoring.
+    @Query('all') all?: string,
   ) {
-    return this.exams.list(actor, { status, programId, levelId, subjectId, category });
+    return this.exams.list(actor, { status, programId, levelId, subjectId, category, all });
   }
 
   @Get('exams-available')

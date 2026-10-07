@@ -215,7 +215,12 @@ export class AuthController {
       action: 'PROFILE_UPDATED',
       entity: 'User',
       entityId: user.id,
-      newData: { name: dto.name, phone: dto.phone },
+      newData: {
+        name: dto.name,
+        phone: dto.phone,
+        majorChoice1: dto.majorChoice1,
+        majorChoice2: dto.majorChoice2,
+      },
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });

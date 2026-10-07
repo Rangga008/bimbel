@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { CategoryProgressChart, type CategoryProgressData } from "@/components/shared/category-progress-chart";
+import { LearningReportButton } from "@/components/shared/learning-report-button";
 
 function err(e: unknown, fb: string) {
   return e instanceof ApiError ? e.message : fb;
@@ -327,9 +328,14 @@ export function ParentPerformance({ studentId }: ParentPerformanceProps) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Performa: {data.studentName}</h1>
-        <p className="text-muted-foreground">Analisis performa akademik anak Anda</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold">Performa: {data.studentName}</h1>
+          <p className="text-muted-foreground">Analisis performa akademik anak Anda</p>
+        </div>
+        <LearningReportButton
+          endpoint={`/analytics/parent/child/${studentId}/learning-report/print`}
+        />
       </div>
 
       {/* Overall Statistics */}

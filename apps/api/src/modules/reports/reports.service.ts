@@ -212,8 +212,21 @@ ${summary}
   }
 
   /** Identitas bimbel untuk header laporan — dibaca dari pengaturan `company`. */
-  getCompanyInfo() {
-    return this.settings.get('company');
+  async getCompanyInfo() {
+    // Identitas bimbel + penandatangan kwitansi (dari pengaturan finance) agar
+    // semua dokumen cetak kwitansi membawa nama/jabatan/ttd yang sama.
+    const [company, finance, branding] = await Promise.all([
+      this.settings.get('company'),
+      this.settings.get('finance'),
+      this.settings.get('branding'),
+    ]);
+    return {
+      ...company,
+      logoUrl: branding.logoUrl || '',
+      signerName: finance.receiptSignerName || '',
+      signerTitle: finance.receiptSignerTitle || '',
+      signatureUrl: finance.receiptSignatureUrl || '',
+    };
   }
 
   // =====================================================================

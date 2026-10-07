@@ -14,7 +14,9 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { UserAvatar } from '@/components/shared/user-avatar';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { SessionCalendar } from '@/components/shared/session-calendar';
+import { LearningReportButton } from '@/components/shared/learning-report-button';
 import { apiFetch, ApiError } from '@/lib/api-client';
+import { useAuthStore } from '@/stores/auth-store';
 import type { StudentItem } from '@/lib/phase1a-types';
 import { Phase1aFormDialog, Phase1aSelectField, type Phase1aField } from '@/components/phase1a/phase1a-form-dialog';
 
@@ -56,6 +58,10 @@ function err(e: unknown, fb: string) {
 
 /** Halaman detail siswa — profil + kelompok + kalender sesi + log aktivitas. */
 export function StudentDetailPage({ studentId, basePath, canManage }: { studentId: string; basePath: string; canManage: boolean }) {
+  const canPrintReport =
+    useAuthStore(
+      (s) => s.user?.permissions.includes('analytics_student_performance.view'),
+    ) ?? false;
   const router = useRouter();
   const qc = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
@@ -168,6 +174,11 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={s.isActive ? 'secondary' : 'outline'}>{s.isActive ? 'Aktif' : 'Nonaktif'}</Badge>
+              {canPrintReport ? (
+                <LearningReportButton
+                  endpoint={`/analytics/student/${studentId}/learning-report/print`}
+                />
+              ) : null}
               {canManage ? (
                 <>
                   <Button variant="outline" size="sm" onClick={openEdit}>

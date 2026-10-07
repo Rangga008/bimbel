@@ -257,12 +257,23 @@ export class AuthService {
   async getProfile(userId: string) {
     const user = await this.usersService.findByIdWithRoles(userId);
     if (!user) throw new UnauthorizedException('Sesi tidak valid.');
-    return this.usersService.sanitize(user);
+    const profile = this.usersService.sanitize(user);
+    // Data tambahan khusus siswa: NIS + pilihan kampus (untuk laporan cetak).
+    const student = await this.prisma.student.findUnique({
+      where: { userId },
+      select: { nis: true, majorChoice1: true, majorChoice2: true },
+    });
+    return student ? { ...profile, student } : profile;
   }
 
   async updateProfile(
     userId: string,
-    dto: { name?: string; phone?: string },
+    dto: {
+      name?: string;
+      phone?: string;
+      majorChoice1?: string;
+      majorChoice2?: string;
+    },
   ) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.isActive) {
@@ -277,6 +288,23 @@ export class AuthService {
         ...(dto.phone !== undefined ? { phone: dto.phone || null } : {}),
       },
     });
+    // Pilihan kampus hanya berlaku kalau akun ini memang siswa.
+    if (
+      dto.majorChoice1 !== undefined ||
+      dto.majorChoice2 !== undefined
+    ) {
+      await this.prisma.student.updateMany({
+        where: { userId },
+        data: {
+          ...(dto.majorChoice1 !== undefined
+            ? { majorChoice1: dto.majorChoice1.trim() || null }
+            : {}),
+          ...(dto.majorChoice2 !== undefined
+            ? { majorChoice2: dto.majorChoice2.trim() || null }
+            : {}),
+        },
+      });
+    }
     return this.getProfile(userId);
   }
 

@@ -14,6 +14,8 @@ import {
 	Package,
 	Presentation,
 	Receipt,
+	Star,
+	TrendingUp,
 	TriangleAlert,
 	Users,
 	Wallet,
@@ -25,6 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { KpiCard } from "@/components/shared/kpi-card";
+import { MiniBars } from "@/components/shared/mini-bars";
 import { EmptyState } from "@/components/shared/empty-state";
 import type { RoleKey } from "@/config/role-nav";
 import { fmtDateTime } from "@/lib/phase1c-types";
@@ -48,7 +51,33 @@ const ATTENDANCE_VARIANT: Record<
 	IZIN: "warning",
 	SAKIT: "warning",
 	ALPHA: "destructive",
+	ALFA: "destructive",
 };
+
+const ENROLLMENT_LABEL: Record<string, string> = {
+	PENDING_PAYMENT: "Menunggu Bayar",
+	PAID: "Sudah Bayar",
+	ACCEPTED: "Terverifikasi",
+	PLACED: "Terjadwal",
+	REJECTED: "Ditolak",
+};
+
+const INVOICE_LABEL: Record<string, string> = {
+	DRAFT: "Draft",
+	ISSUED: "Terbit",
+	PARTIALLY_PAID: "Cicilan",
+	PAID: "Lunas",
+	CANCELLED: "Batal",
+};
+
+/** Format rupiah ringkas untuk label grafik: 1.2jt / 350rb. */
+function compactIDR(v: number) {
+	const abs = Math.abs(v);
+	if (abs >= 1e9) return `${(v / 1e9).toFixed(1)}M`;
+	if (abs >= 1e6) return `${(v / 1e6).toFixed(1)}jt`;
+	if (abs >= 1e3) return `${Math.round(v / 1e3)}rb`;
+	return String(Math.round(v));
+}
 
 function sessionVariant(status: string) {
 	if (status === "CANCELLED") return "destructive" as const;
@@ -136,6 +165,58 @@ export function RoleHome({
 									/>
 								);
 							})}
+						</div>
+					) : null}
+
+					{/* KPI aktivitas belajar — siswa. */}
+					{data.role === "SISWA" &&
+					(data.points !== undefined ||
+						data.examCount !== undefined ||
+						data.latsolDone !== undefined) ? (
+						<div className="grid gap-3 sm:grid-cols-3">
+							<KpiCard
+								icon={Star}
+								label="Poin Saya"
+								value={data.points ?? 0}
+								tone="warning"
+							/>
+							<KpiCard
+								icon={ClipboardCheck}
+								label="Ujian Selesai"
+								value={data.examCount ?? 0}
+							/>
+							<KpiCard
+								icon={BookOpen}
+								label="Latsol Dikerjakan"
+								value={data.latsolDone ?? 0}
+							/>
+						</div>
+					) : null}
+
+					{/* KPI tutor: siswa diampu + sesi minggu ini. */}
+					{data.role === "TUTOR" &&
+					(data.studentsTotal !== undefined || data.sessionWeek) ? (
+						<div className="grid gap-3 sm:grid-cols-3">
+							<KpiCard
+								icon={GraduationCap}
+								label="Siswa Diampu"
+								value={data.studentsTotal ?? 0}
+							/>
+							<KpiCard
+								icon={CalendarClock}
+								label="Sesi Minggu Ini"
+								value={data.sessionWeek?.TOTAL ?? 0}
+							/>
+							<KpiCard
+								icon={TriangleAlert}
+								label="Absensi Pending"
+								value={data.pendingAttendance?.length ?? 0}
+								tone={
+									(data.pendingAttendance?.length ?? 0) > 0
+										? "warning"
+										: "default"
+								}
+							/>
 						</div>
 					) : null}
 
@@ -365,6 +446,205 @@ export function RoleHome({
 							</Card>
 						) : null}
 
+						{/* Grafik tren nilai — siswa. */}
+						{(data.scoreTrend ?? []).length > 0 ? (
+							<Card>
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2 text-base">
+										<TrendingUp className="size-4.5 text-brand-blue-600" />
+										Tren Nilai Ujian
+									</CardTitle>
+								</CardHeader>
+								<CardContent>
+									<MiniBars
+										data={data.scoreTrend!}
+										suffix="%"
+										colorClass="bg-success-500"
+									/>
+								</CardContent>
+							</Card>
+						) : null}
+
+						{/* Grafik arus kas 6 bulan — finance/owner. */}
+						{(data.cashTrend ?? []).length > 0 ? (
+							<Card>
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2 text-base">
+										<Wallet className="size-4.5 text-brand-blue-600" />
+										Arus Kas 6 Bulan
+									</CardTitle>
+								</CardHeader>
+								<CardContent>
+									<MiniBars
+										data={data.cashTrend!.map((c) => ({
+											label: c.label,
+											value: c.in,
+											value2: c.out,
+											title: `${c.label}: masuk ${rupiah(c.in)} — keluar ${rupiah(c.out)}`,
+										}))}
+										formatValue={compactIDR}
+										legend={["Masuk", "Keluar"]}
+									/>
+								</CardContent>
+							</Card>
+						) : null}
+
+						{/* Grafik kehadiran 6 minggu — academic/owner. */}
+						{(data.attendanceTrend ?? []).length > 0 ? (
+							<Card>
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2 text-base">
+										<ClipboardCheck className="size-4.5 text-brand-blue-600" />
+										Kehadiran 6 Minggu
+									</CardTitle>
+								</CardHeader>
+								<CardContent>
+									<MiniBars
+										data={data.attendanceTrend!.map((w) => ({
+											label: w.label,
+											value: w.value,
+											title: `${w.label}: ${w.value}% hadir (${w.count} catatan)`,
+										}))}
+										suffix="%"
+										colorClass="bg-brand-blue-500"
+									/>
+								</CardContent>
+							</Card>
+						) : null}
+
+						{/* Ringkasan nilai per anak — ortu. */}
+						{(data.childrenScores ?? []).length > 0 ? (
+							<Card>
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2 text-base">
+										<TrendingUp className="size-4.5 text-brand-blue-600" />
+										Nilai Ujian Anak
+									</CardTitle>
+								</CardHeader>
+								<CardContent className="flex flex-col gap-2 text-sm">
+									{data.childrenScores!.map((c) => (
+										<div
+											key={c.studentId}
+											className="flex items-center justify-between gap-2"
+										>
+											<span className="min-w-0 truncate">
+												{c.name}
+												{c.lastExam ? (
+													<span className="text-muted-foreground">
+														{" "}
+														— terakhir: {c.lastExam}
+													</span>
+												) : null}
+											</span>
+											{c.avgPct !== null ? (
+												<Badge variant="secondary">
+													rata-rata{" "}
+													<span className="tabular-nums">{c.avgPct}%</span>
+													{c.lastPct !== null
+														? ` · ${c.lastPct}% terakhir`
+														: null}
+												</Badge>
+											) : (
+												<Badge variant="outline">belum ada ujian</Badge>
+											)}
+										</div>
+									))}
+								</CardContent>
+							</Card>
+						) : null}
+
+						{/* Funnel pendaftaran — academic/owner. */}
+						{data.enrollmentStatus &&
+						Object.keys(data.enrollmentStatus).length > 0 ? (
+							<Card>
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2 text-base">
+										<GraduationCap className="size-4.5 text-brand-blue-600" />
+										Pendaftaran Siswa
+										{typeof data.examsMonth === "number" ? (
+											<span className="text-xs font-normal text-muted-foreground">
+												· {data.examsMonth} ujian bulan ini
+											</span>
+										) : null}
+									</CardTitle>
+								</CardHeader>
+								<CardContent className="flex flex-wrap gap-1.5">
+									{Object.entries(data.enrollmentStatus).map(([k, v]) => (
+										<Badge
+											key={k}
+											variant={
+												k === "PLACED"
+													? "success"
+													: k === "REJECTED"
+														? "destructive"
+														: k === "PENDING_PAYMENT"
+															? "warning"
+															: "secondary"
+											}
+										>
+											{ENROLLMENT_LABEL[k] ?? k}:{" "}
+											<span className="tabular-nums">{v}</span>
+										</Badge>
+									))}
+								</CardContent>
+							</Card>
+						) : null}
+
+						{/* Status invoice — finance/owner. */}
+						{data.invoiceStatus &&
+						Object.keys(data.invoiceStatus).length > 0 ? (
+							<Card>
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2 text-base">
+										<Receipt className="size-4.5 text-brand-blue-600" />
+										Status Invoice
+									</CardTitle>
+								</CardHeader>
+								<CardContent className="flex flex-wrap gap-1.5">
+									{Object.entries(data.invoiceStatus).map(([k, v]) => (
+										<Badge
+											key={k}
+											variant={
+												k === "PAID"
+													? "success"
+													: k === "CANCELLED"
+														? "destructive"
+														: k === "ISSUED" || k === "PARTIALLY_PAID"
+															? "warning"
+															: "outline"
+											}
+										>
+											{INVOICE_LABEL[k] ?? k}:{" "}
+											<span className="tabular-nums">{v}</span>
+										</Badge>
+									))}
+								</CardContent>
+							</Card>
+						) : null}
+
+						{/* Status sesi minggu ini — tutor. */}
+						{data.role === "TUTOR" &&
+						data.sessionWeek &&
+						Object.keys(data.sessionWeek).length > 1 ? (
+							<Card>
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2 text-base">
+										<CalendarClock className="size-4.5 text-brand-blue-600" />
+										Status Sesi Minggu Ini
+									</CardTitle>
+								</CardHeader>
+								<CardContent className="flex flex-wrap gap-1.5">
+									{Object.entries(data.sessionWeek)
+										.filter(([k]) => k !== "TOTAL")
+										.map(([k, v]) => (
+											<Badge key={k} variant={sessionVariant(k)}>
+												{k}: <span className="tabular-nums">{v}</span>
+											</Badge>
+										))}
+								</CardContent>
+							</Card>
+						) : null}
+
 						{(data.packageUsage ?? []).length > 0 ? (
 							<Card>
 								<CardHeader>
@@ -485,7 +765,16 @@ export function RoleHome({
 					!(data.packageUsage ?? []).length &&
 					!(data.groups ?? []).length &&
 					!(data.children ?? []).length &&
-					!(data.pendingAttendance ?? []).length ? (
+					!(data.pendingAttendance ?? []).length &&
+					!(data.scoreTrend ?? []).length &&
+					!(data.cashTrend ?? []).length &&
+					!(data.attendanceTrend ?? []).length &&
+					!(data.childrenScores ?? []).length &&
+					!data.enrollmentStatus &&
+					!data.invoiceStatus &&
+					!data.sessionWeek &&
+					data.points === undefined &&
+					data.studentsTotal === undefined ? (
 						<Card>
 							<CardContent>
 								<EmptyState

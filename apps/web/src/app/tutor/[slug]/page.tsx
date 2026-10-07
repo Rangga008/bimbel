@@ -16,6 +16,7 @@ import { FeedbackMatrix } from "@/components/feedback/feedback-matrix";
 import { TutorRankingPage } from "@/components/phase4b/tutor-ranking";
 import { TutorHonorPanel } from "@/components/phase5a/tutor-honor-panel";
 import { ProfilePage } from "@/components/shared/profile-page";
+import { LearningReportPage } from "@/components/shared/learning-report-page";
 import { NotificationsInbox } from "@/components/phase1d/notifications-inbox";
 import { findNavItem } from "@/config/role-nav";
 
@@ -59,6 +60,7 @@ export default async function TutorMenuPage({
 	if (slug === "proctoring")
 		return <ProctoringHubPage examBasePath="/tutor/ujian" />;
 	if (slug === "nilai") return <TutorGroupGrades />;
+	if (slug === "laporan") return <LearningReportPage audience="tutor" />;
 	if (slug === "ranking") return <TutorRankingPage />;
 	if (slug === "notifikasi") return <NotificationsInbox />;
 	if (slug === "profil")
