@@ -1,10 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import Image from "next/image";
 import { toast } from "sonner";
-import { ArrowLeft, Mail, MailCheck } from "lucide-react";
+import { Mail, MailCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -15,11 +13,10 @@ import {
 	CardTitle,
 } from "@/components/ui/card";
 import { SubmitButton } from "@/components/shared/form-field";
+import { AuthShell } from "@/components/shared/auth-shell";
 import { apiFetch, ApiError } from "@/lib/api-client";
-import { useBranding } from "@/lib/use-branding";
 
 export default function ForgotPasswordPage() {
-	const branding = useBranding();
 	const [email, setEmail] = useState("");
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [sent, setSent] = useState(false);
@@ -44,44 +41,10 @@ export default function ForgotPasswordPage() {
 	}
 
 	return (
-		<div
-			className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden p-4"
-			style={{
-				backgroundImage:
-					"linear-gradient(150deg, #032a41 0%, #074c74 45%, #0c5d8d 80%, #0f77b4 100%)",
-			}}
+		<AuthShell
+			footerLink={{ href: "/login", label: "Kembali ke halaman masuk" }}
 		>
-			<div
-				aria-hidden
-				className="absolute -top-32 -right-24 size-80 rounded-full bg-brand-blue-500/25 blur-3xl"
-			/>
-			<div
-				aria-hidden
-				className="absolute -bottom-32 -left-24 size-80 rounded-full bg-brand-gold-400/15 blur-3xl"
-			/>
-			<div
-				aria-hidden
-				className="absolute inset-0 opacity-[0.06]"
-				style={{
-					backgroundImage:
-						"linear-gradient(to right, #fff 1px, transparent 1px), linear-gradient(to bottom, #fff 1px, transparent 1px)",
-					backgroundSize: "56px 56px",
-				}}
-			/>
-			<div className="relative flex w-full max-w-sm flex-col gap-6">
-				<div className="flex flex-col items-center gap-3 text-center">
-					<Image
-						src={branding.resolvedLogoUrl}
-						alt={`Logo ${branding.appName}`}
-						width={56}
-						height={56}
-						className="size-14 rounded-xl bg-white/90 p-1.5 object-contain"
-						priority
-						unoptimized
-					/>
-					<p className="text-lg font-semibold text-white">{branding.appName}</p>
-				</div>
-				<Card className="shadow-2xl">
+			<Card className="w-full shadow-2xl shadow-black/25">
 					{sent ? (
 						<>
 							<CardHeader className="items-center text-center">
@@ -140,16 +103,6 @@ export default function ForgotPasswordPage() {
 						</>
 					)}
 				</Card>
-				<p className="text-center text-sm text-brand-blue-200">
-					<Link
-						href="/login"
-						className="inline-flex items-center gap-1.5 hover:text-white"
-					>
-						<ArrowLeft className="size-4" />
-						Kembali ke halaman masuk
-					</Link>
-				</p>
-			</div>
-		</div>
+		</AuthShell>
 	);
 }

@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
-	ArrowLeft,
 	Baby,
 	CalendarCheck,
+	Eye,
+	EyeOff,
 	FileCheck2,
 	Lock,
 	Mail,
@@ -26,9 +26,9 @@ import {
 	CardTitle,
 } from "@/components/ui/card";
 import { SubmitButton } from "@/components/shared/form-field";
+import { AuthShell } from "@/components/shared/auth-shell";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
-import { useBranding } from "@/lib/use-branding";
 
 interface RegisterResponse {
 	accessToken: string;
@@ -42,10 +42,10 @@ interface RegisterResponse {
 }
 
 const HIGHLIGHTS = [
-	{ icon: Baby, text: "Daftarkan anak dan hubungkan ke program belajar" },
-	{ icon: CalendarCheck, text: "Pantau jadwal & kehadiran anak real-time" },
-	{ icon: FileCheck2, text: "Lihat nilai ujian dan ranking siswa" },
-	{ icon: Wallet, text: "Kelola invoice, pembayaran, dan kwitansi" },
+	{ icon: Baby, text: "Daftarkan anak ke program belajar" },
+	{ icon: CalendarCheck, text: "Pantau jadwal & kehadiran" },
+	{ icon: FileCheck2, text: "Nilai ujian & ranking siswa" },
+	{ icon: Wallet, text: "Invoice, pembayaran, kwitansi" },
 ];
 
 export default function DaftarPage() {
@@ -56,8 +56,8 @@ export default function DaftarPage() {
 	const [phone, setPhone] = useState("");
 	const [password, setPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
+	const [showPassword, setShowPassword] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
-	const branding = useBranding();
 
 	async function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
@@ -92,240 +92,149 @@ export default function DaftarPage() {
 	}
 
 	return (
-		<div className="grid min-h-screen lg:grid-cols-2">
-			{/* ---- Panel brand (desktop) ---- */}
-			<div
-				className="relative hidden overflow-hidden lg:flex lg:flex-col lg:justify-between lg:p-10 xl:p-14"
-				style={{
-					backgroundImage:
-						"linear-gradient(150deg, #032a41 0%, #074c74 45%, #0c5d8d 80%, #0f77b4 100%)",
-				}}
-			>
+		<AuthShell
+			highlights={HIGHLIGHTS}
+			footerLink={{ href: "/", label: "Kembali ke beranda" }}
+		>
+			<Card className="w-full gap-0 overflow-hidden border-white/10 py-0 shadow-2xl shadow-black/25">
 				<div
 					aria-hidden
-					className="absolute -top-32 -right-32 size-96 rounded-full bg-brand-blue-500/30 blur-3xl"
-				/>
-				<div
-					aria-hidden
-					className="absolute -bottom-40 -left-24 size-96 rounded-full bg-brand-gold-400/15 blur-3xl"
-				/>
-				<div
-					aria-hidden
-					className="absolute inset-0 opacity-[0.06]"
+					className="h-1 w-full"
 					style={{
 						backgroundImage:
-							"linear-gradient(to right, #fff 1px, transparent 1px), linear-gradient(to bottom, #fff 1px, transparent 1px)",
-						backgroundSize: "56px 56px",
+							"linear-gradient(to right, #0c5d8d, #1283c4 55%, #f2b441)",
 					}}
 				/>
-				<Link href="/" className="relative flex w-fit items-center gap-3">
-					<Image
-						src={branding.resolvedLogoUrl}
-						alt={`Logo ${branding.appName}`}
-						width={44}
-						height={44}
-						className="size-11 rounded-xl bg-white/90 p-1 object-contain"
-						priority
-						unoptimized
-					/>
-					<div>
-						<p className="text-base font-semibold text-white">
-							{branding.appName}
-						</p>
-						<p className="text-xs text-brand-blue-200">
-							{branding.tagline || "Portal belajar terpadu"}
-						</p>
-					</div>
-				</Link>
-				<div className="relative flex flex-col gap-6">
-					<span className="inline-flex w-fit items-center gap-2 rounded-full border border-brand-gold-400/40 bg-brand-gold-400/10 px-3 py-1 text-xs font-medium text-brand-gold-200">
-						Pendaftaran Orang Tua
-					</span>
-					<h1 className="max-w-md text-3xl font-bold tracking-tight text-white xl:text-4xl">
-						Satu akun untuk{" "}
-						<span className="bg-gradient-to-r from-brand-gold-300 via-brand-gold-400 to-brand-gold-500 bg-clip-text text-transparent">
-							memantau seluruh proses belajar anak
-						</span>
-						.
-					</h1>
-					<div className="grid max-w-md gap-3">
-						{HIGHLIGHTS.map((h) => (
-							<div
-								key={h.text}
-								className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 p-3 backdrop-blur-sm"
-							>
-								<span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand-gold-400/15 text-brand-gold-300">
-									<h.icon className="size-4.5" />
-								</span>
-								<p className="text-sm text-brand-blue-50">{h.text}</p>
+				<CardHeader className="pt-6">
+					<CardTitle className="text-xl">Daftar Akun Orang Tua</CardTitle>
+					<CardDescription>
+						Buat akun untuk mendaftarkan &amp; memantau anak Anda.
+					</CardDescription>
+				</CardHeader>
+				<CardContent className="pb-6">
+					<form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="name">Nama Lengkap</Label>
+							<div className="relative">
+								<User className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+								<Input
+									id="name"
+									autoComplete="name"
+									placeholder="Nama orang tua/wali"
+									className="pl-9"
+									required
+									minLength={3}
+									value={name}
+									onChange={(e) => setName(e.target.value)}
+								/>
 							</div>
-						))}
-					</div>
-				</div>
-				<p className="relative text-xs text-brand-blue-300">
-					© {new Date().getFullYear()} {branding.appName}
-					{branding.tagline ? ` — ${branding.tagline}` : ""}
-				</p>
-			</div>
-
-			{/* ---- Form ---- */}
-			<div className="relative flex flex-col items-center justify-center p-4 sm:p-8">
-				<div
-					aria-hidden
-					className="absolute inset-0 bg-gradient-to-b from-brand-blue-50/80 via-background to-background"
-				/>
-				<div
-					aria-hidden
-					className="absolute -top-24 right-0 size-72 rounded-full bg-brand-blue-100/50 blur-3xl"
-				/>
-				<div
-					aria-hidden
-					className="absolute -bottom-24 left-0 size-72 rounded-full bg-brand-gold-100/40 blur-3xl"
-				/>
-				<div className="relative flex w-full max-w-sm flex-col gap-6">
-					<div className="flex flex-col items-center gap-3 text-center lg:hidden">
-						<Image
-							src={branding.resolvedLogoUrl}
-							alt={`Logo ${branding.appName}`}
-							width={56}
-							height={56}
-							className="size-14 object-contain"
-							priority
-							unoptimized
-						/>
-						<div>
-							<p className="text-lg font-semibold">{branding.appName}</p>
-							{branding.tagline ? (
-								<p className="text-xs text-muted-foreground">
-									{branding.tagline}
-								</p>
-							) : null}
 						</div>
-					</div>
-					<Card className="shadow-xl">
-						<CardHeader>
-							<CardTitle className="text-xl">Daftar Akun Orang Tua</CardTitle>
-							<CardDescription>
-								Buat akun untuk mendaftarkan &amp; memantau anak Anda.
-							</CardDescription>
-						</CardHeader>
-						<CardContent>
-							<form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-								<div className="flex flex-col gap-1.5">
-									<Label htmlFor="name">Nama Lengkap</Label>
-									<div className="relative">
-										<User className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-										<Input
-											id="name"
-											autoComplete="name"
-											placeholder="Nama orang tua/wali"
-											className="pl-9"
-											required
-											minLength={3}
-											value={name}
-											onChange={(e) => setName(e.target.value)}
-										/>
-									</div>
+						<div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="email">Email</Label>
+								<div className="relative">
+									<Mail className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+									<Input
+										id="email"
+										type="email"
+										autoComplete="email"
+										placeholder="nama@email.com"
+										className="pl-9"
+										required
+										value={email}
+										onChange={(e) => setEmail(e.target.value)}
+									/>
 								</div>
-								<div className="flex flex-col gap-1.5">
-									<Label htmlFor="email">Email</Label>
-									<div className="relative">
-										<Mail className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-										<Input
-											id="email"
-											type="email"
-											autoComplete="email"
-											placeholder="nama@email.com"
-											className="pl-9"
-											required
-											value={email}
-											onChange={(e) => setEmail(e.target.value)}
-										/>
-									</div>
+							</div>
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="phone">No. HP / WhatsApp</Label>
+								<div className="relative">
+									<Phone className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+									<Input
+										id="phone"
+										type="tel"
+										autoComplete="tel"
+										placeholder="08..."
+										className="pl-9"
+										required
+										minLength={9}
+										value={phone}
+										onChange={(e) => setPhone(e.target.value)}
+									/>
 								</div>
-								<div className="flex flex-col gap-1.5">
-									<Label htmlFor="phone">No. HP / WhatsApp *</Label>
-									<div className="relative">
-										<Phone className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-										<Input
-											id="phone"
-											type="tel"
-											autoComplete="tel"
-											placeholder="08..."
-											className="pl-9"
-											required
-											minLength={9}
-											value={phone}
-											onChange={(e) => setPhone(e.target.value)}
-										/>
-									</div>
-									<p className="text-xs text-muted-foreground">
-										Bisa dipakai untuk masuk &amp; notifikasi WhatsApp.
-									</p>
-								</div>
-								<div className="flex flex-col gap-1.5">
-									<Label htmlFor="password">Kata Sandi</Label>
-									<div className="relative">
-										<Lock className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-										<Input
-											id="password"
-											type="password"
-											autoComplete="new-password"
-											placeholder="Minimal 8 karakter"
-											className="pl-9"
-											required
-											minLength={8}
-											value={password}
-											onChange={(e) => setPassword(e.target.value)}
-										/>
-									</div>
-								</div>
-								<div className="flex flex-col gap-1.5">
-									<Label htmlFor="confirmPassword">Konfirmasi Kata Sandi</Label>
-									<div className="relative">
-										<Lock className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-										<Input
-											id="confirmPassword"
-											type="password"
-											autoComplete="new-password"
-											placeholder="Ulangi kata sandi"
-											className="pl-9"
-											required
-											value={confirmPassword}
-											onChange={(e) => setConfirmPassword(e.target.value)}
-										/>
-									</div>
-								</div>
-								<SubmitButton
-									loading={isSubmitting}
-									loadingText="Mendaftarkan..."
-									className="mt-2 w-full"
+							</div>
+						</div>
+						<p className="-mt-2 text-xs text-muted-foreground">
+							No. HP bisa dipakai untuk masuk &amp; notifikasi WhatsApp.
+						</p>
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="password">Kata Sandi</Label>
+							<div className="relative">
+								<Lock className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+								<Input
+									id="password"
+									type={showPassword ? "text" : "password"}
+									autoComplete="new-password"
+									placeholder="Minimal 8 karakter"
+									className="pr-10 pl-9"
+									required
+									minLength={8}
+									value={password}
+									onChange={(e) => setPassword(e.target.value)}
+								/>
+								<button
+									type="button"
+									onClick={() => setShowPassword((v) => !v)}
+									aria-label={
+										showPassword
+											? "Sembunyikan kata sandi"
+											: "Tampilkan kata sandi"
+									}
+									className="absolute top-1/2 right-3 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
 								>
-									Daftar &amp; Masuk
-								</SubmitButton>
-								<p className="text-center text-xs text-muted-foreground">
-									Sudah punya akun?{" "}
-									<Link
-										href="/login"
-										className="font-medium underline-offset-4 hover:text-foreground hover:underline"
-									>
-										Masuk di sini
-									</Link>
-								</p>
-							</form>
-						</CardContent>
-					</Card>
-					<p className="text-center text-sm text-muted-foreground">
-						<Link
-							href="/"
-							className="inline-flex items-center gap-1.5 hover:text-foreground"
+									{showPassword ? (
+										<EyeOff className="size-4" />
+									) : (
+										<Eye className="size-4" />
+									)}
+								</button>
+							</div>
+						</div>
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="confirmPassword">Konfirmasi Kata Sandi</Label>
+							<div className="relative">
+								<Lock className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+								<Input
+									id="confirmPassword"
+									type={showPassword ? "text" : "password"}
+									autoComplete="new-password"
+									placeholder="Ulangi kata sandi"
+									className="pl-9"
+									required
+									value={confirmPassword}
+									onChange={(e) => setConfirmPassword(e.target.value)}
+								/>
+							</div>
+						</div>
+						<SubmitButton
+							loading={isSubmitting}
+							loadingText="Mendaftarkan..."
+							className="mt-2 w-full"
 						>
-							<ArrowLeft className="size-4" />
-							Kembali ke beranda
-						</Link>
-					</p>
-				</div>
-			</div>
-		</div>
+							Daftar &amp; Masuk
+						</SubmitButton>
+						<p className="border-t pt-4 text-center text-xs text-muted-foreground">
+							Sudah punya akun?{" "}
+							<Link
+								href="/login"
+								className="font-medium text-brand-blue-600 underline-offset-4 hover:text-brand-blue-700 hover:underline"
+							>
+								Masuk di sini
+							</Link>
+						</p>
+					</form>
+				</CardContent>
+			</Card>
+		</AuthShell>
 	);
 }
