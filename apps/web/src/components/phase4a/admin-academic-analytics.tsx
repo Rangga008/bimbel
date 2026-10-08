@@ -203,14 +203,14 @@ export function AdminAcademicAnalytics() {
             size="sm"
             onClick={() => openPrint(`/analytics/exam/${selectedExam.examId}/print?part=scores`)}
           >
-            <Printer className="size-4" /> Rekap Nilai (cetak)
+            <Printer className="size-4" /> Rekap Nilai (cetak/PDF)
           </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={() => openPrint(`/analytics/exam/${selectedExam.examId}/print?part=answers`)}
           >
-            <Printer className="size-4" /> Rekap Jawaban Siswa (cetak)
+            <Printer className="size-4" /> Rekap Jawaban Siswa (cetak/PDF)
           </Button>
           <Button
             variant="outline"

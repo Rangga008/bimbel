@@ -55,17 +55,23 @@ export function parseCsv(text: string): Array<Record<string, string>> {
   });
 }
 
-/** Baris bermakna: ada sel tak kosong dan bukan komentar "#". */
+/** Baris bermakna: ada sel tak kosong, bukan komentar "#", bukan petunjuk "sep=". */
 function isDataRow(row: string[]): boolean {
   if (!row.some((c) => c.trim() !== '')) return false;
-  return !row[0].trim().startsWith('#');
+  const first = row[0].trim();
+  return !first.startsWith('#') && !/^sep=/i.test(first);
 }
 
 function detectDelimiter(text: string): ',' | ';' {
   const firstLine =
     text
       .split(/\r?\n/)
-      .find((l) => l.trim() !== '' && !l.trim().startsWith('#')) ?? '';
+      .find(
+        (l) =>
+          l.trim() !== '' &&
+          !l.trim().startsWith('#') &&
+          !/^sep=/i.test(l.trim()),
+      ) ?? '';
   let inQuotes = false;
   let comma = 0;
   let semi = 0;

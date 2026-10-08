@@ -858,11 +858,12 @@ export class AnalyticsService {
         i + 1,
         r.name,
         r.school,
-        r.groups.join(', '),
+        r.groups.join('\n'),
       ];
       for (const cell of r.cells) values.push(cell.correct, cell.score);
       values.push(r.totalCorrect, r.totalScore, r.percentage);
       row.values = values;
+      row.getCell(4).alignment = { wrapText: true, vertical: 'top' };
     });
 
     ws.getColumn(1).width = 5;
@@ -903,10 +904,9 @@ export class AnalyticsService {
     recap.questions.forEach((q, i) => {
       const cell = head.getCell(4 + i);
       cell.value = `NO ${q.no}`;
-      cell.alignment = { textRotation: 90, horizontal: 'center' };
+      cell.alignment = { horizontal: 'center' };
     });
     head.font = { bold: true };
-    head.height = 60;
 
     // Baris KUNCI.
     const keyRow = ws.getRow(6);
@@ -1006,20 +1006,18 @@ img{max-width:320px;max-height:200px;display:block;margin:6px 0}
   /** HTML rekap jawaban siswa per nomor (baris KUNCI + jawaban tiap siswa). */
   renderAnswerRecapHtml(recap: Awaited<ReturnType<typeof this.getExamAnswerRecap>>) {
     const e = recap.exam;
-    // Kolom nomor bisa puluhan — header dimiringkan vertikal & halaman
-    // diprint landscape supaya seluruh soal muat selebar mungkin.
     const head =
-      `<tr><th class="num">NO</th><th class="stick">NAMA</th><th>ASAL SEKOLAH</th>` +
-      recap.questions.map((q) => `<th class="qh"><span>${q.no}</span></th>`).join('') +
+      `<tr><th class="num">NO</th><th>NAMA</th><th>ASAL SEKOLAH</th>` +
+      recap.questions.map((q) => `<th class="ctr">NO ${q.no}</th>`).join('') +
       `</tr>`;
     const keyRow =
-      `<tr class="key-row"><td colspan="3" class="stick">KUNCI</td>` +
+      `<tr class="key-row"><td colspan="3">KUNCI</td>` +
       recap.questions.map((q) => `<td class="ctr">${esc(q.key)}</td>`).join('') +
       `</tr>`;
     const rows = recap.rows
       .map(
         (r, i) =>
-          `<tr><td class="ctr">${i + 1}</td><td class="stick">${esc(r.name)}</td><td>${esc(r.school)}</td>` +
+          `<tr><td class="ctr">${i + 1}</td><td>${esc(r.name)}</td><td>${esc(r.school)}</td>` +
           r.answers
             .map(
               (a) =>
@@ -1032,11 +1030,9 @@ img{max-width:320px;max-height:200px;display:block;margin:6px 0}
     return this.printDoc(
       `Jawaban Siswa — ${e.title}`,
       `<div class="hdr"><div><h1>JAWABAN SISWA — ${esc(e.title)}</h1><div class="sub">${esc([e.levelName, e.subjectName].filter(Boolean).join(' · '))} · ${recap.participantCount} peserta</div></div><div class="sub">Bimbel GFS</div></div><table>${head}${keyRow}${rows}</table>`,
-      `@page{size:A4 landscape;margin:10mm}
-th.qh{writing-mode:vertical-rl;transform:rotate(180deg);min-height:70px;height:70px;padding:2px;font-size:9px;vertical-align:bottom;text-align:center}
-td.ok{background:#e7f6ec}td.bad{background:#fdecec}
-td.stick,th.stick{position:sticky;left:0;background:#fff;font-weight:600}
-table{width:auto;min-width:100%}td,th{padding:2px 4px;font-size:10px}`,
+      // Sel benar/salah diwarnai; kolom nomor rapat agar banyak soal tetap muat.
+      `td.ok{background:#e7f6ec}td.bad{background:#fdecec}
+td,th{padding:2px 4px;font-size:10px}`,
     );
   }
 
@@ -1065,7 +1061,6 @@ table{width:auto;min-width:100%}td,th{padding:2px 4px;font-size:10px}`,
     return this.printDoc(
       `Hasil — ${e.title}`,
       `<div class="hdr"><div><h1>HASIL ${esc(e.title)}</h1><div class="sub">${esc([e.programName, e.levelName, e.subjectName].filter(Boolean).join(' · '))} · ${fmtDateId(e.scheduledStartAt)} · ${recap.participantCount} peserta</div></div><div class="sub">Bimbel GFS</div></div><table>${head1}${head2}${rows}</table>`,
-      '@page{size:A4 landscape;margin:10mm}',
     );
   }
 

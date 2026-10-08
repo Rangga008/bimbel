@@ -13,9 +13,10 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../rbac/permissions.guard';
 import { RequirePermissions } from '../rbac/permissions.decorator';
@@ -208,6 +209,26 @@ export class ReportsController {
     const doc = await this.reports.build(kind, filtersFromQuery(query));
     // BOM UTF-8 supaya Excel membaca karakter Indonesia dengan benar.
     return `\ufeff${this.reports.renderExcelCsv(doc)}`;
+  }
+
+  /** Export Excel nyata (.xlsx) — kolom terpisah, bukan CSV ber-delimiter. */
+  @Get('reports/:kind/export.xlsx')
+  @RequirePermissions(PERMISSION_CODES.REPORT_EXPORT)
+  async exportXlsx(
+    @Param('kind') kind: string,
+    @Query() query: Record<string, string>,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    assertReportDomain(kind, actor.roles);
+    const doc = await this.reports.build(kind, filtersFromQuery(query));
+    const out = await this.reports.renderXlsx(doc);
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${out.filename}"`,
+    });
+    res.send(out.buffer);
   }
 
   /** Export "PDF": HTML siap-print (frontend buka di tab baru → print/save PDF). */

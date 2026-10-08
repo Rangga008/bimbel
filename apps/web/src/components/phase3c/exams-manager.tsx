@@ -298,12 +298,12 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
                         <DropdownMenuItem
                           onClick={() => openPrint(`/analytics/exam/${exam.id}/print?part=answers`)}
                         >
-                          Rekap Jawaban Siswa (cetak)
+                          Rekap Jawaban Siswa (cetak/PDF)
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => openPrint(`/analytics/exam/${exam.id}/print?part=scores`)}
                         >
-                          Rekap Nilai Semua Siswa (cetak)
+                          Rekap Nilai Semua Siswa (cetak/PDF)
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() =>

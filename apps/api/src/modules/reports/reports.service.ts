@@ -108,6 +108,76 @@ export class ReportsService {
     return lines.join('\r\n');
   }
 
+  /**
+   * Render workbook .xlsx — header laporan + tabel kolom-nyata (bukan CSV).
+   * Dipakai export.xlsx supaya file terbuka rapi di Excel/LibreOffice.
+   */
+  async renderXlsx(doc: ReportDoc) {
+    const { default: ExcelJS } = await import('exceljs');
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Laporan');
+
+    ws.getCell('A1').value = doc.brand;
+    ws.getCell('A1').font = { bold: true, size: 14 };
+    ws.getCell('A2').value = doc.title;
+    ws.getCell('A2').font = { bold: true, size: 12 };
+    ws.getCell('A3').value = `Periode: ${doc.periodLabel}`;
+    ws.getCell('A4').value = `Digenerate: ${doc.generatedAt} · Filter: ${doc.filterText}`;
+    ws.getCell('A4').font = { size: 9, color: { argb: 'FF666666' } };
+
+    const head = ws.getRow(6);
+    head.values = doc.headers;
+    head.font = { bold: true };
+    head.eachCell((cell) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEEEEE' } };
+      cell.border = {
+        top: { style: 'thin' }, bottom: { style: 'thin' },
+        left: { style: 'thin' }, right: { style: 'thin' },
+      };
+    });
+
+    if (doc.rows.length === 0) {
+      const r = ws.getRow(7);
+      r.getCell(1).value = EMPTY_ROW_TEXT;
+      r.getCell(1).font = { italic: true, color: { argb: 'FF666666' } };
+    } else {
+      doc.rows.forEach((row, i) => {
+        const r = ws.getRow(7 + i);
+        r.values = row;
+        r.eachCell((cell) => {
+          // Nilai multi-item dipisah newline (bukan koma) — wrapText bikin
+          // tiap item tampil di baris sendiri dalam satu sel.
+          cell.alignment = { wrapText: true, vertical: 'top' };
+          cell.border = {
+            top: { style: 'thin' }, bottom: { style: 'thin' },
+            left: { style: 'thin' }, right: { style: 'thin' },
+          };
+        });
+      });
+    }
+
+    if (doc.summaryLines.length) {
+      const start = 7 + Math.max(doc.rows.length, 1) + 1;
+      ws.getRow(start).getCell(1).value = 'Ringkasan';
+      ws.getRow(start).getCell(1).font = { bold: true };
+      doc.summaryLines.forEach((s, i) => {
+        ws.getRow(start + 1 + i).getCell(1).value = s;
+      });
+    }
+
+    // Lebar kolom dari konten terpanjang (cap 42) — hindari "####" di Excel.
+    doc.headers.forEach((h, i) => {
+      const longest = doc.rows.reduce(
+        (m, r) => Math.max(m, (r[i] ?? '').length),
+        h.length,
+      );
+      ws.getColumn(i + 1).width = Math.min(42, Math.max(10, longest + 2));
+    });
+
+    const buffer = await wb.xlsx.writeBuffer();
+    return { buffer: Buffer.from(buffer), filename: `${doc.fileBase}.xlsx` };
+  }
+
   /** Render HTML siap print-to-PDF. Dataset kosong -> baris "Belum ada data". */
   renderPdfHtml(doc: ReportDoc): string {
     const escHtml = (s: string) =>
@@ -118,7 +188,9 @@ export class ReportsService {
         : doc.rows
             .map(
               (row) =>
-                `<tr>${row.map((c) => `<td>${escHtml(c)}</td>`).join('')}</tr>`,
+                `<tr>${row
+                  .map((c) => `<td>${escHtml(c).replace(/\n/g, '<br>')}</td>`)
+                  .join('')}</tr>`,
             )
             .join('');
     const summary =
@@ -363,7 +435,7 @@ ${summary}
       ];
       return [
         p.receipts[0]?.number ?? p.providerRef ?? p.id.slice(0, 8),
-        studentNames.join(', ') || '-',
+        studentNames.join('\n') || '-',
         p.channel,
         p.method,
         p.status,
@@ -632,7 +704,7 @@ ${summary}
       return [
         s.name,
         s.schoolOrigin || '-',
-        [...s.groups].join(', ') || '-',
+        [...s.groups].join('\n') || '-',
         String(s.counts.HADIR),
         String(s.counts.TERLAMBAT),
         String(s.counts.IZIN),
@@ -747,7 +819,7 @@ ${summary}
             : 'UNPAID';
       return [
         t.user.name,
-        t.groupTutors.map((gt) => gt.group.name).join(', ') || '-',
+        t.groupTutors.map((gt) => gt.group.name).join('\n') || '-',
         String(t.sessions.length),
         String(completed),
         String(t.workItems.length),
@@ -809,7 +881,7 @@ ${summary}
     const rows = students.map((s) => [
       s.user.name,
       s.schoolOrigin?.trim() || '-',
-      s.groupMembers.map((gm) => gm.group.name).join(', ') || '-',
+      s.groupMembers.map((gm) => gm.group.name).join('\n') || '-',
     ]);
 
     return this.baseDoc(
@@ -937,7 +1009,7 @@ ${summary}
       String(i + 1),
       s.name,
       s.schoolOrigin || '-',
-      [...s.groups].join(', ') || '-',
+      [...s.groups].join('\n') || '-',
       String(s.points),
       String(s.count),
     ]);
@@ -1009,7 +1081,7 @@ ${summary}
       return [
         s.user.name,
         s.schoolOrigin || '-',
-        s.groupMembers.map((gm) => gm.group.name).join(', ') || '-',
+        s.groupMembers.map((gm) => gm.group.name).join('\n') || '-',
         `${attOk}/${att.length}`,
         `${safePercent(attOk, att.length)}%`,
         String(exams.length),

@@ -1,6 +1,6 @@
 "use client";
 // Fase 6 — Laporan lanjutan lintas modul: picker jenis laporan, filter,
-// render tabel generik (ReportDoc), export CSV/PDF, snapshot arsip beku.
+// render tabel generik (ReportDoc), export Excel/PDF, snapshot arsip beku.
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
@@ -169,7 +169,7 @@ function ReportTable({ doc }: { doc: ReportDoc }) {
 								doc.rows.map((row, i) => (
 									<tr key={i} className="border-b transition-colors last:border-0 hover:bg-muted/50">
 										{row.map((cell, j) => (
-											<td key={j} className="px-3 py-2 whitespace-nowrap tabular-nums">
+											<td key={j} className="px-3 py-2 whitespace-pre-line tabular-nums align-top">
 												{cell}
 											</td>
 										))}
@@ -294,11 +294,11 @@ export function AdvancedReportsManager() {
 		},
 	});
 
-	const exportCsv = async () => {
+	const exportXlsx = async () => {
 		const blob = await fetchReportBlob(
-			`/reports/${activeKind}/export.csv?${filterQuery(filters)}`,
+			`/reports/${activeKind}/export.xlsx?${filterQuery(filters)}`,
 		);
-		downloadBlob(blob, `${docQ.data?.fileBase ?? `laporan-${activeKind}`}.csv`);
+		downloadBlob(blob, `${docQ.data?.fileBase ?? `laporan-${activeKind}`}.xlsx`);
 	};
 
 	const exportPdf = async () => {
@@ -344,7 +344,7 @@ export function AdvancedReportsManager() {
 				</h1>
 				<p className="text-sm text-muted-foreground">
 					Laporan lintas modul (keuangan, operasional, akademik) — bisa diekspor
-					CSV/PDF atau dibekukan sebagai snapshot arsip.
+					Excel/PDF atau dibekukan sebagai snapshot arsip.
 				</p>
 			</div>
 
@@ -539,8 +539,8 @@ export function AdvancedReportsManager() {
 							/>
 						</label>
 						<div className="flex gap-1">
-							<Button size="sm" variant="outline" onClick={exportCsv}>
-								Export CSV
+							<Button size="sm" variant="outline" onClick={exportXlsx}>
+								Export Excel
 							</Button>
 							<Button size="sm" variant="outline" onClick={exportPdf}>
 								Export PDF
