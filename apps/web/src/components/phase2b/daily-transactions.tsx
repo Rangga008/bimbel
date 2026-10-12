@@ -194,7 +194,7 @@ export function DailyTransactions() {
         {inQ.isError ? <p className="text-sm text-destructive">Gagal memuat pembayaran.</p> : null}
         {(inQ.data?.length ?? 0) + manualIn.length > 0 ? (
           <div className="overflow-x-auto rounded-md border">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[720px] text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className={TH}>Jam</th>
@@ -261,7 +261,7 @@ export function DailyTransactions() {
         {outQ.isError ? <p className="text-sm text-destructive">Gagal memuat pengeluaran.</p> : null}
         {(outQ.data?.length ?? 0) + manualOut.length > 0 ? (
           <div className="overflow-x-auto rounded-md border">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[720px] text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className={TH}>Jam</th>

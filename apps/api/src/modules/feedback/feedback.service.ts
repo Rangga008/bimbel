@@ -564,6 +564,121 @@ export class FeedbackService {
     };
   }
 
+  /**
+   * Reminder jadwal mengajar minggu berjalan ke SEMUA tutor — satu pesan per
+   * tutor berisi seluruh sesinya lintas kelompok (bukan per kelompok seperti
+   * reminder ortu). Dipanggil admin dari POST /reminders/tutor-weekly-schedule;
+   * dedupe per tutor+minggu ditangani unique index outbox.
+   */
+  async sendTutorWeeklyReminders() {
+    const now = new Date();
+    const weekStart = this.weekStartOf(now);
+    const weekEnd = this.weekEndOf(weekStart);
+    const sessions = await this.prisma.session.findMany({
+      where: {
+        tutorId: { not: null },
+        startsAt: { gte: weekStart, lt: weekEnd },
+      },
+      orderBy: { startsAt: 'asc' },
+      select: {
+        tutorId: true,
+        startsAt: true,
+        endsAt: true,
+        status: true,
+        subject: { select: { name: true } },
+        schedule: { select: { subject: { select: { name: true } } } },
+        room: { select: { name: true } },
+        group: { select: { name: true, code: true } },
+        tutor: {
+          select: {
+            user: { select: { id: true, name: true, phone: true, isActive: true } },
+          },
+        },
+      },
+    });
+
+    // Kelompokkan sesi per tutor — satu tutor satu pesan lintas kelompok.
+    const byTutor = new Map<
+      string,
+      { userId: string; name: string; phone: string | null; sessions: typeof sessions }
+    >();
+    for (const s of sessions) {
+      if (!s.tutorId || !s.tutor?.user || !s.tutor.user.isActive) continue;
+      const cur =
+        byTutor.get(s.tutorId) ??
+        {
+          userId: s.tutor.user.id,
+          name: s.tutor.user.name,
+          phone: s.tutor.user.phone,
+          sessions: [],
+        };
+      cur.sessions.push(s);
+      byTutor.set(s.tutorId, cur);
+    }
+
+    const tpl = await this.settings.get('reminders');
+    const periodKey = `week:${weekStart.toISOString().slice(0, 10)}`;
+    const week = `${fmtDate(weekStart)} s.d. ${fmtDate(new Date(weekEnd.getTime() - DAY_MS))}`;
+    const dayIndex = (t: Date) =>
+      Math.floor((t.getTime() - weekStart.getTime()) / DAY_MS);
+
+    let queued = 0;
+    let skippedNoPhone = 0;
+    let skippedPref = 0;
+    for (const [tutorId, t] of byTutor) {
+      const byDay = new Map<number, typeof t.sessions>();
+      for (const s of t.sessions) {
+        const k = dayIndex(s.startsAt);
+        if (k < 0 || k > 6) continue;
+        byDay.set(k, [...(byDay.get(k) ?? []), s]);
+      }
+      const dayBlocks: string[] = [];
+      for (let i = 0; i < 7; i++) {
+        const daySessions = byDay.get(i);
+        if (!daySessions?.length) continue; // hanya hari yang ada sesi
+        const d = new Date(weekStart.getTime() + i * DAY_MS);
+        const lines = daySessions.map((s) => {
+          const mapel = s.subject?.name ?? s.schedule?.subject?.name;
+          const grp = s.group ? `${s.group.name}${s.group.code ? ` (${s.group.code})` : ''}` : '';
+          return (
+            `  • ${fmtTime(s.startsAt)}–${fmtTime(s.endsAt)}` +
+            `${mapel ? ` ${mapel}` : ''}` +
+            `${grp ? ` — ${grp}` : ''}` +
+            `${s.room ? ` · ${s.room.name}` : ''}` +
+            `${s.status === 'CANCELLED' ? ' [DIBATALKAN]' : ''}`
+          );
+        });
+        dayBlocks.push(`*${fmtDate(d)}*\n${lines.join('\n')}`);
+      }
+      const message = renderReminderTemplate(tpl.tutorWeeklySchedule, {
+        tutor: t.name,
+        week,
+        days: dayBlocks.join('\n\n') || '  — tidak ada sesi',
+      });
+      const row = await this.waOutbox.enqueue({
+        phone: t.phone,
+        name: t.name,
+        userId: t.userId,
+        eventType: 'TUTOR_WEEKLY_SCHEDULE',
+        referenceType: 'Tutor',
+        referenceId: `${tutorId}:${periodKey}`,
+        message,
+      });
+      if (row) queued += 1;
+      else if (!t.phone?.trim()) skippedNoPhone += 1;
+      else skippedPref += 1;
+    }
+    return {
+      type: 'tutor-weekly-schedule',
+      periodKey,
+      week,
+      recipients: byTutor.size,
+      queued,
+      skippedNoPhone,
+      skippedPref,
+    };
+  }
+
   private async composeReminderBody(
     group: { id: string; name: string; code: string | null },
     memberIds: Set<string>,

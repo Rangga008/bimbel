@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 import { TutorsManager } from "@/components/phase1a/tutors-manager";
+import { StudentsManager } from "@/components/phase1a/students-manager";
+import { ParentsManager } from "@/components/phase1a/parents-manager";
 import { ProgramsManager } from "@/components/phase1a/programs-manager";
 import { LevelsManager } from "@/components/phase1a/levels-manager";
 import { AcademicEnrollments } from "@/components/enrollments/academic-enrollments";
@@ -39,6 +41,8 @@ export default async function AdminAcademicMenuPage({
 	if (slug === "level") return <LevelsManager canManage />;
 	if (slug === "pendaftaran") return <AcademicEnrollments />;
 	if (slug === "kelompok") return <GroupsManager canManage basePath="/admin-academic" />;
+	if (slug === "siswa") return <StudentsManager canManage basePath="/admin-academic" />;
+	if (slug === "orang-tua") return <ParentsManager canManage basePath="/admin-academic" />;
 	if (slug === "tutor") return <TutorsManager canManage />;
 	if (slug === "jadwal") return <JadwalSesiManager canManage />;
 	if (slug === "fasilitas") return <FacilitiesManager />;

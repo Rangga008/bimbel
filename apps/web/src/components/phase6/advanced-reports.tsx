@@ -103,33 +103,6 @@ function filterQuery(f: ActiveFilters) {
 	return params.toString();
 }
 
-/** Fetch file (CSV/HTML) dengan Bearer token lalu kembalikan Blob. */
-async function fetchReportBlob(path: string): Promise<Blob> {
-	const token = useAuthStore.getState().accessToken;
-	const res = await fetch(`${API_BASE_URL}${path}`, {
-		credentials: "include",
-		headers: token ? { Authorization: `Bearer ${token}` } : {},
-	});
-	if (!res.ok) throw new Error(`Gagal mengunduh laporan (${res.status}).`);
-	return res.blob();
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-	const url = URL.createObjectURL(blob);
-	const a = document.createElement("a");
-	a.href = url;
-	a.download = filename;
-	a.click();
-	URL.revokeObjectURL(url);
-}
-
-function openPrintWindow(blob: Blob) {
-	const url = URL.createObjectURL(blob);
-	const win = window.open(url, "_blank");
-	if (win) {
-		win.addEventListener("load", () => win.print());
-	}
-}
 
 /** Render ReportDoc generik — aman untuk dataset kosong. */
 function ReportTable({ doc }: { doc: ReportDoc }) {
@@ -294,20 +267,6 @@ export function AdvancedReportsManager() {
 		},
 	});
 
-	const exportXlsx = async () => {
-		const blob = await fetchReportBlob(
-			`/reports/${activeKind}/export.xlsx?${filterQuery(filters)}`,
-		);
-		downloadBlob(blob, `${docQ.data?.fileBase ?? `laporan-${activeKind}`}.xlsx`);
-	};
-
-	const exportPdf = async () => {
-		const blob = await fetchReportBlob(
-			`/reports/${activeKind}/export.pdf?${filterQuery(filters)}`,
-		);
-		openPrintWindow(blob);
-	};
-
 	const openSnapshot = async (id: string) => {
 		const snap = await apiFetch<ReportSnapshotDetail>(
 			`/reports/snapshots/${id}`,
@@ -343,8 +302,7 @@ export function AdvancedReportsManager() {
 					Laporan Lanjutan
 				</h1>
 				<p className="text-sm text-muted-foreground">
-					Laporan lintas modul (keuangan, operasional, akademik) — bisa diekspor
-					Excel/PDF atau dibekukan sebagai snapshot arsip.
+					Laporan lintas modul (keuangan, operasional, akademik) ditampilkan langsung.
 				</p>
 			</div>
 
@@ -538,14 +496,6 @@ export function AdvancedReportsManager() {
 								}
 							/>
 						</label>
-						<div className="flex gap-1">
-							<Button size="sm" variant="outline" onClick={exportXlsx}>
-								Export Excel
-							</Button>
-							<Button size="sm" variant="outline" onClick={exportPdf}>
-								Export PDF
-							</Button>
-						</div>
 					</div>
 				</CardContent>
 			</Card>

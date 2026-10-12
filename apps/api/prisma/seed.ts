@@ -133,10 +133,16 @@ const ROLE_PERMISSION_MAP: Record<string, string[]> = {
     PERMISSION_CODES.ATTENDANCE_MANAGE,
     PERMISSION_CODES.NOTIFICATION_VIEW,
     PERMISSION_CODES.MATERIAL_VIEW,
+    // Tutor membuat/mengelola materi untuk jenjang/mapel yang dia ampu —
+    // create/update/delete di-scope via TutorScopeService di MaterialsService.
+    PERMISSION_CODES.MATERIAL_MANAGE,
     PERMISSION_CODES.QUESTION_VIEW,
     PERMISSION_CODES.LATSOL_VIEW,
     PERMISSION_CODES.LATSOL_MANAGE,
     PERMISSION_CODES.EXAM_VIEW,
+    // Tutor membuat/mengelola ujian untuk jenjang yang dia ampu —
+    // create di-scope via TutorScopeService.assertContentRef.
+    PERMISSION_CODES.EXAM_MANAGE,
     PERMISSION_CODES.MEDIA_MANAGE,
     // Fase 3d: unlock proctoring bersifat permission-based lintas kelompok/program,
     // bukan dibatasi relasi tutor-siswa — semua tutor bisa jadi pengawas ujian.

@@ -13,6 +13,7 @@ import { ExpenseManager } from "@/components/phase2d/expense-manager";
 import { AdvancedReportsManager } from "@/components/phase6/advanced-reports";
 import { PayrollManager } from "@/components/phase5a/payroll-manager";
 import { FinanceSettings } from "@/components/shared/finance-settings";
+import { WhatsAppOutboxManager } from "@/components/phase5b/whatsapp-outbox-manager";
 import { AccountsManager } from "@/components/phase0b/accounts-manager";
 import { ProfilePage } from "@/components/shared/profile-page";
 import { NotificationsInbox } from "@/components/phase1d/notifications-inbox";
@@ -53,6 +54,7 @@ export default async function AdminFinanceMenuPage({
 	if (slug === "payroll") return <PayrollManager canManage />;
 	if (slug === "laporan") return <AdvancedReportsManager />;
 	if (slug === "pengaturan") return <FinanceSettings />;
+	if (slug === "antrean-wa") return <WhatsAppOutboxManager />;
 	if (slug === "akun") return <AccountsManager basePath="/admin-finance" />;
 	if (slug === "notifikasi") return <NotificationsInbox />;
 	if (slug === "profil") return <ProfilePage />;

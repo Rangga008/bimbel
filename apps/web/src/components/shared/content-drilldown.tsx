@@ -15,6 +15,7 @@ import {
   DRILL_NONE,
   drillBuckets,
   drillFromParams,
+  sortLevels,
   tingkatCode,
   type ContentCategoryItem,
   type DrillValue,
@@ -114,6 +115,180 @@ export function useContentCategories() {
   });
 }
 
+/** Select ringkas untuk lompat langsung ke kombinasi tingkat/jenjang/mapel/
+ *  tipe — tanpa harus menapaki kartu satu per satu. */
+function DrillQuickSelect({
+  label,
+  current,
+  options,
+  onPick,
+}: {
+  label: string;
+  current: string;
+  options: { id: string; name: string }[];
+  onPick: (id: string) => void;
+}) {
+  return (
+    <select
+      aria-label={label}
+      value={current === '' || current === DRILL_ALL || current === DRILL_NONE ? '' : current}
+      onChange={(e) => onPick(e.target.value || DRILL_ALL)}
+      className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs sm:w-40 sm:flex-none"
+    >
+      <option value="">{label}</option>
+      {options.map((o) => (
+        <option key={o.id} value={o.id}>
+          {o.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** Baris filter cepat: pilih tipe/jenjang/mapel langsung tanpa scroll kartu. */
+export function DrillQuickFilter({
+  items,
+  levels,
+  categories,
+  value,
+  onChange,
+}: {
+  items: TaxonomyItem[];
+  levels?: HierarchyLevel[];
+  categories?: ContentCategoryItem[];
+  value: DrillValue;
+  onChange: (v: DrillValue) => void;
+}) {
+  const hasMaster = !!levels?.length;
+
+  // Tingkat: kode unik dari master jenjang (SD/SMP/SMA/TK + Lainnya).
+  const tingkatOpts = hasMaster
+    ? [...levels!
+        .reduce((map, l) => {
+          const t = tingkatCode(l);
+          const id = t ?? DRILL_NONE;
+          const cur = map.get(id) ?? {
+            id,
+            name: t ?? 'Lainnya',
+            sort: l.gradeLevel?.sortOrder ?? 9999,
+          };
+          cur.sort = Math.min(cur.sort, l.gradeLevel?.sortOrder ?? 9999);
+          map.set(id, cur);
+          return map;
+        }, new Map<string, { id: string; name: string; sort: number }>())
+        .values()]
+        .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name))
+    : [];
+
+  // Jenjang: master data difilter tingkat (ungraded lintas-tingkat ikut),
+  // fallback ke bucket dari item saat master tidak tersedia.
+  const jenjangOpts = hasMaster
+    ? sortLevels(
+        levels!.filter((l) =>
+          !value.gradeLevelId || value.gradeLevelId === DRILL_ALL
+            ? true
+            : value.gradeLevelId === DRILL_NONE
+              ? !tingkatCode(l)
+              : !tingkatCode(l) || tingkatCode(l) === value.gradeLevelId,
+        ),
+      ).map((l) => ({ id: l.id, name: l.name }))
+    : drillBuckets(items, 'level')
+        .filter((b) => b.id !== DRILL_NONE)
+        .map((b) => ({ id: b.id, name: b.name }));
+
+  // Mapel: dari levelSubjects jenjang terpilih, fallback mapel pada item
+  // dalam lingkup tingkat+jenjang saat ini.
+  const selLevel = levels?.find((l) => l.id === value.levelId);
+  const mapelOpts =
+    selLevel?.levelSubjects?.length
+      ? selLevel.levelSubjects
+          .map((ls) => ls.subject)
+          .filter((s): s is { id: string; name: string } => !!s)
+          .map((s) => ({ id: s.id, name: s.name }))
+      : (() => {
+          const pool = applyDrill(
+            items,
+            {
+              gradeLevelId: value.gradeLevelId || DRILL_ALL,
+              levelId: value.levelId || DRILL_ALL,
+              subjectId: DRILL_ALL,
+              category: DRILL_ALL,
+            },
+            levels,
+          );
+          const map = new Map<string, string>();
+          for (const i of pool) if (i.subject) map.set(i.subject.id, i.subject.name);
+          return [...map.entries()]
+            .map(([id, name]) => ({ id, name }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+        })();
+
+  // Tipe: kategori dinamis + kode usang yang masih dipakai item.
+  const catList = categories ?? [];
+  const tipeOpts = [
+    ...catList.map((c) => ({ id: c.code, name: c.name })),
+    ...drillBuckets(items, 'category', catList)
+      .filter((b) => b.id !== DRILL_NONE && !catList.some((c) => c.code === b.id))
+      .map((b) => ({ id: b.id, name: b.name })),
+  ];
+
+  const pick = (field: keyof DrillValue, v: string) => {
+    onChange({
+      gradeLevelId:
+        field === 'gradeLevelId' ? v : value.gradeLevelId || DRILL_ALL,
+      levelId:
+        field === 'levelId'
+          ? v
+          : field === 'gradeLevelId'
+            ? DRILL_ALL
+            : value.levelId || DRILL_ALL,
+      subjectId:
+        field === 'subjectId'
+          ? v
+          : field === 'gradeLevelId' || field === 'levelId'
+            ? DRILL_ALL
+            : value.subjectId || DRILL_ALL,
+      category:
+        field === 'category'
+          ? v
+          : field === 'gradeLevelId' || field === 'levelId' || field === 'subjectId'
+            ? DRILL_ALL
+            : value.category || DRILL_ALL,
+    });
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {hasMaster ? (
+        <DrillQuickSelect
+          label="Semua Tingkat"
+          current={value.gradeLevelId}
+          options={tingkatOpts}
+          onPick={(v) => pick('gradeLevelId', v)}
+        />
+      ) : null}
+      <DrillQuickSelect
+        label="Semua Jenjang"
+        current={value.levelId}
+        options={jenjangOpts}
+        onPick={(v) => pick('levelId', v)}
+      />
+      <DrillQuickSelect
+        label="Semua Mapel"
+        current={value.subjectId}
+        options={mapelOpts}
+        onPick={(v) => pick('subjectId', v)}
+      />
+      <DrillQuickSelect
+        label="Semua Tipe"
+        current={value.category}
+        options={tipeOpts}
+        onPick={(v) => pick('category', v)}
+      />
+    </div>
+  );
+}
+
 /** Breadcrumb langkah drill — dipakai juga saat daftar sudah tampil. */
 export function DrillBreadcrumb({
   items,
@@ -156,20 +331,29 @@ export function DrillBreadcrumb({
   ].filter(Boolean) as { label: string; onClick: () => void }[];
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 text-sm">
-      {crumbs.map((c, idx) => (
-        <span key={idx} className="flex items-center gap-1.5">
-          {idx > 0 && <span className="text-muted-foreground">›</span>}
-          <button
-            type="button"
-            onClick={c.onClick}
-            className={idx === crumbs.length - 1 ? 'font-medium' : 'font-medium text-primary hover:underline'}
-          >
-            {idx === 0 && idx !== crumbs.length - 1 ? <ArrowLeft className="mr-1 inline size-3.5" /> : null}
-            {c.label}
-          </button>
-        </span>
-      ))}
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-1.5 text-sm">
+        {crumbs.map((c, idx) => (
+          <span key={idx} className="flex items-center gap-1.5">
+            {idx > 0 && <span className="text-muted-foreground">›</span>}
+            <button
+              type="button"
+              onClick={c.onClick}
+              className={idx === crumbs.length - 1 ? 'font-medium' : 'font-medium text-primary hover:underline'}
+            >
+              {idx === 0 && idx !== crumbs.length - 1 ? <ArrowLeft className="mr-1 inline size-3.5" /> : null}
+              {c.label}
+            </button>
+          </span>
+        ))}
+      </div>
+      <DrillQuickFilter
+        items={items}
+        levels={levels}
+        categories={categories}
+        value={value}
+        onChange={onChange}
+      />
     </div>
   );
 }
@@ -223,7 +407,9 @@ export function ContentDrilldown({
   const gradeMatch = (l: HierarchyLevel) =>
     value.gradeLevelId === DRILL_ALL ? true
     : value.gradeLevelId === DRILL_NONE ? !tingkatCode(l)
-    : tingkatCode(l) === value.gradeLevelId;
+    // Jenjang tanpa tingkat (Extra/Privat) lintas tingkat — tetap tampil
+    // di tingkat mana pun yang dipilih.
+    : !tingkatCode(l) || tingkatCode(l) === value.gradeLevelId;
   const gradeBuckets = () => {
     const map = new Map<string, { id: string; name: string; sub?: string; count: number; sort: number }>();
     for (const l of levels!) {

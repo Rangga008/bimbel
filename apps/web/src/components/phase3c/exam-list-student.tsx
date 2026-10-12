@@ -290,7 +290,7 @@ export function ExamListStudent() {
                         variant="outline"
                         disabled={!attempt.resultReleased}
                       >
-                        {attempt.resultReleased ? 'Lihat Hasil' : 'Hasil Belum Dirilis'}
+                        {attempt.resultReleased ? 'Hasil & Pembahasan' : 'Hasil Belum Dirilis'}
                       </Button>
                     ) : (
                       <Button onClick={() => setStartTarget(exam)} disabled={startM.isPending}>
@@ -308,7 +308,7 @@ export function ExamListStudent() {
                         variant="outline"
                         disabled={!attempt.resultReleased}
                       >
-                        {attempt.resultReleased ? 'Lihat Hasil' : 'Hasil Belum Dirilis'}
+                        {attempt.resultReleased ? 'Hasil & Pembahasan' : 'Hasil Belum Dirilis'}
                       </Button>
                     ) : (
                       <Button disabled>Ujian Selesai</Button>

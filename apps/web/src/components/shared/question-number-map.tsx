@@ -29,26 +29,28 @@ export function QuestionNumberMap({
   columns?: number;
 }) {
   return (
-    <div
-      className="grid gap-1.5"
-      style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
-    >
-      {Array.from({ length: count }, (_, i) => (
-        <button
-          key={i}
-          type="button"
-          onClick={() => onJump(i)}
-          aria-label={`Ke soal ${i + 1}`}
-          aria-current={i === current ? 'true' : undefined}
-          className={cn(
-            'flex aspect-square items-center justify-center rounded-md text-sm font-semibold tabular-nums transition-colors',
-            STATE_STYLE[states[i] ?? 'idle'],
-            i === current && 'ring-2 ring-foreground ring-offset-1 ring-offset-background',
-          )}
-        >
-          {i + 1}
-        </button>
-      ))}
+    <div className="max-h-56 overflow-y-auto pr-1">
+      <div
+        className="grid justify-items-center gap-1.5"
+        style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+      >
+        {Array.from({ length: count }, (_, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => onJump(i)}
+            aria-label={`Ke soal ${i + 1}`}
+            aria-current={i === current ? 'true' : undefined}
+            className={cn(
+              'flex size-8 items-center justify-center rounded-md text-xs font-semibold tabular-nums transition-colors',
+              STATE_STYLE[states[i] ?? 'idle'],
+              i === current && 'ring-2 ring-foreground ring-offset-1 ring-offset-background',
+            )}
+          >
+            {i + 1}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -42,6 +42,7 @@ docker-data/
 postgres-data/
 redis-data/
 minio-data/
+apps/mobile/
 
 # === Upload & seed besar (jangan commit file besar ke repo) ===
 uploads/
@@ -66,3 +67,5 @@ docs/_screenshots-raw/
 .qids.json
 Modelfile
 .clinerules/
+
+

@@ -166,4 +166,31 @@ export class FeedbackController {
     });
     return result;
   }
+
+  /**
+   * `POST /reminders/tutor-weekly-schedule` — antrekan WA jadwal mengajar
+   * minggu ini ke semua tutor (satu pesan per tutor, lintas kelompok).
+   * Dedupe per tutor+minggu ditangani unique index outbox.
+   */
+  @Post('reminders/tutor-weekly-schedule')
+  @RequireAnyPermissions(
+    PERMISSION_CODES.GROUP_MANAGE,
+    PERMISSION_CODES.SCHEDULE_MANAGE,
+  )
+  async sendTutorWeeklySchedule(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const result = await this.feedback.sendTutorWeeklyReminders();
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'TUTOR_WEEKLY_REMINDER_SENT',
+      entity: 'Tutor',
+      entityId: result.periodKey,
+      newData: result,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return result;
+  }
 }

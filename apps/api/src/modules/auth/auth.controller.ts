@@ -78,6 +78,39 @@ export class AuthController {
     );
   }
 
+  /**
+   * Client native mobile (Expo) tidak punya cookie jar — sertakan refresh
+   * token di body JSON hanya bila client menandai diri lewat header
+   * `x-client: mobile`. Web tetap cookie-httpOnly (lebih tahan XSS).
+   */
+  private isMobileClient(req: Request): boolean {
+    return req.headers['x-client'] === 'mobile';
+  }
+
+  private tokenPayload(req: Request, tokens: IssuedTokens) {
+    return {
+      accessToken: tokens.accessToken,
+      user: tokens.user,
+      ...(this.isMobileClient(req)
+        ? {
+            refreshToken: tokens.refreshToken,
+            refreshTokenExpiresAt: tokens.refreshTokenExpiresAt,
+          }
+        : {}),
+    };
+  }
+
+  /** Ambil refresh token dari cookie (web) ATAU body (mobile native). */
+  private readRefreshToken(req: Request): string | null {
+    const cookieToken = (
+      req.cookies as Record<string, string> | undefined
+    )?.[REFRESH_COOKIE_NAME];
+    if (cookieToken) return cookieToken;
+    const bodyToken = (req.body as { refreshToken?: string } | undefined)
+      ?.refreshToken;
+    return typeof bodyToken === 'string' && bodyToken ? bodyToken : null;
+  }
+
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
@@ -91,7 +124,7 @@ export class AuthController {
       userAgent: req.headers['user-agent'],
     });
     this.setRefreshCookie(res, tokens);
-    return { accessToken: tokens.accessToken, user: tokens.user };
+    return this.tokenPayload(req, tokens);
   }
 
   /**
@@ -122,7 +155,7 @@ export class AuthController {
       userAgent: req.headers['user-agent'],
     });
     this.setRefreshCookie(res, tokens);
-    return { accessToken: tokens.accessToken, user: tokens.user };
+    return this.tokenPayload(req, tokens);
   }
 
   /**
@@ -154,9 +187,7 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const rawRefreshToken = (
-      req.cookies as Record<string, string> | undefined
-    )?.[REFRESH_COOKIE_NAME];
+    const rawRefreshToken = this.readRefreshToken(req);
     if (!rawRefreshToken) {
       return { accessToken: null, user: null };
     }
@@ -165,16 +196,14 @@ export class AuthController {
       userAgent: req.headers['user-agent'],
     });
     this.setRefreshCookie(res, tokens);
-    return { accessToken: tokens.accessToken, user: tokens.user };
+    return this.tokenPayload(req, tokens);
   }
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const rawRefreshToken = (
-      req.cookies as Record<string, string> | undefined
-    )?.[REFRESH_COOKIE_NAME];
-    await this.authService.logout(rawRefreshToken);
+    const rawRefreshToken = this.readRefreshToken(req);
+    await this.authService.logout(rawRefreshToken ?? undefined);
     // Hapus cookie baru (path /) + sisa cookie lama dari rilis sebelumnya
     // (path /auth dan /api/auth) agar sesi benar-benar bersih di browser.
     // sameSite/secure harus cocok dengan cookie yang diset, kalau tidak

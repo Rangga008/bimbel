@@ -74,6 +74,8 @@ export interface ReminderSettings {
   feedback: string;
   /** Placeholder: {{children}} {{tutor}} {{datetime}} {{subject}} {{group}} {{reason}} */
   tutorAbsence: string;
+  /** Placeholder: {{tutor}} {{week}} {{days}} — jadwal mingguan ke tutor. */
+  tutorWeeklySchedule: string;
 }
 
 export interface MidtransSettings {
@@ -86,6 +88,14 @@ export interface MidtransSettings {
   /** Client Key (untuk Snap.js di frontend bila nanti dipakai). */
   clientKey: string;
 }
+
+/** Default template reminder jadwal mingguan untuk tutor — dipakai juga
+ *  sebagai fallback saat settings tersimpan belum punya field ini. */
+const TUTOR_WEEKLY_SCHEDULE_DEFAULT =
+  '*Bimbel GFS — Jadwal Mengajar Mingguan*\n' +
+  'Yth. {{tutor}},\n\n' +
+  'Berikut jadwal sesi Anda minggu {{week}}:\n\n{{days}}\n\n' +
+  'Mohon hadir tepat waktu. Terima kasih.';
 
 type SettingValue =
   | CompanySettings
@@ -367,6 +377,7 @@ export const SETTING_DEFS: {
         'Tutor {{tutor}} berhalangan hadir pada sesi {{datetime}} ({{subject}}, kelompok {{group}}).\n' +
         'Alasan: {{reason}}\n\n' +
         'Info tutor pengganti/penjadwalan ulang akan kami sampaikan menyusul. Terima kasih.',
+      tutorWeeklySchedule: TUTOR_WEEKLY_SCHEDULE_DEFAULT,
     },
     validate(raw) {
       const o = (raw ?? {}) as Record<string, unknown>;
@@ -384,6 +395,12 @@ export const SETTING_DEFS: {
         ),
         feedback: req(o.feedback, 'reminders.feedback'),
         tutorAbsence: req(o.tutorAbsence, 'reminders.tutorAbsence'),
+        // Field baru — settings lama mungkin belum memilikinya, fallback default.
+        tutorWeeklySchedule:
+          typeof o.tutorWeeklySchedule === 'string' &&
+          o.tutorWeeklySchedule.trim()
+            ? req(o.tutorWeeklySchedule, 'reminders.tutorWeeklySchedule')
+            : TUTOR_WEEKLY_SCHEDULE_DEFAULT,
       };
     },
   },

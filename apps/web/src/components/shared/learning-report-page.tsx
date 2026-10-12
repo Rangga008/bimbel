@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, Printer } from "lucide-react";
+import { FileText } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
@@ -68,6 +68,7 @@ export function LearningReportPage({
 	// null = semua ujian kategori tsb disertakan (default).
 	const [excluded, setExcluded] = useState<Set<string>>(new Set());
 	const [busy, setBusy] = useState(false);
+	const [reportHtml, setReportHtml] = useState<string | null>(null);
 
 	const catsQ = useQuery({
 		queryKey: ["content-categories"],
@@ -115,7 +116,7 @@ export function LearningReportPage({
 				? `/analytics/parent/child/${studentId}/learning-report/print`
 				: `/analytics/student/${studentId}/learning-report/print`;
 
-	async function handlePrint() {
+	async function handleShow() {
 		if (audience !== "self" && !studentId) {
 			toast.error(
 				audience === "parent" ? "Pilih anak dulu." : "Pilih siswa dulu.",
@@ -139,8 +140,7 @@ export function LearningReportPage({
 		setBusy(true);
 		try {
 			const blob = await apiFetchBlob(`${endpoint}?${params}`);
-			const url = URL.createObjectURL(blob);
-			window.open(url, "_blank", "noopener");
+			setReportHtml(await blob.text());
 		} catch (e) {
 			toast.error(e instanceof ApiError ? e.message : "Gagal memuat laporan.");
 		} finally {
@@ -159,7 +159,7 @@ export function LearningReportPage({
 					Laporan resmi dengan kop bimbel — pilih tipe ujian lalu centang
 					tes/ujian yang disertakan (bisa beberapa), nilai per mapel dijumlah
 					dalam satu matriks + tabel Tes Kemampuan Dasar, grafik, dan tanda
-					tangan. Terbuka siap cetak / simpan PDF.
+					tangan. Laporan ditampilkan langsung di bawah.
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="flex flex-col gap-4">
@@ -287,17 +287,24 @@ export function LearningReportPage({
 
 				<div>
 					<Button
-						onClick={handlePrint}
+						onClick={handleShow}
 						disabled={
 							busy ||
 							!category ||
 							(audience !== "self" && !studentId)
 						}
 					>
-						<Printer className="mr-1.5 size-4" />
-						{busy ? "Menyiapkan…" : "Cetak / Unduh PDF"}
+						<FileText className="mr-1.5 size-4" />
+						{busy ? "Menyiapkan…" : "Tampilkan Laporan"}
 					</Button>
 				</div>
+
+				{reportHtml ? (
+					<div
+						className="mt-4 overflow-x-auto rounded-md border bg-white"
+						dangerouslySetInnerHTML={{ __html: reportHtml }}
+					/>
+				) : null}
 			</CardContent>
 		</Card>
 	);

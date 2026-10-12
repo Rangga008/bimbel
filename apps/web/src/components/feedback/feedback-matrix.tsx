@@ -2,11 +2,10 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { toast } from "sonner";
 import {
 	ChevronLeft,
 	ChevronRight,
-	Download,
+	FileDown,
 	MessageSquareText,
 	Users,
 } from "lucide-react";
@@ -21,7 +20,7 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
-import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
+import { apiFetch, apiFetchBlob } from "@/lib/api-client";
 
 interface MatrixCell {
 	content: string;
@@ -85,7 +84,6 @@ export function FeedbackMatrix({
 		subject: string;
 		cell: MatrixCell;
 	} | null>(null);
-	const [exporting, setExporting] = useState(false);
 	const weekIso = weekStart.toISOString();
 	const weekEnd = new Date(weekStart.getTime() + 6 * 86400000);
 
@@ -106,26 +104,17 @@ export function FeedbackMatrix({
 	});
 	const m = matrixQ.data;
 
-	async function exportExcel() {
-		setExporting(true);
-		try {
-			const blob = await apiFetchBlob(
-				`/groups/${effectiveGroupId}/feedback/export?week=${encodeURIComponent(weekIso)}`,
-			);
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement("a");
-			a.href = url;
-			a.download = `feedback-${m?.group.code ?? "kelompok"}-${weekIso.slice(0, 10)}.xlsx`;
-			a.click();
-			URL.revokeObjectURL(url);
-		} catch (e) {
-			toast.error(
-				e instanceof ApiError ? e.message : "Gagal mengekspor feedback.",
-			);
-		} finally {
-			setExporting(false);
-		}
-	}
+	const exportExcel = async () => {
+		const blob = await apiFetchBlob(
+			`/groups/${effectiveGroupId}/feedback/export?week=${encodeURIComponent(weekIso)}`,
+		);
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement("a");
+		a.href = url;
+		a.download = `feedback-${m?.group.name ?? "kelompok"}-${weekIso.slice(0, 10)}.xlsx`;
+		a.click();
+		URL.revokeObjectURL(url);
+	};
 
 	return (
 		<Card>
@@ -182,11 +171,10 @@ export function FeedbackMatrix({
 					<Button
 						variant="outline"
 						size="sm"
-						disabled={!effectiveGroupId || exporting}
+						disabled={!effectiveGroupId || !m}
 						onClick={exportExcel}
 					>
-						<Download className="size-4" />
-						{exporting ? "Mengekspor..." : "Excel"}
+						<FileDown className="mr-1.5 size-4" /> Excel
 					</Button>
 				</div>
 			</CardHeader>

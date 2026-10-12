@@ -296,7 +296,7 @@ export function DaySessionEditor({
 			</div>
 			<div className="flex flex-col gap-2">
 				{sessions.map((s) => (
-					<div key={s.id} className="flex flex-col gap-2 rounded-lg border p-2.5 sm:flex-row sm:items-center">
+					<div key={s.id} className="flex flex-col gap-2 rounded-lg border p-2.5 sm:flex-row sm:flex-wrap sm:items-center">
 						<div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
 							<CalendarClock className="size-4" />
 						</div>
@@ -362,7 +362,7 @@ export function DaySessionEditor({
 							) : null}
 						</div>
 						{editingId === s.id ? (
-							<div className="flex w-full flex-col gap-2 rounded-md border bg-muted/40 p-2.5 sm:col-span-full">
+							<div className="flex w-full basis-full flex-col gap-2 rounded-md border bg-muted/40 p-2.5">
 								<div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
 									<div className="flex flex-col gap-1">
 										<Label className="text-xs">Mulai</Label>

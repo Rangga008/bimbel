@@ -463,7 +463,7 @@ export class PaymentsService {
       throw new ForbiddenException(
         'Anak tersebut tidak terhubung ke akun ini.',
       );
-    return this.prisma.invoice.findMany({
+    const rows = await this.prisma.invoice.findMany({
       where: {
         studentId: { in: ids.length ? ids : ['__none__'] },
         status: 'ISSUED',
@@ -497,6 +497,11 @@ export class PaymentsService {
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
+    // Invoice ISSUED yang sudah lunas (amountPaid >= total) bukan tagihan —
+    // jangan tampilkan lagi di daftar bayar ortu.
+    return rows.filter(
+      (i) => Number(i.totalAmount) - Number(i.amountPaid) > 0.009,
+    );
   }
 
   async myPayments(userId: string) {
@@ -770,19 +775,23 @@ export class PaymentsService {
   ) {
     if (payment.status === 'VERIFIED') return this.get(payment.id);
     if (status !== 'SUCCESS') {
-      const rejected = await this.prisma.payment.update({
-        where: { id: payment.id },
+      // Klaim atomik: hanya 1 dari webhook/cek-status paralel yang lolos
+      // update PENDING → REJECTED; yang kalah balik state terkini tanpa
+      // menotifikasi ulang.
+      const claim = await this.prisma.payment.updateMany({
+        where: { id: payment.id, status: 'PENDING' },
         data: {
           status: 'REJECTED',
           rejectReason: `Gateway: ${status}`,
           paidAt: null,
         },
+      });
+      if (claim.count === 0) return this.get(payment.id);
+      const rejected = await this.prisma.payment.findUniqueOrThrow({
+        where: { id: payment.id },
         include: paymentDetailInclude,
       });
-      // Guard: webhook berulang untuk payment yang sudah REJECTED tidak notif ulang.
-      if (payment.status !== 'REJECTED') {
-        await this.events.paymentRejected(payment.id);
-      }
+      await this.events.paymentRejected(payment.id);
       return rejected;
     }
     if (Math.abs(amount - Number(payment.amount)) > 0.009) {
@@ -804,8 +813,12 @@ export class PaymentsService {
       where: { code: 'BANK', isActive: true },
     });
     const verified = await this.prisma.$transaction(async (tx) => {
-      await tx.payment.update({
-        where: { id: payment.id },
+      // Klaim atomik di dalam transaksi: dua webhook/settlement paralel
+      // untuk payment yang sama — hanya satu yang mengubah PENDING →
+      // VERIFIED, yang lain rollback dan membaca hasil akhir. Mencegah
+      // alokasi ganda / kwitansi ganda saat traffic padat.
+      const claim = await tx.payment.updateMany({
+        where: { id: payment.id, status: 'PENDING' },
         data: {
           status: 'VERIFIED',
           accountId: bank?.id ?? payment.accountId,
@@ -814,6 +827,7 @@ export class PaymentsService {
           paidAt: now,
         },
       });
+      if (claim.count === 0) return null;
       await this.allocateAndReceipt(tx, {
         paymentId: payment.id,
         invoiceId: wInvoiceId,
@@ -827,6 +841,7 @@ export class PaymentsService {
         include: paymentDetailInclude,
       });
     });
+    if (!verified) return this.get(payment.id);
     // Fase 5b: "pembayaran terverifikasi" -> notif in-app + WA outbox.
     await this.events.paymentVerified(payment.id);
     return verified;

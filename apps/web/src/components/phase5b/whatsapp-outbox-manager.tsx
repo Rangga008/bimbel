@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Search } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import {
 	Card,
@@ -13,7 +15,10 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ListPager } from "@/components/shared/list-pager";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
 
 interface OutboxStats {
 	provider: string;
@@ -63,22 +68,52 @@ function statusBadge(status: OutboxRow["status"]) {
 /**
  * Monitor antrean WhatsApp outbox (Fase 5b). Dipakai Admin Finance
  * (halaman Pengaturan) dan Owner (halaman Audit).
+ * Mode `compact` (pengaturan): statistik + 5 entri terbaru + tautan ke
+ * halaman detail; mode penuh (halaman detail): search/filter/sort/pager.
  */
-export function WhatsAppOutboxManager({ canManage = true }: { canManage?: boolean }) {
+export function WhatsAppOutboxManager({
+	canManage = true,
+	compact = false,
+	detailHref,
+}: {
+	canManage?: boolean;
+	compact?: boolean;
+	/** Tautan "Lihat semua" di mode compact. */
+	detailHref?: string;
+}) {
 	const qc = useQueryClient();
 	const [status, setStatus] = useState<string>("");
+	const [eventType, setEventType] = useState<string>("");
+	const [search, setSearch] = useState("");
+	const debouncedSearch = useDebouncedValue(search, 400);
+	const [sortDesc, setSortDesc] = useState(true);
+	const [page, setPage] = useState(0);
 
 	const statsQ = useQuery({
 		queryKey: ["wa-outbox-stats"],
 		queryFn: () => apiFetch<OutboxStats>("/whatsapp-outbox/stats"),
 	});
 	const listQ = useQuery({
-		queryKey: ["wa-outbox", status],
-		queryFn: () =>
-			apiFetch<OutboxRow[]>(
-				`/whatsapp-outbox${status ? `?status=${status}` : ""}`,
-			),
+		queryKey: ["wa-outbox", status, eventType, debouncedSearch, compact],
+		queryFn: () => {
+			const p = new URLSearchParams();
+			if (status) p.set("status", status);
+			if (eventType) p.set("eventType", eventType);
+			if (debouncedSearch) p.set("search", debouncedSearch);
+			p.set("take", compact ? "5" : "500");
+			return apiFetch<OutboxRow[]>(`/whatsapp-outbox?${p.toString()}`);
+		},
 	});
+
+	// Urutan & halaman dihitung client-side (daftar ≤500 baris).
+	const rows = useMemo(() => {
+		const r = [...(listQ.data ?? [])];
+		if (!sortDesc) r.reverse();
+		return r;
+	}, [listQ.data, sortDesc]);
+	const PAGE_SIZE = 25;
+	const pageCount = Math.ceil(rows.length / PAGE_SIZE);
+	const pagedRows = compact ? rows.slice(0, 5) : rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
 	const invalidate = () => {
 		qc.invalidateQueries({ queryKey: ["wa-outbox"] });
@@ -146,18 +181,51 @@ export function WhatsAppOutboxManager({ canManage = true }: { canManage?: boolea
 					</div>
 				</div>
 
-				<div className="flex flex-wrap gap-2">
-					{STATUS_FILTERS.map((f) => (
+				{!compact ? (
+					<div className="flex flex-wrap items-center gap-2">
+						<div className="relative w-full sm:w-64">
+							<Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+							<Input
+								placeholder="Cari nama / nomor / event..."
+								value={search}
+								onChange={(e) => {
+									setSearch(e.target.value);
+									setPage(0);
+								}}
+								className="pl-9"
+							/>
+						</div>
+						{STATUS_FILTERS.map((f) => (
+							<Button
+								key={f.value}
+								size="sm"
+								variant={status === f.value ? "default" : "outline"}
+								onClick={() => {
+									setStatus(f.value);
+									setPage(0);
+								}}
+							>
+								{f.label}
+							</Button>
+						))}
+						<Input
+							placeholder="Filter event (mis. TUTOR_WEEKLY)"
+							value={eventType}
+							onChange={(e) => {
+								setEventType(e.target.value);
+								setPage(0);
+							}}
+							className="w-52"
+						/>
 						<Button
-							key={f.value}
 							size="sm"
-							variant={status === f.value ? "default" : "outline"}
-							onClick={() => setStatus(f.value)}
+							variant="outline"
+							onClick={() => setSortDesc((v) => !v)}
 						>
-							{f.label}
+							{sortDesc ? "Terbaru dulu" : "Terlama dulu"}
 						</Button>
-					))}
-				</div>
+					</div>
+				) : null}
 
 				{listQ.isLoading ? <Skeleton className="h-24 w-full" /> : null}
 				{listQ.isError ? (
@@ -171,8 +239,13 @@ export function WhatsAppOutboxManager({ canManage = true }: { canManage?: boolea
 					</p>
 				) : null}
 
+				{compact ? (
+					<p className="text-xs font-medium text-muted-foreground">
+						5 entri terbaru — buka halaman antrean untuk daftar lengkap.
+					</p>
+				) : null}
 				<div className="flex flex-col gap-2">
-					{listQ.data?.map((row) => (
+					{pagedRows.map((row) => (
 						<div key={row.id} className="rounded-lg border p-3">
 							<div className="flex flex-wrap items-center justify-between gap-2">
 								<div className="min-w-0">
@@ -214,6 +287,23 @@ export function WhatsAppOutboxManager({ canManage = true }: { canManage?: boolea
 						</div>
 					))}
 				</div>
+
+				{compact && detailHref ? (
+					<Link href={detailHref} className="self-end">
+						<Button variant="outline" size="sm">
+							Lihat Semua Antrean
+						</Button>
+					</Link>
+				) : null}
+				{!compact ? (
+					<ListPager
+						page={page}
+						pageCount={pageCount}
+						total={rows.length}
+						shown={PAGE_SIZE}
+						onPageChange={setPage}
+					/>
+				) : null}
 			</CardContent>
 		</Card>
 	);

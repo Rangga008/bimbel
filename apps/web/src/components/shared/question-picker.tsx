@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -151,6 +151,14 @@ export function QuestionPicker({
     enabled: !!filters.subjectId,
   });
 
+  // Cache item yang pernah tampil — strip "soal dipilih" di bawah tetap bisa
+  // menampilkan label soal walau filter saat ini menyembunyikan daftarnya.
+  const knownRef = useRef(new Map<string, QuestionSelectItem>());
+  for (const q of questionsQ.data ?? []) knownRef.current.set(q.id, q);
+  const selectedItems = selectedIds
+    .map((id) => knownRef.current.get(id))
+    .filter((q): q is QuestionSelectItem => !!q);
+
   return (
     <div className="flex flex-col gap-3">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -204,10 +212,40 @@ export function QuestionPicker({
           <Label>Pilih Soal * (minimal 1)</Label>
           <Badge variant="outline">{selectedIds.length} soal dipilih</Badge>
         </div>
+        {/* Soal terpilih selalu terlihat — tidak ikut hilang saat filter
+            diubah/dikosongkan; klik × untuk melepas. */}
+        {selectedItems.length > 0 ? (
+          <div className="flex flex-col gap-1.5 rounded-md border border-brand-blue-300 bg-brand-blue-50/60 p-2">
+            <p className="text-xs font-medium text-brand-blue-800">
+              Soal terpilih (tidak terpengaruh filter):
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {selectedItems.map((q) => (
+                <span
+                  key={q.id}
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs"
+                >
+                  <span className="min-w-0 max-w-56 truncate">
+                    <MathContent text={q.content.slice(0, 80)} />
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Lepas soal"
+                    onClick={() => onToggle(q.id)}
+                    className="shrink-0 rounded px-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {!filters.subjectId ? (
           <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
             Pilih Mapel dulu untuk menampilkan daftar soal. Gunakan Tingkat,
             Jenjang, dan Tipe untuk mempersempit — mis. hanya soal Bab 1.
+            Soal yang sudah dipilih tetap tersimpan walau filter dikosongkan.
           </p>
         ) : (
           <>

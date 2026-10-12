@@ -72,7 +72,7 @@ export class ExamsController {
     @CurrentUser() actor: AuthenticatedUser,
     @Req() req: Request,
   ) {
-    const created = await this.exams.create(actor.id, dto);
+    const created = await this.exams.create(actor, dto);
     await this.audit.log({
       actorId: actor.id,
       action: 'EXAM_CREATED',

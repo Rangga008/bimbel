@@ -182,7 +182,7 @@ export function ParentPayments() {
       {/* Langkah 1 — pilih tagihan */}
       {!checkout && (invQ.data?.length ?? 0) > 0 ? (
         <div className="overflow-x-auto rounded-md border">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className={th}>Invoice</th>
@@ -198,7 +198,8 @@ export function ParentPayments() {
                 const program = enr
                   ? [enr.program?.name, enr.level?.name, enr.group?.name].filter(Boolean).join(' · ')
                   : (inv.package?.name ?? inv.items?.[0]?.description ?? 'Tagihan');
-                const overdue = inv.dueDate ? new Date(inv.dueDate) < new Date(new Date().toDateString()) : false;
+                const sisa = sisaInv(inv);
+                const overdue = sisa > 0.009 && inv.dueDate ? new Date(inv.dueDate) < new Date(new Date().toDateString()) : false;
                 return (
                   <tr key={inv.id} className="border-b last:border-0">
                     <td className={`${td} font-medium whitespace-nowrap`}>{inv.number}</td>
@@ -211,7 +212,7 @@ export function ParentPayments() {
                       {overdue ? <Badge variant="destructive" className="ml-1.5">Jatuh tempo</Badge> : null}
                     </td>
                     <td className={`${tdR} font-medium tabular-nums whitespace-nowrap`}>
-                      {rupiah(sisaInv(inv))}
+                      {rupiah(sisa)}
                       <p className="text-xs font-normal text-muted-foreground">dari {rupiah(inv.totalAmount)}</p>
                     </td>
                     <td className={`${td} text-right`}>
@@ -338,7 +339,7 @@ export function ParentPayments() {
       <h2 className="text-lg font-medium">Riwayat saya</h2>
       {(mineQ.data?.length ?? 0) > 0 ? (
         <div className="overflow-x-auto rounded-md border">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className={th}>Tanggal</th>
@@ -409,7 +410,7 @@ export function ParentPayments() {
       <h2 className="text-lg font-medium">Kwitansi</h2>
       {(rcpQ.data?.length ?? 0) > 0 ? (
         <div className="overflow-x-auto rounded-md border">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className={th}>Nomor</th>

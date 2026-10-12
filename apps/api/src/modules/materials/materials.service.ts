@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ContentCategoriesService } from '../content-categories/content-categories.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TutorScopeService } from '../../common/tutor-scope/tutor-scope.service';
@@ -123,7 +123,7 @@ export class MaterialsService {
     return null;
   }
 
-  async create(dto: CreateMaterialDto) {
+  async create(dto: CreateMaterialDto, actor?: AuthenticatedUser) {
     // Validasi: minimal salah satu dari programId, levelId, groupId, atau subjectId
     if (!dto.programId && !dto.levelId && !dto.groupId && !dto.subjectId) {
       throw new BadRequestException('Minimal salah satu dari program, level, kelompok, atau mapel harus diisi.');
@@ -144,6 +144,12 @@ export class MaterialsService {
     }
 
     const subjectId = await this.resolveSubjectId(dto.subjectId, dto.levelId, dto.programId);
+    await this.assertTutorRef(actor, {
+      programId: dto.programId,
+      levelId: dto.levelId,
+      groupId: dto.groupId,
+      subjectId,
+    });
     await this.contentCategories.assertUsable(dto.category);
     await this.assertLinkedRefs(dto.examId, dto.latsolPackageId);
 
@@ -173,9 +179,23 @@ export class MaterialsService {
     });
   }
 
-  async update(id: string, dto: UpdateMaterialDto) {
+  async update(id: string, dto: UpdateMaterialDto, actor?: AuthenticatedUser) {
     const material = await this.prisma.material.findUnique({ where: { id } });
     if (!material) throw new NotFoundException('Materi tidak ditemukan.');
+
+    // Tutor: materi lama & target baru harus masih di scope yang dia ampu.
+    if (actor) {
+      const scope = await this.tutorScope.for(actor);
+      if (scope) {
+        this.assertRefsInScope(scope, material);
+        this.assertRefsInScope(scope, {
+          programId: dto.programId !== undefined ? dto.programId : material.programId,
+          levelId: dto.levelId !== undefined ? dto.levelId : material.levelId,
+          groupId: dto.groupId !== undefined ? dto.groupId : material.groupId,
+          subjectId: dto.subjectId !== undefined ? dto.subjectId : material.subjectId,
+        });
+      }
+    }
 
     // Validasi foreign keys jika berubah
     if (dto.programId && dto.programId !== material.programId) {
@@ -254,11 +274,61 @@ export class MaterialsService {
     }
   }
 
-  async delete(id: string) {
+  async delete(id: string, actor?: AuthenticatedUser) {
     const material = await this.prisma.material.findUnique({ where: { id } });
     if (!material) throw new NotFoundException('Materi tidak ditemukan.');
 
+    await this.assertTutorRef(actor, material);
+
     await this.prisma.material.delete({ where: { id } });
     return { success: true };
+  }
+
+  /**
+   * Scope check untuk TUTOR saat membuat/mengubah konten — salah satu ref
+   * (program/level/kelompok/mapel) harus ada di scope yang dia ampu.
+   */
+  private async assertTutorRef(
+    actor: AuthenticatedUser | undefined,
+    refs: {
+      programId?: string | null;
+      levelId?: string | null;
+      groupId?: string | null;
+      subjectId?: string | null;
+    },
+  ) {
+    if (!actor) return;
+    const scope = await this.tutorScope.for(actor);
+    if (!scope) return;
+    this.assertRefsInScope(scope, refs);
+  }
+
+  private assertRefsInScope(
+    scope: {
+      programIds: string[];
+      levelIds: string[];
+      groupIds: string[];
+      subjectIds: string[];
+    },
+    refs: {
+      programId?: string | null;
+      levelId?: string | null;
+      groupId?: string | null;
+      subjectId?: string | null;
+    },
+  ) {
+    const targeted =
+      !!refs.programId || !!refs.levelId || !!refs.groupId || !!refs.subjectId;
+    if (!targeted) return; // konten umum
+    const ok =
+      (!!refs.programId && scope.programIds.includes(refs.programId)) ||
+      (!!refs.levelId && scope.levelIds.includes(refs.levelId)) ||
+      (!!refs.groupId && scope.groupIds.includes(refs.groupId)) ||
+      (!!refs.subjectId && scope.subjectIds.includes(refs.subjectId));
+    if (!ok) {
+      throw new ForbiddenException(
+        'Materi ini di luar program/jenjang/kelompok yang Anda ampu.',
+      );
+    }
   }
 }

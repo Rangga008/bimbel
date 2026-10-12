@@ -162,7 +162,7 @@ export function ExpenseManager({ canManage }: { canManage: boolean }) {
       ) : null}
       {(listQ.data?.length ?? 0) > 0 ? (
         <div className="overflow-x-auto rounded-md border">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className="px-3 py-2 text-left font-medium whitespace-nowrap">Tanggal</th>

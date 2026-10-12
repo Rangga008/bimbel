@@ -35,8 +35,16 @@ export class WhatsAppController {
   list(
     @Query('status') status?: string,
     @Query('eventType') eventType?: string,
+    @Query('search') search?: string,
+    @Query('take') take?: string,
   ) {
-    return this.outbox.list({ status, eventType });
+    const n = take ? Number.parseInt(take, 10) : undefined;
+    return this.outbox.list({
+      status,
+      eventType,
+      search,
+      take: Number.isFinite(n) ? n : undefined,
+    });
   }
 
   @Get('stats')

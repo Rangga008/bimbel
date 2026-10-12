@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, Printer } from "lucide-react";
+import { FileText } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,6 @@ import {
 	Dialog,
 	DialogContent,
 	DialogDescription,
-	DialogFooter,
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
@@ -38,6 +37,7 @@ export function LearningReportButton({ endpoint }: { endpoint: string }) {
 	const [category, setCategory] = useState("");
 	const [basic, setBasic] = useState("");
 	const [busy, setBusy] = useState(false);
+	const [reportHtml, setReportHtml] = useState<string | null>(null);
 
 	const catsQ = useQuery({
 		queryKey: ["content-categories"],
@@ -46,7 +46,7 @@ export function LearningReportButton({ endpoint }: { endpoint: string }) {
 	});
 	const cats = (catsQ.data ?? []).filter((c) => c.isActive !== false);
 
-	async function handlePrint() {
+	async function handleShow() {
 		if (!category) {
 			toast.error("Pilih tipe ujian utama dulu (mis. TKA / Try Out).");
 			return;
@@ -56,9 +56,7 @@ export function LearningReportButton({ endpoint }: { endpoint: string }) {
 		setBusy(true);
 		try {
 			const blob = await apiFetchBlob(`${endpoint}?${params}`);
-			const url = URL.createObjectURL(blob);
-			window.open(url, "_blank", "noopener");
-			setOpen(false);
+			setReportHtml(await blob.text());
 		} catch (e) {
 			toast.error(
 				e instanceof ApiError ? e.message : "Gagal memuat laporan.",
@@ -73,69 +71,78 @@ export function LearningReportButton({ endpoint }: { endpoint: string }) {
 			<Button variant="outline" size="sm" onClick={() => setOpen(true)}>
 				<FileText className="mr-1.5 size-4" /> Laporan Hasil Belajar
 			</Button>
-			<Dialog open={open} onOpenChange={setOpen}>
-				<DialogContent className="sm:max-w-md">
+			<Dialog open={open} onOpenChange={(o) => { if (!o) { setReportHtml(null); setCategory(""); setBasic(""); } setOpen(o); }}>
+				<DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
 					<DialogHeader>
-						<DialogTitle>Cetak Laporan Hasil Belajar</DialogTitle>
+						<DialogTitle>Laporan Hasil Belajar</DialogTitle>
 						<DialogDescription>
 							Laporan resmi dengan kop bimbel: nilai per mapel dari
-							semua ujian satu tipe + grafik perkembangan — siap
-							cetak / simpan PDF.
+							semua ujian satu tipe + grafik perkembangan.
 						</DialogDescription>
 					</DialogHeader>
-					<div className="grid gap-4 py-2">
-						<div className="grid gap-1.5">
-							<Label htmlFor="lr-cat">Tipe ujian utama</Label>
-							<select
-								id="lr-cat"
-								className="h-9 rounded-md border bg-background px-3 text-sm"
-								value={category}
-								onChange={(e) => setCategory(e.target.value)}
-							>
-								<option value="">
-									{catsQ.isLoading ? "Memuat…" : "— Pilih tipe (mis. TKA / TO / UTBK) —"}
-								</option>
-								{cats.map((c) => (
-									<option key={c.code} value={c.code}>
-										{c.name}
-									</option>
-								))}
-							</select>
+					{reportHtml ? (
+						<div className="flex flex-col gap-3">
+							<div
+								className="overflow-x-auto rounded-md border bg-white p-4"
+								dangerouslySetInnerHTML={{ __html: reportHtml }}
+							/>
+							<Button variant="outline" size="sm" onClick={() => setReportHtml(null)}>
+								Kembali
+							</Button>
 						</div>
-						<div className="grid gap-1.5">
-							<Label htmlFor="lr-basic">
-								Tes Kemampuan Dasar (opsional)
-							</Label>
-							<select
-								id="lr-basic"
-								className="h-9 rounded-md border bg-background px-3 text-sm"
-								value={basic}
-								onChange={(e) => setBasic(e.target.value)}
-							>
-								<option value="">— Tidak ada —</option>
-								{cats
-									.filter((c) => c.code !== category)
-									.map((c) => (
+					) : (
+						<div className="grid gap-4 py-2">
+							<div className="grid gap-1.5">
+								<Label htmlFor="lr-cat">Tipe ujian utama</Label>
+								<select
+									id="lr-cat"
+									className="h-9 rounded-md border bg-background px-3 text-sm"
+									value={category}
+									onChange={(e) => setCategory(e.target.value)}
+								>
+									<option value="">
+										{catsQ.isLoading ? "Memuat…" : "— Pilih tipe (mis. TKA / TO / UTBK) —"}
+									</option>
+									{cats.map((c) => (
 										<option key={c.code} value={c.code}>
 											{c.name}
 										</option>
 									))}
-							</select>
-							<p className="text-xs text-muted-foreground">
-								Tipe ujian ini ditampilkan sebagai tabel terpisah
-								"Tes Kemampuan Dasar" di atas tabel utama.
-							</p>
+								</select>
+							</div>
+							<div className="grid gap-1.5">
+								<Label htmlFor="lr-basic">
+									Tes Kemampuan Dasar (opsional)
+								</Label>
+								<select
+									id="lr-basic"
+									className="h-9 rounded-md border bg-background px-3 text-sm"
+									value={basic}
+									onChange={(e) => setBasic(e.target.value)}
+								>
+									<option value="">— Tidak ada —</option>
+									{cats
+										.filter((c) => c.code !== category)
+										.map((c) => (
+											<option key={c.code} value={c.code}>
+												{c.name}
+											</option>
+										))}
+								</select>
+								<p className="text-xs text-muted-foreground">
+									Tipe ujian ini ditampilkan sebagai tabel terpisah
+									"Tes Kemampuan Dasar" di atas tabel utama.
+								</p>
+							</div>
+							<Button
+								onClick={handleShow}
+								disabled={busy || !category}
+							>
+								<FileText className="mr-1.5 size-4" />
+								{busy ? "Menyiapkan…" : "Tampilkan Laporan"}
+							</Button>
 						</div>
-					</div>
-					<DialogFooter>
-						<Button
-							onClick={handlePrint}
-							disabled={busy || !category}
-						>
-							<Printer className="mr-1.5 size-4" />
-							{busy ? "Menyiapkan…" : "Cetak / Unduh PDF"}
-						</Button>
-					</DialogFooter>
+					)}
 				</DialogContent>
 			</Dialog>
 		</>

@@ -140,7 +140,7 @@ const TDR = 'px-3 py-2 text-right align-top';
 export function PaymentsTable({ items, canVerify, onVerify }: { items: PaymentListItem[]; canVerify: boolean; onVerify: (id: string) => void }) {
   return (
     <div className="overflow-x-auto rounded-md border">
-      <table className="w-full text-sm">
+      <table className="w-full min-w-[880px] text-sm">
         <thead>
           <tr className="border-b bg-muted/50">
             <th className={TH}>Invoice / Ref</th>

@@ -232,14 +232,28 @@ export function MaterialsManager({ canManage, basePath = '/materi' }: { canManag
                   {m.program && <Badge variant="outline"><GraduationCap />{m.program.name}</Badge>}
                   {m.group && <Badge variant="outline"><Users />{m.group.name}</Badge>}
                 </div>
-                {m.content && (
-                  <Badge variant="secondary" className="self-start">Isi teks</Badge>
-                )}
-                {m.fileUrl && (
-                  <a href={resolveAssetUrl(m.fileUrl)} target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-                    <FileText className="size-4" /> Lihat File
-                  </a>
+                {!canManage ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="self-start"
+                    onClick={() => router.push(`${basePath}/${m.id}`)}
+                  >
+                    <BookOpen className="mr-1.5 size-4" />
+                    Buka Materi
+                  </Button>
+                ) : (
+                  <>
+                    {m.content && (
+                      <Badge variant="secondary" className="self-start">Isi teks</Badge>
+                    )}
+                    {m.fileUrl && (
+                      <a href={resolveAssetUrl(m.fileUrl)} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+                        <FileText className="size-4" /> Lihat File
+                      </a>
+                    )}
+                  </>
                 )}
                 {(m.latsolPackage || m.exam) && (
                   <div className="mt-1 flex flex-wrap gap-2">
@@ -247,9 +261,13 @@ export function MaterialsManager({ canManage, basePath = '/materi' }: { canManag
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() =>
-                          router.push(`${portalBase}/latsol?play=${m.latsolPackage!.id}`)
-                        }
+                        onClick={() => {
+                          const isStudent = !canManage && portalBase === '/siswa';
+                          const href = isStudent
+                            ? `${portalBase}/latsol/${m.latsolPackage!.id}`
+                            : `${portalBase}/latsol?play=${m.latsolPackage!.id}`;
+                          router.push(href);
+                        }}
                       >
                         <FileText /> {m.latsolPackage.title}
                       </Button>

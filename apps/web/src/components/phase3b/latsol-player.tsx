@@ -397,20 +397,6 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
                 </div>
               )}
 
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-fit"
-                onClick={() =>
-                  setFeedbackMap((prev) => {
-                    const next = { ...prev };
-                    delete next[qid!];
-                    return next;
-                  })
-                }
-              >
-                Ubah Jawaban
-              </Button>
             </div>
           )
         )}
@@ -503,7 +489,6 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
               current={currentIndex}
               states={numStates}
               onJump={jumpTo}
-              columns={6}
             />
           </div>
         )}

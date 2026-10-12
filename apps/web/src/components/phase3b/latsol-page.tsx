@@ -13,21 +13,36 @@ export function LatsolPage({ canManage, basePath = '/latsol' }: { canManage: boo
   const searchParams = useSearchParams();
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
   const [view, setView] = useState<'list' | 'play' | 'history'>('list');
+  const siswaFocus = basePath === '/siswa/latsol';
 
   // Deep-link dari materi: /…/latsol?play=<packageId> langsung membuka player.
   // Klik "Kerjakan" juga men-push ?play= — browser-back menutup player dan
   // posisi drill (?g&l&s&c) ikut terbawa di URL yang sama.
+  // Untuk siswa, player sekarang di halaman terpisah /siswa/latsol/<packageId>.
   useEffect(() => {
     const play = searchParams.get('play');
+    if (play && siswaFocus) {
+      const p = new URLSearchParams(searchParams.toString());
+      p.delete('play');
+      const qs = p.toString();
+      router.replace(`/siswa/latsol/${play}${qs ? `?${qs}` : ''}`);
+      return;
+    }
     if (play) {
       setSelectedPackageId(play);
       setView('play');
     } else {
       setView((v) => (v === 'play' ? 'list' : v));
     }
-  }, [searchParams]);
+  }, [searchParams, siswaFocus, router]);
 
   const handlePlayPackage = (packageId: string) => {
+    if (siswaFocus) {
+      const p = new URLSearchParams(searchParams.toString());
+      const qs = p.toString();
+      router.push(`/siswa/latsol/${packageId}${qs ? `?${qs}` : ''}`);
+      return;
+    }
     const p = new URLSearchParams(searchParams.toString());
     p.set('play', packageId);
     router.push(`${pathname}?${p.toString()}`);

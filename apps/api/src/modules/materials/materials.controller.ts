@@ -49,7 +49,7 @@ export class MaterialsController {
     @CurrentUser() actor: AuthenticatedUser,
     @Req() req: Request,
   ) {
-    const created = await this.materials.create(dto);
+    const created = await this.materials.create(dto, actor);
     await this.audit.log({
       actorId: actor.id,
       action: 'MATERIAL_CREATED',
@@ -70,7 +70,7 @@ export class MaterialsController {
     @Req() req: Request,
   ) {
     const before = await this.materials.get(id);
-    const updated = await this.materials.update(id, dto);
+    const updated = await this.materials.update(id, dto, actor);
     await this.audit.log({
       actorId: actor.id,
       action: 'MATERIAL_UPDATED',
@@ -91,7 +91,7 @@ export class MaterialsController {
     @Req() req: Request,
   ) {
     const before = await this.materials.get(id);
-    await this.materials.delete(id);
+    await this.materials.delete(id, actor);
     await this.audit.log({
       actorId: actor.id,
       action: 'MATERIAL_DELETED',

@@ -142,7 +142,7 @@ export function TutorRatesManager({ canManage }: { canManage: boolean }) {
           </div>
           {/* Desktop: tabel */}
           <div className="hidden overflow-x-auto rounded-xl border md:block">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[720px] text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className={th}>Tutor</th>

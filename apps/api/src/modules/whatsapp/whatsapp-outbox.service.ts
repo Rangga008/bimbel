@@ -257,7 +257,12 @@ export class WhatsAppOutboxService {
     });
   }
 
-  list(query: { status?: string; eventType?: string; take?: number }) {
+  list(query: {
+    status?: string;
+    eventType?: string;
+    search?: string;
+    take?: number;
+  }) {
     const where: Record<string, unknown> = {};
     if (query.status) {
       const s = query.status.toUpperCase();
@@ -269,10 +274,19 @@ export class WhatsAppOutboxService {
       where.status = s;
     }
     if (query.eventType) where.eventType = query.eventType.toUpperCase();
+    if (query.search?.trim()) {
+      const s = query.search.trim();
+      where.OR = [
+        { recipientName: { contains: s, mode: 'insensitive' } },
+        { recipientPhone: { contains: s } },
+        { eventType: { contains: s.toUpperCase() } },
+        { message: { contains: s, mode: 'insensitive' } },
+      ];
+    }
     return this.prisma.whatsAppOutbox.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      take: query.take ?? 100,
+      take: Math.min(Math.max(query.take ?? 100, 1), 500),
     });
   }
 

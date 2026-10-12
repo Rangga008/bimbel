@@ -12,6 +12,7 @@ import { ProctoringHubPage } from "@/components/phase3d/proctoring-hub-page";
 import { PembahasanManager } from "@/components/phase3e/pembahasan-manager";
 import { MediaLibraryManager } from "@/components/shared/media-library-manager";
 import { TutorGroupGrades } from "@/components/phase4a/tutor-group-grades";
+import { TutorAnalytics } from "@/components/phase4a/tutor-analytics";
 import { FeedbackMatrix } from "@/components/feedback/feedback-matrix";
 import { TutorRankingPage } from "@/components/phase4b/tutor-ranking";
 import { TutorHonorPanel } from "@/components/phase5a/tutor-honor-panel";
@@ -53,13 +54,14 @@ export default async function TutorMenuPage({
 			/>
 		);
 	if (slug === "materi")
-		return <MaterialsManager canManage={false} basePath="/tutor/materi" />;
+		return <MaterialsManager canManage basePath="/tutor/materi" />;
 	if (slug === "soal") return <QuestionsManager canManage basePath="/tutor/soal" />;
 	if (slug === "latsol") return <LatsolPage canManage basePath="/tutor/latsol" />;
-	if (slug === "ujian") return <ExamsManager canManage={false} basePath="/tutor/ujian" />;
+	if (slug === "ujian") return <ExamsManager canManage basePath="/tutor/ujian" />;
 	if (slug === "proctoring")
 		return <ProctoringHubPage examBasePath="/tutor/ujian" />;
 	if (slug === "nilai") return <TutorGroupGrades />;
+	if (slug === "analisis") return <TutorAnalytics />;
 	if (slug === "laporan") return <LearningReportPage audience="tutor" />;
 	if (slug === "ranking") return <TutorRankingPage />;
 	if (slug === "notifikasi") return <NotificationsInbox />;

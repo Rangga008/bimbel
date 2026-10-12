@@ -33,7 +33,7 @@ export function KasBankManager() {
 
       {(q.data?.accounts.length ?? 0) > 0 ? (
         <div className="overflow-x-auto rounded-md border">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className={TH}>Akun</th>
@@ -77,7 +77,7 @@ export function KasBankManager() {
         ) : null}
         {(q.data?.entries.length ?? 0) > 0 ? (
           <div className="overflow-x-auto rounded-md border">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[720px] text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className={TH}>Tanggal</th>

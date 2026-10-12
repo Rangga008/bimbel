@@ -155,8 +155,10 @@ export function ArManager({ canRefund }: { canRefund: boolean }) {
       <tr key={inv.id} className="border-b last:border-0">
         <td className="px-3 py-2 align-top font-medium whitespace-nowrap">{inv.number}</td>
         <td className="px-3 py-2 align-top whitespace-nowrap">{inv.student.user.name}</td>
-        <td className="px-3 py-2 align-top text-muted-foreground">{parent}</td>
-        <td className="px-3 py-2 align-top text-muted-foreground">{program}</td>
+        <td className="px-3 py-2 align-top text-muted-foreground whitespace-nowrap">{parent}</td>
+        <td className="max-w-52 px-3 py-2 align-top text-muted-foreground">
+          <p className="truncate" title={program}>{program}</p>
+        </td>
         <td className="px-3 py-2 align-top whitespace-nowrap">
           {dueLabel(inv, d)}
           {d !== null && d < 0 ? <Badge variant="destructive" className="ml-1.5">OVERDUE</Badge> : null}
@@ -259,7 +261,7 @@ export function ArManager({ canRefund }: { canRefund: boolean }) {
               <span className="ml-2 font-normal text-muted-foreground">({g.items.length})</span>
             </h2>
             <div className="overflow-x-auto rounded-md border bg-background">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[960px] text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
                     <th className="px-3 py-2 text-left font-medium whitespace-nowrap">Invoice</th>

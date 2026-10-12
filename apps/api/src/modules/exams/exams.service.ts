@@ -151,7 +151,7 @@ export class ExamsService {
     }
   }
 
-  async create(actorId: string, dto: CreateExamDto) {
+  async create(actor: AuthenticatedUser, dto: CreateExamDto) {
     // Validasi scheduledEndAt > scheduledStartAt
     const start = new Date(dto.scheduledStartAt);
     const end = new Date(dto.scheduledEndAt);
@@ -160,6 +160,11 @@ export class ExamsService {
     }
     await this.assertRefs(dto);
     await this.contentCategories.assertUsable(dto.category);
+    // Tutor hanya boleh membuat ujian dalam program/jenjang/mapel yang dia ampu.
+    const scope = await this.tutorScope.for(actor);
+    if (scope) {
+      this.tutorScope.assertContentRef(scope, dto.programId, dto.levelId, dto.subjectId);
+    }
 
     // Validasi questionIds
     if (!dto.questionIds.length) {
@@ -200,7 +205,7 @@ export class ExamsService {
           durationMinutes: dto.durationMinutes,
           proctoringEnabled: dto.proctoringEnabled ?? true,
           notes: dto.notes?.trim(),
-          createdBy: actorId,
+          createdBy: actor.id,
         },
       });
 

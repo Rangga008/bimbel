@@ -1102,7 +1102,9 @@ export function FinanceSettings() {
 
 			) : null}
 
-			{canViewOutbox ? <WhatsAppOutboxManager /> : null}
+			{canViewOutbox ? (
+				<WhatsAppOutboxManager compact detailHref="/admin-finance/antrean-wa" />
+			) : null}
 
 			<ConfirmDialog
 				open={accToDelete !== null}

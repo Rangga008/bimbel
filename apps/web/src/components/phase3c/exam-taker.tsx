@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, ChevronLeft, ChevronRight, LayoutGrid, Maximize } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,7 +17,6 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { MathContent } from '@/components/shared/math-content';
 import { QuestionNumberMap, NumberMapLegend } from '@/components/shared/question-number-map';
 import type { NumberMapState } from '@/components/shared/question-number-map';
-import { drillBackUrl } from '@/lib/content-taxonomy';
 import {
   ExamAttemptDetail,
   ExamAttemptStatus,
@@ -129,19 +128,6 @@ function useExamProctoring(params: {
 export function ExamTaker({ attemptId }: ExamTakerProps) {
   const qc = useQueryClient();
   const router = useRouter();
-  const searchParams = useSearchParams();
-  // URL kembali ke daftar ujian dengan posisi drill (tingkat/jenjang/mapel/tipe)
-  // yang dibawa masuk lewat query string saat mulai/lanjut attempt.
-  const backUrl = useMemo(
-    () =>
-      drillBackUrl('/siswa/ujian', {
-        tingkat: searchParams.get('g') ?? '',
-        levelId: searchParams.get('l') ?? '',
-        subjectId: searchParams.get('s') ?? '',
-        category: searchParams.get('c') ?? '',
-      }),
-    [searchParams],
-  );
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState<number>(() => Date.now());
   const [answers, setAnswers] = useState<Record<string, SaveExamAnswerDto>>({});
@@ -336,13 +322,13 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
         } catch {
           // Tetap keluar walau laporan gagal.
         }
-        router.push(backUrl);
+        router.back();
         return;
       }
       setLeaveConfirmOpen(true);
       return;
     }
-    router.push(backUrl);
+    router.back();
   };
 
   const formatTime = (ms: number) => {
@@ -635,7 +621,6 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                 current={currentIndex}
                 states={numStates}
                 onJump={jumpTo}
-                columns={6}
               />
             </div>
           )}
@@ -841,7 +826,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
         title="Tinggalkan halaman ujian?"
         description="Jawaban Anda sudah tersimpan otomatis di server — Anda bisa kembali dan melanjutkan selama waktu ujian masih berjalan."
         confirmLabel="Ya, kembali ke daftar"
-        onConfirm={() => router.push(backUrl)}
+        onConfirm={() => router.back()}
       />
     </div>
   );

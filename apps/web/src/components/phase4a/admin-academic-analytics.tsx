@@ -7,7 +7,9 @@ import {
 	ChartLine,
 	ChevronRight,
 	FileCheck2,
+	FileDown,
 	FileQuestion,
+	Printer,
 	Target,
 	Timer,
 	Users,
@@ -20,8 +22,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Phase1aSelectField } from "@/components/phase1a/phase1a-form-dialog";
 import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
-import { toast } from "sonner";
-import { Printer, FileSpreadsheet } from "lucide-react";
 
 interface ProgramOption {
 	id: string;
@@ -71,10 +71,165 @@ interface AdminAcademicAnalyticsData {
   examAnalytics: ExamAnalytics[];
 }
 
+interface ScoreRecapColumn {
+  key: string;
+  label: string;
+  maxScore: number;
+}
+interface ScoreRecapRow {
+  studentId: string;
+  name: string;
+  school: string;
+  groups: string[];
+  cells: Array<{ key: string; correct: number; total: number; score: number; maxScore: number }>;
+  totalScore: number;
+  maxScore: number;
+  totalCorrect: number;
+  percentage: number;
+  submittedAt: string | null;
+}
+interface ScoreRecapData {
+  exam: { title: string; programName: string | null; levelName: string | null; subjectName: string | null };
+  columns: ScoreRecapColumn[];
+  rows: ScoreRecapRow[];
+  participantCount: number;
+}
+
+interface AnswerRecapQuestion {
+  no: number;
+  questionId: string;
+  type: string;
+  key: string;
+  points: number;
+}
+interface AnswerRecapRow {
+  studentId: string;
+  name: string;
+  school: string;
+  answers: Array<{ display: string; isCorrect: boolean | null }>;
+}
+interface AnswerRecapData {
+  exam: { title: string; levelName: string | null; subjectName: string | null };
+  questions: AnswerRecapQuestion[];
+  rows: AnswerRecapRow[];
+  participantCount: number;
+}
+
 function accuracyVariant(accuracy: number) {
   if (accuracy >= 70) return "default" as const;
   if (accuracy >= 50) return "secondary" as const;
   return "destructive" as const;
+}
+
+/** Unduh blob sebagai file (rekap Excel). */
+async function downloadBlob(path: string, filename: string) {
+  const blob = await apiFetchBlob(path);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** Buka dokumen cetak (HTML print) di tab baru — user print/Save as PDF. */
+async function openPrintDoc(path: string) {
+  const blob = await apiFetchBlob(path);
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank', 'noopener');
+}
+
+function ScoreRecapTable({ data }: { data: ScoreRecapData }) {
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader>
+        <CardTitle className="text-base">Rekap Nilai — {data.exam.title}</CardTitle>
+        <CardDescription>
+          {data.exam.programName ?? '-'} · {data.exam.levelName ?? '-'} · {data.exam.subjectName ?? '-'} · {data.participantCount} peserta
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="overflow-x-auto p-0">
+        <table className="w-full text-left text-xs">
+          <thead>
+            <tr className="border-b bg-muted">
+              <th className="px-3 py-2">No</th>
+              <th className="px-3 py-2">Nama</th>
+              <th className="px-3 py-2">Sekolah</th>
+              {data.columns.map((c) => (
+                <th key={c.key} className="px-3 py-2">{c.label}</th>
+              ))}
+              <th className="px-3 py-2">Benar</th>
+              <th className="px-3 py-2">Skor</th>
+              <th className="px-3 py-2">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.map((r, i) => (
+              <tr key={r.studentId} className="border-b last:border-0 hover:bg-muted/50">
+                <td className="px-3 py-2">{i + 1}</td>
+                <td className="px-3 py-2 font-medium">{r.name}</td>
+                <td className="px-3 py-2">{r.school}</td>
+                {r.cells.map((c, j) => (
+                  <td key={j} className="px-3 py-2 tabular-nums">{c.score}/{c.maxScore}</td>
+                ))}
+                <td className="px-3 py-2 tabular-nums">{r.totalCorrect}</td>
+                <td className="px-3 py-2 tabular-nums font-semibold">{r.totalScore}/{r.maxScore}</td>
+                <td className="px-3 py-2 tabular-nums">{r.percentage}%</td>
+              </tr>
+            ))}
+            {data.rows.length === 0 ? (
+              <tr><td colSpan={4 + data.columns.length} className="px-3 py-6 text-center text-muted-foreground">Belum ada attempt.</td></tr>
+            ) : null}
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AnswerRecapTable({ data }: { data: AnswerRecapData }) {
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader>
+        <CardTitle className="text-base">Rekap Jawaban — {data.exam.title}</CardTitle>
+        <CardDescription>{data.exam.levelName ?? '-'} · {data.exam.subjectName ?? '-'} · {data.participantCount} peserta</CardDescription>
+      </CardHeader>
+      <CardContent className="overflow-x-auto p-0">
+        <table className="w-full text-left text-xs">
+          <thead>
+            <tr className="border-b bg-muted">
+              <th className="px-3 py-2 sticky left-0 bg-muted">No</th>
+              <th className="px-3 py-2 sticky left-0 bg-muted min-w-[140px]">Nama</th>
+              {data.questions.map((q) => (
+                <th key={q.questionId} className="px-3 py-2 text-center">{q.no}<br/><span className="text-[10px] text-muted-foreground">({q.key})</span></th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.map((r, i) => (
+              <tr key={r.studentId} className="border-b last:border-0 hover:bg-muted/50">
+                <td className="px-3 py-2 sticky left-0 bg-background">{i + 1}</td>
+                <td className="px-3 py-2 sticky left-0 bg-background font-medium min-w-[140px]">{r.name}</td>
+                {r.answers.map((a, j) => (
+                  <td
+                    key={j}
+                    className={`px-2 py-2 text-center tabular-nums ${
+                      a.isCorrect === true ? 'bg-green-50 text-green-700' : a.isCorrect === false ? 'bg-red-50 text-red-700' : ''
+                    }`}
+                  >
+                    {a.display}
+                  </td>
+                ))}
+              </tr>
+            ))}
+            {data.rows.length === 0 ? (
+              <tr><td colSpan={2 + data.questions.length} className="px-3 py-6 text-center text-muted-foreground">Belum ada attempt.</td></tr>
+            ) : null}
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
+  );
 }
 
 /** Ringkasan per ujian dihitung dari analisis soalnya. */
@@ -95,6 +250,7 @@ export function AdminAcademicAnalytics() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState<"score" | "answer" | null>("score");
 
   const programsQ = useQuery({
     queryKey: ['programs-options'],
@@ -123,6 +279,18 @@ export function AdminAcademicAnalytics() {
       ),
   });
 
+  const scoreQ = useQuery({
+    queryKey: ['exam-score-recap', selectedExamId],
+    queryFn: () => apiFetch<ScoreRecapData>(`/analytics/exam/${selectedExamId}/score-recap`),
+    enabled: !!selectedExamId && activeTab === 'score',
+  });
+
+  const answerQ = useQuery({
+    queryKey: ['exam-answer-recap', selectedExamId],
+    queryFn: () => apiFetch<AnswerRecapData>(`/analytics/exam/${selectedExamId}/answer-recap`),
+    enabled: !!selectedExamId && activeTab === 'answer',
+  });
+
   if (analyticsQ.isLoading) {
     return (
       <div className="flex flex-col gap-4">
@@ -149,25 +317,6 @@ export function AdminAcademicAnalytics() {
   const selectedExam =
     data?.examAnalytics.find((e) => e.examId === selectedExamId) ?? null;
 
-  /** Buka dokumen cetak HTML di tab baru / unduh xlsx. */
-  async function openPrint(path: string, downloadName?: string) {
-    try {
-      const blob = await apiFetchBlob(path);
-      const url = URL.createObjectURL(blob);
-      if (downloadName) {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = downloadName;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 30_000);
-      } else {
-        window.open(url, "_blank", "noopener");
-      }
-    } catch (e) {
-      toast.error(err(e, "Gagal membuka dokumen."));
-    }
-  }
-
   // ---- Tampilan detail: analisis soal untuk satu ujian ----
   if (selectedExam) {
     const summary = examSummary(selectedExam);
@@ -191,58 +340,90 @@ export function AdminAcademicAnalytics() {
               {summary.questions} soal · {summary.attempts} attempt · akurasi rata-rata {summary.avgAccuracy.toFixed(1)}%
             </p>
           </div>
-          <Badge variant={accuracyVariant(summary.avgAccuracy)} className="text-sm">
-            Akurasi {summary.avgAccuracy.toFixed(1)}%
-          </Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openPrintDoc(`/analytics/exam/${selectedExam.examId}/print?part=questions`)}
+            >
+              <Printer className="mr-1.5 size-4" /> Cetak Soal
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openPrintDoc(`/analytics/exam/${selectedExam.examId}/print?part=questions&key=1`)}
+            >
+              <FileCheck2 className="mr-1.5 size-4" /> Kunci Jawaban
+            </Button>
+            <Badge variant={accuracyVariant(summary.avgAccuracy)} className="text-sm">
+              Akurasi {summary.avgAccuracy.toFixed(1)}%
+            </Badge>
+          </div>
         </div>
 
-        {/* Rekap & cetak — format mengikuti laporan hasil TO (PDF referensi). */}
-        <div className="flex flex-wrap gap-2 rounded-xl border p-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => openPrint(`/analytics/exam/${selectedExam.examId}/print?part=scores`)}
-          >
-            <Printer className="size-4" /> Rekap Nilai (cetak/PDF)
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => openPrint(`/analytics/exam/${selectedExam.examId}/print?part=answers`)}
-          >
-            <Printer className="size-4" /> Rekap Jawaban Siswa (cetak/PDF)
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => openPrint(`/analytics/exam/${selectedExam.examId}/print?part=questions`)}
-          >
-            <Printer className="size-4" /> Cetak Soal
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              openPrint(
-                `/analytics/exam/${selectedExam.examId}/score-recap.xlsx`,
-                `rekap-nilai-${selectedExam.examTitle.replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase()}.xlsx`,
-              )
-            }
-          >
-            <FileSpreadsheet className="size-4" /> Rekap Nilai — Excel
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              openPrint(
-                `/analytics/exam/${selectedExam.examId}/answer-recap.xlsx`,
-                `rekap-jawaban-${selectedExam.examTitle.replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase()}.xlsx`,
-              )
-            }
-          >
-            <FileSpreadsheet className="size-4" /> Rekap Jawaban — Excel
-          </Button>
+        {/* Rekap — tampil langsung di halaman + unduh Excel/cetak PDF. */}
+        <div className="flex flex-col gap-3 rounded-xl border p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant={activeTab === 'score' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setActiveTab('score')}
+            >
+              Rekap Nilai
+            </Button>
+            <Button
+              variant={activeTab === 'answer' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setActiveTab('answer')}
+            >
+              Rekap Jawaban
+            </Button>
+            <div className="ml-auto flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  downloadBlob(
+                    `/analytics/exam/${selectedExam.examId}/${activeTab === 'score' ? 'score' : 'answer'}-recap.xlsx`,
+                    `rekap-${activeTab === 'score' ? 'nilai' : 'jawaban'}-${selectedExam.examTitle}.xlsx`,
+                  )
+                }
+              >
+                <FileDown className="mr-1.5 size-4" /> Excel
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  openPrintDoc(
+                    `/analytics/exam/${selectedExam.examId}/print?part=${activeTab === 'score' ? 'scores' : 'answers'}`,
+                  )
+                }
+              >
+                <Printer className="mr-1.5 size-4" /> Cetak / PDF
+              </Button>
+            </div>
+          </div>
+
+          {activeTab === 'score' ? (
+            scoreQ.isLoading ? (
+              <Skeleton className="h-40 w-full" />
+            ) : scoreQ.isError ? (
+              <p className="text-sm text-destructive">Gagal memuat rekap nilai.</p>
+            ) : scoreQ.data ? (
+              <ScoreRecapTable data={scoreQ.data} />
+            ) : null
+          ) : null}
+
+          {activeTab === 'answer' ? (
+            answerQ.isLoading ? (
+              <Skeleton className="h-40 w-full" />
+            ) : answerQ.isError ? (
+              <p className="text-sm text-destructive">Gagal memuat rekap jawaban.</p>
+            ) : answerQ.data ? (
+              <AnswerRecapTable data={answerQ.data} />
+            ) : null
+          ) : null}
         </div>
 
         {selectedExam.questionAnalytics.length === 0 ? (

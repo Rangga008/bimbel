@@ -268,7 +268,7 @@ export function PayrollManager({ canManage }: { canManage: boolean }) {
 
               {/* Desktop: tabel dengan sticky header, sortable, hover */}
               <div className="hidden max-h-[65vh] overflow-auto rounded-xl border md:block">
-                <table className="w-full text-sm">
+                <table className="w-full min-w-[720px] text-sm">
                   <thead className="sticky top-0 z-10">
                     <tr className="border-b bg-muted">
                       <th className={th}>No.</th>

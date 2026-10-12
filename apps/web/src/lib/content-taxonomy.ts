@@ -163,10 +163,13 @@ export function applyDrill<T extends TaxonomyItem>(
   const gradeOf = (levelId?: string) =>
     levelId ? tingkatCode(levels?.find((l) => l.id === levelId)) : undefined;
   return items.filter((i) => {
-    if (d.gradeLevelId === DRILL_NONE && gradeOf(i.level?.id)) return false;
+    const g = gradeOf(i.level?.id);
+    if (d.gradeLevelId === DRILL_NONE && g) return false;
+    // Jenjang tanpa tingkat (Extra/Privat) bersifat lintas tingkat — jangan
+    // disaring keluar saat tingkat spesifik dipilih.
     if (
       d.gradeLevelId !== DRILL_ALL && d.gradeLevelId !== DRILL_NONE &&
-      d.gradeLevelId && gradeOf(i.level?.id) !== d.gradeLevelId
+      d.gradeLevelId && g && g !== d.gradeLevelId
     ) return false;
     if (d.levelId === DRILL_NONE && i.level) return false;
     if (d.levelId !== DRILL_ALL && d.levelId !== DRILL_NONE && d.levelId && i.level?.id !== d.levelId) return false;

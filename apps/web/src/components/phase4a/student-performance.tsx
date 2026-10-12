@@ -1,11 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { CategoryProgressChart, type CategoryProgressData } from "@/components/shared/category-progress-chart";
-import { LearningReportButton } from "@/components/shared/learning-report-button";
 
 function err(e: unknown, fb: string) {
   return e instanceof ApiError ? e.message : fb;
@@ -48,7 +48,22 @@ interface StudentPerformanceData {
   overallStats: OverallStats;
 }
 
+const PERIOD_DAYS: Record<string, number | null> = {
+  all: null,
+  "30": 30,
+  "90": 90,
+};
+
+const WEAKNESS_OPTS = [
+  { value: "", label: "Semua Topik" },
+  { value: "WEAK", label: "Lemah" },
+  { value: "AVERAGE", label: "Cukup" },
+  { value: "STRONG", label: "Kuat" },
+];
+
 export function StudentPerformance() {
+  const [period, setPeriod] = useState("all");
+  const [weakness, setWeakness] = useState("");
   const performanceQ = useQuery({
     queryKey: ['analytics-my-performance'],
     queryFn: () => apiFetch<StudentPerformanceData>('/analytics/my-performance'),
@@ -89,6 +104,15 @@ export function StudentPerformance() {
     }
   };
 
+  const periodDays = PERIOD_DAYS[period] ?? null;
+  const cutoff = periodDays ? Date.now() - periodDays * 86400_000 : null;
+  const examHistory = cutoff
+    ? data.examHistory.filter((e) => new Date(e.examDate).getTime() >= cutoff)
+    : data.examHistory;
+  const topics = weakness
+    ? data.topicAnalysis.filter((t) => t.weaknessLevel === weakness)
+    : data.topicAnalysis;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -96,7 +120,16 @@ export function StudentPerformance() {
           <h1 className="text-3xl font-bold">Performa Saya</h1>
           <p className="text-muted-foreground">Analisis performa akademik Anda</p>
         </div>
-        <LearningReportButton endpoint="/analytics/my-learning-report/print" />
+        <select
+          value={period}
+          onChange={(e) => setPeriod(e.target.value)}
+          className="h-9 rounded-md border bg-background px-3 text-sm"
+          aria-label="Periode riwayat"
+        >
+          <option value="all">Semua periode</option>
+          <option value="30">30 hari terakhir</option>
+          <option value="90">90 hari terakhir</option>
+        </select>
       </div>
 
       {/* Overall Statistics */}
@@ -147,28 +180,35 @@ export function StudentPerformance() {
           <CardDescription>Tren nilai Anda dari waktu ke waktu</CardDescription>
         </CardHeader>
         <CardContent>
-          {data.examHistory.length === 0 ? (
+          {examHistory.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              Belum ada riwayat ujian
+              {data.examHistory.length === 0
+                ? "Belum ada riwayat ujian"
+                : "Tidak ada ujian pada periode ini"}
             </div>
           ) : (
-            <div className="space-y-4">
-              {data.examHistory.map((exam) => (
-                <div
-                  key={exam.examId}
-                  className="flex items-center justify-between p-4 border rounded-lg"
-                >
-                  <div>
-                    <div className="font-medium">{exam.examTitle}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {new Date(exam.examDate).toLocaleDateString("id-ID")}
+            <div className="space-y-3">
+              {examHistory.map((exam) => (
+                <div key={exam.examId} className="rounded-lg border p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{exam.examTitle}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {new Date(exam.examDate).toLocaleDateString("id-ID")}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="text-lg font-bold tabular-nums">{exam.percentage.toFixed(1)}%</div>
+                      <div className="text-xs text-muted-foreground tabular-nums">
+                        {exam.score} / {exam.maxScore}
+                      </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold">{exam.percentage.toFixed(1)}%</div>
-                    <div className="text-sm text-muted-foreground">
-                      {exam.score} / {exam.maxScore}
-                    </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-brand-blue-600 transition-all"
+                      style={{ width: `${Math.min(100, Math.max(0, exam.percentage))}%` }}
+                    />
                   </div>
                 </div>
               ))}
@@ -194,38 +234,55 @@ export function StudentPerformance() {
 
       {/* Topic Analysis */}
       <Card>
-        <CardHeader>
-          <CardTitle>Analisis Topik</CardTitle>
-          <CardDescription>Identifikasi topik kuat dan lemah berdasarkan tingkat kesulitan</CardDescription>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle>Analisis Topik</CardTitle>
+            <CardDescription>Identifikasi topik kuat dan lemah berdasarkan tingkat kesulitan</CardDescription>
+          </div>
+          <select
+            value={weakness}
+            onChange={(e) => setWeakness(e.target.value)}
+            className="h-9 w-full rounded-md border bg-background px-3 text-sm sm:w-44"
+            aria-label="Filter tingkat topik"
+          >
+            {WEAKNESS_OPTS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
         </CardHeader>
         <CardContent>
-          {data.topicAnalysis.length === 0 ? (
+          {topics.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              Belum ada data analisis topik
+              {data.topicAnalysis.length === 0
+                ? "Belum ada data analisis topik"
+                : "Tidak ada topik pada tingkat ini"}
             </div>
           ) : (
-            <div className="space-y-4">
-              {data.topicAnalysis.map((topic) => (
-                <div
-                  key={topic.topicName}
-                  className="flex items-center justify-between p-4 border rounded-lg"
-                >
-                  <div className="flex-1">
-                    <div className="font-medium">{topic.topicName}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {topic.totalQuestions} soal • {topic.correctCount} benar
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <div className="text-2xl font-bold">{topic.accuracy.toFixed(1)}%</div>
-                      <div className="text-sm text-muted-foreground">
-                        Avg: {topic.avgScore.toFixed(1)}
+            <div className="space-y-3">
+              {topics.map((topic) => (
+                <div key={topic.topicName} className="rounded-lg border p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">{topic.topicName}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {topic.totalQuestions} soal • {topic.correctCount} benar • Avg {topic.avgScore.toFixed(1)}
                       </div>
                     </div>
                     <Badge className={getWeaknessColor(topic.weaknessLevel)}>
-                      {topic.weaknessLevel}
+                      {topic.accuracy.toFixed(0)}%
                     </Badge>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        topic.weaknessLevel === 'STRONG'
+                          ? 'bg-emerald-500'
+                          : topic.weaknessLevel === 'AVERAGE'
+                            ? 'bg-amber-500'
+                            : 'bg-red-500'
+                      }`}
+                      style={{ width: `${Math.min(100, Math.max(0, topic.accuracy))}%` }}
+                    />
                   </div>
                 </div>
               ))}

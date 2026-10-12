@@ -7,6 +7,7 @@ import { apiFetch } from '@/lib/api-client';
 import { SessionCalendar } from '@/components/shared/session-calendar';
 import type { GroupListItem } from '@/lib/phase1b-types';
 import { SessionOverrideBox } from '@/components/phase1c/session-override-box';
+import { TutorWeeklyReminder } from '@/components/phase1c/tutor-weekly-reminder';
 
 /** Kalender sesi konkret + override per-siswa (admin). Klik tanggal, lalu klik sesi untuk mengatur susulan 1 siswa. */
 export function SessionsManager({
@@ -35,13 +36,16 @@ export function SessionsManager({
   const groupsQ = useQuery({ queryKey: ['groups'], queryFn: () => apiFetch<GroupListItem[]>('/groups') });
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h2 className="text-xl font-semibold tracking-tight">Sesi Konkret</h2>
-        <p className="text-sm text-muted-foreground">
-          {canManage
-            ? 'Klik tanggal untuk menugaskan tutor/mapel/ruangan atau membuat sesi baru; ikon detail untuk absensi & susulan per-siswa.'
-            : 'Klik tanggal di kalender untuk melihat sesi hari itu.'}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight">Sesi Konkret</h2>
+          <p className="text-sm text-muted-foreground">
+            {canManage
+              ? 'Klik tanggal untuk menugaskan tutor/mapel/ruangan atau membuat sesi baru; ikon detail untuk absensi & susulan per-siswa.'
+              : 'Klik tanggal di kalender untuk melihat sesi hari itu.'}
+          </p>
+        </div>
+        {canManage ? <TutorWeeklyReminder /> : null}
       </div>
       {!hideGroupFilter ? (
         <div className="flex flex-col gap-1.5">
