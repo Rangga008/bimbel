@@ -111,6 +111,7 @@ export class ExamAttemptsService {
           select: {
             id: true,
             title: true,
+            status: true,
             scheduledStartAt: true,
             scheduledEndAt: true,
             proctoringEnabled: true,
@@ -122,9 +123,11 @@ export class ExamAttemptsService {
       throw new NotFoundException('Attempt tidak ditemukan.');
     }
 
-    // Fase 3e: Cek apakah result sudah boleh dirilis
+    // Fase 3e: hasil dirilis saat jadwal berakhir ATAU pengawas mengakhiri
+    // ujian lebih awal (status ENDED).
     const now = new Date();
-    const isResultReleased = now >= attempt.exam.scheduledEndAt;
+    const isResultReleased =
+      attempt.exam.status === 'ENDED' || now >= attempt.exam.scheduledEndAt;
     const reveal = attempt.status === 'SUBMITTED' && isResultReleased;
 
     // Sudah terkumpul tapi hasil belum dirilis: soal & jawaban disembunyikan
@@ -336,7 +339,10 @@ export class ExamAttemptsService {
     // tidak boleh menggagalkan submit yang sudah final).
     await this.safeAwardExamPoints(attemptId);
 
-    return this.prisma.examAttempt.findUnique({ where: { id: attemptId } });
+    // Kembalikan detail penuh (exam + items + jawaban) — client menimpa
+    // cache attempt dengan respons ini; payload tanpa relasi membuat
+    // halaman attempt crash saat render (exam.proctoringEnabled dll.).
+    return this.getAttemptDetail(userId, attemptId);
   }
 
   /**
@@ -589,6 +595,7 @@ export class ExamAttemptsService {
           select: {
             id: true,
             title: true,
+            status: true,
             scheduledEndAt: true,
           },
         },
@@ -596,14 +603,20 @@ export class ExamAttemptsService {
       orderBy: { startedAt: 'desc' },
     });
 
-    // Fase 3e: Cek result release untuk setiap attempt
+    // Fase 3e: Cek result release untuk setiap attempt. Ujian yang
+    // diakhiri manual pengawas (ENDED) langsung merilis hasil — tidak
+    // menunggu scheduledEndAt.
     const now = new Date();
-    return attempts.map((attempt) => ({
-      ...attempt,
-      resultReleased: now >= attempt.exam.scheduledEndAt,
-      // Jika belum dirilis, sembunyikan skor
-      score: now >= attempt.exam.scheduledEndAt ? attempt.score : null,
-    }));
+    return attempts.map((attempt) => {
+      const released =
+        attempt.exam.status === 'ENDED' || now >= attempt.exam.scheduledEndAt;
+      return {
+        ...attempt,
+        resultReleased: released,
+        // Jika belum dirilis, sembunyikan skor
+        score: released ? attempt.score : null,
+      };
+    });
   }
 
   /**

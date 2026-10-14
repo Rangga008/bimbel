@@ -189,7 +189,7 @@ export function DrillQuickFilter({
             ? true
             : value.gradeLevelId === DRILL_NONE
               ? !tingkatCode(l)
-              : !tingkatCode(l) || tingkatCode(l) === value.gradeLevelId,
+              : tingkatCode(l) === value.gradeLevelId,
         ),
       ).map((l) => ({ id: l.id, name: l.name }))
     : drillBuckets(items, 'level')
@@ -407,9 +407,9 @@ export function ContentDrilldown({
   const gradeMatch = (l: HierarchyLevel) =>
     value.gradeLevelId === DRILL_ALL ? true
     : value.gradeLevelId === DRILL_NONE ? !tingkatCode(l)
-    // Jenjang tanpa tingkat (Extra/Privat) lintas tingkat — tetap tampil
-    // di tingkat mana pun yang dipilih.
-    : !tingkatCode(l) || tingkatCode(l) === value.gradeLevelId;
+    // Jenjang tanpa tingkat (Extra/Privat) masuk bucket "Lainnya" —
+    // tidak ikut saat tingkat spesifik (SD/SMP/…) dipilih.
+    : tingkatCode(l) === value.gradeLevelId;
   const gradeBuckets = () => {
     const map = new Map<string, { id: string; name: string; sub?: string; count: number; sort: number }>();
     for (const l of levels!) {

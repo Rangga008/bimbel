@@ -165,11 +165,12 @@ export function applyDrill<T extends TaxonomyItem>(
   return items.filter((i) => {
     const g = gradeOf(i.level?.id);
     if (d.gradeLevelId === DRILL_NONE && g) return false;
-    // Jenjang tanpa tingkat (Extra/Privat) bersifat lintas tingkat — jangan
-    // disaring keluar saat tingkat spesifik dipilih.
+    // Tingkat spesifik: hanya item berjenjang di tingkat itu. Item di
+    // jenjang tanpa tingkat (Extra/Privat) dikelompokkan di tingkat
+    // "Lainnya" — tidak ikut muncul saat SD/SMP/… dipilih.
     if (
       d.gradeLevelId !== DRILL_ALL && d.gradeLevelId !== DRILL_NONE &&
-      d.gradeLevelId && g && g !== d.gradeLevelId
+      d.gradeLevelId && g !== d.gradeLevelId
     ) return false;
     if (d.levelId === DRILL_NONE && i.level) return false;
     if (d.levelId !== DRILL_ALL && d.levelId !== DRILL_NONE && d.levelId && i.level?.id !== d.levelId) return false;

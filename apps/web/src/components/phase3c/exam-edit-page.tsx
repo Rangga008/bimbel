@@ -89,7 +89,9 @@ function ExamEditForm({
         proctoringEnabled: form.proctoringEnabled,
         notes: form.notes || undefined,
         questionIds: form.questionIds,
-        status: form.status,
+        // Status dikirim hanya bila berubah — mengirim status ENDED/LOCKED
+        // apa adanya memicu validasi transisi di server.
+        status: form.status !== initial.status ? form.status : undefined,
       };
       return apiFetch(`/exams/${examId}`, { method: 'PATCH', body });
     },

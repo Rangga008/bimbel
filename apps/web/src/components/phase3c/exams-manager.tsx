@@ -272,6 +272,11 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
                       </Button>
                     </>
                   )}
+                  {canManage && (exam.status === 'LOCKED' || exam.status === 'ENDED') && (
+                    <Button size="sm" variant="outline" onClick={() => router.push(`${basePath}/${exam.id}/edit${drillQuery(drill)}`)}>
+                      <Settings2 /> Kelola
+                    </Button>
+                  )}
                 </div>
               </div>
             </CardHeader>

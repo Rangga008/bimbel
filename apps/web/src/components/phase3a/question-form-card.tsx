@@ -234,7 +234,7 @@ export function QuestionFormCard({
           />
           <Phase1aSelectField
             id={`q-${index}-level`}
-            label="Jenjang"
+            label="Jenjang *"
             value={draft.levelId}
             onChange={(v) => {
               const lvl = levels.find((l) => l.id === v);
@@ -249,14 +249,14 @@ export function QuestionFormCard({
           />
           <Phase1aSelectField
             id={`q-${index}-subject`}
-            label="Mapel"
+            label="Mapel *"
             value={draft.subjectId}
             onChange={(v) => onChange({ ...draft, subjectId: v })}
             options={subjectOptions}
           />
           <Phase1aSelectField
             id={`q-${index}-category`}
-            label="Tipe"
+            label="Tipe *"
             value={draft.category}
             onChange={(v) => onChange({ ...draft, category: v })}
             options={categoryOptions(catsQ.data)}

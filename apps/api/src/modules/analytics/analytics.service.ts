@@ -591,9 +591,9 @@ export class AnalyticsService {
     });
     const catName = new Map(catDefs.map((c) => [c.code, c.name]));
 
-    const attempts = await this.prisma.examAttempt.findMany({
+    const rawAttempts = await this.prisma.examAttempt.findMany({
       where: { examId, status: 'SUBMITTED' },
-      orderBy: { score: 'desc' },
+      orderBy: { submittedAt: 'desc' },
       include: {
         answers: true,
         student: {
@@ -608,6 +608,15 @@ export class AnalyticsService {
         },
       },
     });
+    // Satu siswa satu baris — bila ada >1 attempt SUBMITTED (mis. attempt
+    // terkunci lalu mengerjakan ulang), pakai yang terakhir dikumpulkan.
+    const seen = new Set<string>();
+    const attempts = rawAttempts.filter((a) => {
+      if (seen.has(a.studentId)) return false;
+      seen.add(a.studentId);
+      return true;
+    });
+    attempts.sort((a, b) => b.score - a.score);
 
     return { exam, attempts, catName };
   }

@@ -175,7 +175,7 @@ export function QuestionPicker({
         <div className="flex flex-col gap-1.5">
           <Phase1aSelectField
             id="qp-level"
-            label="Jenjang (opsional)"
+            label="Jenjang *"
             value={filters.levelId}
             onChange={(v) => {
               const lvl = levels.find((l) => l.id === v);

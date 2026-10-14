@@ -282,12 +282,15 @@ export class ExamsService {
     if (dto.status === 'LOCKED' && exam.status !== 'PUBLISHED') {
       throw new BadRequestException('Hanya ujian PUBLISHED yang bisa di-LOCKED.');
     }
+    // Ujian LOCKED/ENDED tetap bisa diedit kontennya (judul, jadwal, soal)
+    // — yang dilarang hanya transisi status keluar dari LOCKED/ENDED.
     if (
       (exam.status === 'LOCKED' || exam.status === 'ENDED') &&
+      dto.status &&
       dto.status !== exam.status
     ) {
       throw new BadRequestException(
-        'Ujian yang sudah LOCKED/ENDED tidak bisa diubah.',
+        'Ujian yang sudah LOCKED/ENDED tidak bisa diubah statusnya.',
       );
     }
 

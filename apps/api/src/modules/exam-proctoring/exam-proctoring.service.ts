@@ -130,21 +130,33 @@ export class ExamProctoringService {
         : null;
 
     const groupedStudentIds = new Set<string>();
+    // Siswa yang tergabung di >1 kelompok eligible hanya ditampilkan satu
+    // kali — kelompok pertama yang cocok (kelompok sejenjang diprioritaskan
+    // karena diurutkan sebelum extraGroups).
+    const seenStudentIds = new Set<string>();
     const groups = [...levelGroups, ...extraGroups].map((g) => {
-      const members = g.members.map((m) => {
+      const members: {
+        studentId: string;
+        name: string;
+        email: string;
+        attempt: ReturnType<typeof mapAttempt>;
+      }[] = [];
+      for (const m of g.members) {
+        if (seenStudentIds.has(m.studentId)) continue;
+        seenStudentIds.add(m.studentId);
         groupedStudentIds.add(m.studentId);
-        return {
+        members.push({
           studentId: m.studentId,
           name: m.student.user.name,
           email: m.student.user.email,
           attempt: mapAttempt(attemptByStudent.get(m.studentId)),
-        };
-      });
+        });
+      }
       members.sort((a, b) => a.name.localeCompare(b.name, 'id'));
       return { id: g.id, name: g.name, members };
     });
 
-    const ungrouped = attempts
+    const ungrouped = [...attemptByStudent.values()]
       .filter((a) => !groupedStudentIds.has(a.studentId))
       .map((a) => ({
         studentId: a.studentId,

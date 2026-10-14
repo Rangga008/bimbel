@@ -171,7 +171,13 @@ export function ExamForm({
             rows={2}
           />
         </div>
-        {showStatus && (
+        {showStatus && form.status === 'ENDED' && (
+          <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+            Ujian sudah berakhir (ENDED) — status tidak bisa diubah, tetapi
+            judul, jadwal, dan susunan soal masih bisa diperbarui.
+          </p>
+        )}
+        {showStatus && form.status !== 'ENDED' && (
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="ex-status">Status</Label>
             <select
