@@ -71,7 +71,7 @@ export default function DaftarPage() {
 				method: "POST",
 				body: {
 					name,
-					email,
+					email: email.trim() || undefined,
 					phone,
 					password,
 				},
@@ -131,23 +131,7 @@ export default function DaftarPage() {
 						</div>
 						<div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
 							<div className="flex flex-col gap-1.5">
-								<Label htmlFor="email">Email</Label>
-								<div className="relative">
-									<Mail className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-									<Input
-										id="email"
-										type="email"
-										autoComplete="email"
-										placeholder="nama@email.com"
-										className="pl-9"
-										required
-										value={email}
-										onChange={(e) => setEmail(e.target.value)}
-									/>
-								</div>
-							</div>
-							<div className="flex flex-col gap-1.5">
-								<Label htmlFor="phone">No. HP / WhatsApp</Label>
+								<Label htmlFor="phone">No. HP / WhatsApp *</Label>
 								<div className="relative">
 									<Phone className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
 									<Input
@@ -163,9 +147,24 @@ export default function DaftarPage() {
 									/>
 								</div>
 							</div>
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="email">Email <span className="font-normal text-muted-foreground">(opsional)</span></Label>
+								<div className="relative">
+									<Mail className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+									<Input
+										id="email"
+										type="email"
+										autoComplete="email"
+										placeholder="nama@email.com"
+										className="pl-9"
+										value={email}
+										onChange={(e) => setEmail(e.target.value)}
+									/>
+								</div>
+							</div>
 						</div>
 						<p className="-mt-2 text-xs text-muted-foreground">
-							No. HP bisa dipakai untuk masuk &amp; notifikasi WhatsApp.
+							No. HP dipakai untuk masuk &amp; notifikasi WhatsApp — email boleh dikosongkan.
 						</p>
 						<div className="flex flex-col gap-1.5">
 							<Label htmlFor="password">Kata Sandi</Label>

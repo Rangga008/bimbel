@@ -20,7 +20,11 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useBranding } from "@/lib/use-branding";
-import { programSlug, useLanding } from "@/lib/landing";
+import {
+	DEFAULT_REGISTRATION_URL,
+	programSlug,
+	useLanding,
+} from "@/lib/landing";
 
 const NAV_LINKS = [
 	{ href: "/#beranda", label: "Beranda" },
@@ -37,6 +41,8 @@ export function SiteHeader() {
 	const branding = useBranding();
 	const landingQ = useLanding();
 	const programs = landingQ.data?.catalog ?? [];
+	const regUrl =
+		landingQ.data?.display?.registrationUrl || DEFAULT_REGISTRATION_URL;
 
 	const programMenu = (
 		<DropdownMenu>
@@ -104,19 +110,12 @@ export function SiteHeader() {
 						</Link>
 					))}
 				</nav>
-				<div className="ml-2 hidden items-center gap-2 lg:flex">
+				<div className="ml-2 hidden items-center gap-3 lg:flex">
 					<Button
-						variant="outline"
-						render={<Link href="/login" />}
-						className="border-white/30 bg-white/5 text-white hover:bg-white/15 hover:text-white"
-					>
-						Masuk
-					</Button>
-					<Button
-						render={<Link href="/daftar" />}
+						render={<a href={regUrl} target="_blank" rel="noopener noreferrer" />}
 						className="gap-2 bg-brand-gold-400 text-brand-blue-900 hover:bg-brand-gold-300"
 					>
-						Daftar
+						Info &amp; Pendaftaran
 						<ArrowRight className="size-4" />
 					</Button>
 				</div>
@@ -165,14 +164,13 @@ export function SiteHeader() {
 								</SheetClose>
 							))}
 							<div className="mt-4 flex flex-col gap-2">
-								<SheetClose render={<Link href="/daftar" />}>
+								<SheetClose
+									render={
+										<a href={regUrl} target="_blank" rel="noopener noreferrer" />
+									}
+								>
 									<span className="block rounded-lg bg-brand-gold-400 px-3 py-2.5 text-center text-sm font-semibold text-brand-blue-900">
-										Daftar Sekarang
-									</span>
-								</SheetClose>
-								<SheetClose render={<Link href="/login" />}>
-									<span className="block rounded-lg border px-3 py-2.5 text-center text-sm font-medium">
-										Masuk
+										Info &amp; Pendaftaran (Formulir)
 									</span>
 								</SheetClose>
 							</div>

@@ -17,7 +17,7 @@ export class PublicController {
 
   @Get('landing')
   async landing() {
-    const [students, tutors, programCount, packageCount, catalog, rooms, buildings, pkgGroups] =
+    const [students, tutors, programCount, packageCount, catalog, rooms, buildings, pkgGroups, displayRow] =
       await Promise.all([
         this.prisma.student.count({ where: { isActive: true } }),
         this.prisma.tutor.count({ where: { isActive: true } }),
@@ -45,6 +45,8 @@ export class PublicController {
           where: { packageId: { not: null } },
           select: { packageId: true, _count: { select: { members: true } } },
         }),
+        // Pengaturan tampilan landing — foto hero + link formulir pendaftaran.
+        this.prisma.appSetting.findUnique({ where: { key: 'display' } }),
       ]);
 
     const pkgStudents = new Map<string, number>();
@@ -66,6 +68,7 @@ export class PublicController {
       })),
     }));
 
+    const displayVal = (displayRow?.value ?? {}) as Record<string, unknown>;
     return {
       stats: {
         students,
@@ -82,6 +85,16 @@ export class PublicController {
         buildingName: r.building?.name ?? null,
       })),
       locations: buildings,
+      display: {
+        heroImages: Array.isArray(displayVal.heroImages)
+          ? displayVal.heroImages
+          : [],
+        registrationUrl:
+          typeof displayVal.registrationUrl === 'string' &&
+          displayVal.registrationUrl
+            ? displayVal.registrationUrl
+            : 'https://s.id/info-daftarGFS2627',
+      },
     };
   }
 

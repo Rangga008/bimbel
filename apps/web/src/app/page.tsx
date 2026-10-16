@@ -51,6 +51,7 @@ import { ROLE_KEY_BY_BACKEND_NAME } from "@/config/role-nav";
 import { SiteHeader } from "@/components/public/site-header";
 import { SiteFooter } from "@/components/public/site-footer";
 import {
+	DEFAULT_REGISTRATION_URL,
 	fmtIDR,
 	programSlug,
 	useLanding,
@@ -74,6 +75,72 @@ const PROGRAM_ICONS: Record<string, typeof GraduationCap> = {
 	EXT: Sparkles,
 	PRV: Users,
 };
+
+/** Slider foto hero (foto-foto siswa) — gambar diatur admin di
+ *  Pengaturan > Tampilan Landing. Auto-rotate + navigasi manual. */
+function HeroPhotoSlider({ images }: { images: string[] }) {
+	const [active, setActive] = useState(0);
+	const count = images.length;
+
+	useEffect(() => {
+		if (count < 2) return;
+		const t = setInterval(() => setActive((a) => (a + 1) % count), 4500);
+		return () => clearInterval(t);
+	}, [count]);
+
+	const go = (dir: number) => setActive((a) => (a + dir + count) % count);
+
+	return (
+		<div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl border border-white/15 shadow-2xl">
+			{images.map((src, i) => (
+				<Image
+					key={src}
+					src={resolveAssetUrl(src)}
+					alt={`Foto siswa ${i + 1}`}
+					fill
+					className={`object-cover transition-opacity duration-700 ${i === active ? "opacity-100" : "opacity-0"}`}
+					unoptimized
+					priority={i === 0}
+				/>
+			))}
+			<div
+				aria-hidden
+				className="absolute inset-0 bg-gradient-to-t from-brand-blue-900/60 via-transparent to-transparent"
+			/>
+			{count > 1 ? (
+				<>
+					<div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 gap-1.5">
+						{images.map((_, i) => (
+							<button
+								key={i}
+								type="button"
+								aria-label={`Foto ${i + 1}`}
+								onClick={() => setActive(i)}
+								className={`h-1.5 rounded-full transition-all ${i === active ? "w-6 bg-brand-gold-400" : "w-1.5 bg-white/50"}`}
+							/>
+						))}
+					</div>
+					<button
+						type="button"
+						aria-label="Foto sebelumnya"
+						onClick={() => go(-1)}
+						className="absolute top-1/2 left-2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors hover:bg-black/60"
+					>
+						<ChevronLeft className="size-4" />
+					</button>
+					<button
+						type="button"
+						aria-label="Foto berikutnya"
+						onClick={() => go(1)}
+						className="absolute top-1/2 right-2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors hover:bg-black/60"
+					>
+						<ChevronRight className="size-4" />
+					</button>
+				</>
+			) : null}
+		</div>
+	);
+}
 
 const PROGRAM_TAGLINE: Record<string, string> = {
 	REG: "Kelas reguler multi-mapel per jenjang — belajar rutin bareng teman sekelas.",
@@ -124,9 +191,9 @@ const BENEFITS = [
 const REGISTER_STEPS = [
 	{
 		icon: UserPlus,
-		title: "Buat Akun Orang Tua",
+		title: "Isi Formulir Pendaftaran",
 		description:
-			"Daftar online lewat tombol Daftar — bisa juga datang langsung ke kantor GFS untuk dibantu.",
+			"Isi formulir info & pendaftaran (buku tamu) lewat tombol Info & Pendaftaran — bisa juga datang langsung ke kantor GFS untuk dibantu.",
 	},
 	{
 		icon: ClipboardList,
@@ -313,6 +380,9 @@ export default function LandingPage() {
 	const stats = landingQ.data?.stats;
 	const facilities = landingQ.data?.facilities ?? [];
 	const programs = landingQ.data?.catalog ?? [];
+	const heroImages = landingQ.data?.display?.heroImages ?? [];
+	const regUrl =
+		landingQ.data?.display?.registrationUrl || DEFAULT_REGISTRATION_URL;
 
 	// Hanya paket dengan siswa terbanyak yang tampil di landing — katalog
 	// lengkap pindah ke halaman /program dan /program/[code].
@@ -383,13 +453,15 @@ export default function LandingPage() {
 							jadwal terstruktur, tutor berpengalaman, evaluasi berkala, dan
 							laporan perkembangan yang bisa dipantau orang tua.
 						</p>
-						<div className="flex flex-wrap gap-3">
+						<div className="flex flex-wrap items-center gap-3">
 							<Button
 								size="lg"
-								render={<Link href="/daftar" />}
+								render={
+									<a href={regUrl} target="_blank" rel="noopener noreferrer" />
+								}
 								className="gap-2 bg-brand-gold-400 font-semibold text-brand-blue-900 hover:bg-brand-gold-300"
 							>
-								Daftar Sekarang
+								Info &amp; Pendaftaran
 								<ArrowRight className="size-4" />
 							</Button>
 							<Button
@@ -422,7 +494,11 @@ export default function LandingPage() {
 							))}
 						</div>
 					</div>
-					<Card className="border-white/15 bg-white/10 text-white shadow-2xl backdrop-blur-md">
+					<div className="flex flex-col gap-4">
+						{heroImages.length > 0 ? (
+							<HeroPhotoSlider images={heroImages} />
+						) : null}
+						<Card className="border-white/15 bg-white/10 text-white shadow-2xl backdrop-blur-md">
 						<CardHeader>
 							<CardTitle className="flex items-center gap-2 text-base text-white">
 								<CircleCheck className="size-5 text-brand-gold-300" />
@@ -452,6 +528,7 @@ export default function LandingPage() {
 							))}
 						</CardContent>
 					</Card>
+					</div>
 				</div>
 				{/* Pemisah melengkung ke section berikutnya */}
 				<div
@@ -686,10 +763,12 @@ export default function LandingPage() {
 						</div>
 					</div>
 					<Button
-						render={<Link href="/daftar" />}
+						render={
+							<a href={regUrl} target="_blank" rel="noopener noreferrer" />
+						}
 						className="gap-2 bg-brand-gold-400 font-semibold text-brand-blue-900 hover:bg-brand-gold-300"
 					>
-						Daftar Online Sekarang
+						Isi Formulir Pendaftaran
 						<ArrowRight className="size-4" />
 					</Button>
 				</div>
@@ -871,22 +950,16 @@ export default function LandingPage() {
 							orang tua, lalu hubungkan anak Anda ke program belajar — jadwal,
 							ujian, latihan, dan pembayaran dalam satu tempat.
 						</p>
-						<div className="mt-2 flex flex-wrap justify-center gap-3">
+						<div className="mt-2 flex flex-wrap items-center justify-center gap-3">
 							<Button
 								size="lg"
-								render={<Link href="/daftar" />}
+								render={
+									<a href={regUrl} target="_blank" rel="noopener noreferrer" />
+								}
 								className="gap-2 bg-brand-gold-400 font-semibold text-brand-blue-900 hover:bg-brand-gold-300"
 							>
-								Daftar Sekarang
+								Info &amp; Pendaftaran
 								<ArrowRight className="size-4" />
-							</Button>
-							<Button
-								size="lg"
-								variant="outline"
-								render={<Link href="/login" />}
-								className="border-white/30 bg-white/5 text-white hover:bg-white/15 hover:text-white"
-							>
-								Masuk
 							</Button>
 						</div>
 					</div>

@@ -20,7 +20,12 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { SiteHeader } from "@/components/public/site-header";
 import { SiteFooter } from "@/components/public/site-footer";
-import { fmtIDR, programSlug, useLanding } from "@/lib/landing";
+import {
+	DEFAULT_REGISTRATION_URL,
+	fmtIDR,
+	programSlug,
+	useLanding,
+} from "@/lib/landing";
 
 const PROGRAM_ICONS: Record<string, typeof GraduationCap> = {
 	REG: GraduationCap,
@@ -37,6 +42,8 @@ const PROGRAM_TAGLINE: Record<string, string> = {
 /** Halaman katalog program — semua kategori program beserta jenjang & harga. */
 export default function ProgramCatalogPage() {
 	const landingQ = useLanding();
+	const regUrl =
+		landingQ.data?.display?.registrationUrl || DEFAULT_REGISTRATION_URL;
 	const programs = landingQ.data?.catalog ?? [];
 
 	return (
@@ -148,14 +155,17 @@ export default function ProgramCatalogPage() {
 					<div>
 						<p className="font-medium">Bingung pilih program?</p>
 						<p className="text-sm text-muted-foreground">
-							Daftar dulu — admin kami bantu konsultasi kebutuhan belajar anak Anda.
+							Isi formulir pendataan — admin kami bantu konsultasi kebutuhan
+							belajar anak Anda.
 						</p>
 					</div>
 					<Button
-						render={<Link href="/daftar" />}
+						render={
+							<a href={regUrl} target="_blank" rel="noopener noreferrer" />
+						}
 						className="gap-2 bg-brand-gold-400 font-semibold text-brand-blue-900 hover:bg-brand-gold-300"
 					>
-						Daftar Sekarang
+						Info &amp; Pendaftaran
 						<ArrowRight className="size-4" />
 					</Button>
 				</div>

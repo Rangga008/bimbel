@@ -89,6 +89,36 @@ export class ProgramsController {
     return created;
   }
 
+  /**
+   * Set biaya pendaftaran program saja — untuk Admin Finance (`price.manage`)
+   * tanpa memberi akses ubah struktur program (`program.manage` tetap boleh).
+   */
+  @Patch('programs/:id/pricing')
+  @RequireAnyPermissions(
+    PERMISSION_CODES.PROGRAM_MANAGE,
+    PERMISSION_CODES.PRICE_MANAGE,
+  )
+  async setPricing(
+    @Param('id') id: string,
+    @Body() dto: UpdateProgramDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const before = await this.programs.get(id);
+    const updated = await this.programs.setPricing(id, dto);
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'PROGRAM_PRICING_UPDATED',
+      entity: 'Program',
+      entityId: id,
+      oldData: { name: before.name, registrationFee: String(before.registrationFee ?? 'null') },
+      newData: dto,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return updated;
+  }
+
   @Patch('programs/:id')
   @RequirePermissions(PERMISSION_CODES.PROGRAM_MANAGE)
   async update(

@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -22,6 +23,7 @@ import {
   CreateEnrollmentDto,
   PlaceEnrollmentDto,
   ReviewEnrollmentDto,
+  UpdateChildDto,
 } from './dto/enrollment.dto';
 
 /**
@@ -76,6 +78,32 @@ export class EnrollmentsController {
   @RequirePermissions(PERMISSION_CODES.ENROLLMENT_VIEW)
   myChildren(@CurrentUser() actor: AuthenticatedUser) {
     return this.enrollments.myChildren(actor);
+  }
+
+  /**
+   * Ortu mengubah data anak sendiri — termasuk identitas login (no HP/email)
+   * dan kata sandi anak. Berguna untuk melengkapi akun anak yang awalnya
+   * dibuat dengan email placeholder.
+   */
+  @Patch('me/enrollments/children/:studentId')
+  @RequirePermissions(PERMISSION_CODES.ENROLLMENT_CREATE)
+  async updateChild(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('studentId') studentId: string,
+    @Body() dto: UpdateChildDto,
+    @Req() req: Request,
+  ) {
+    const result = await this.enrollments.updateChild(actor, studentId, dto);
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'CHILD_UPDATED_BY_PARENT',
+      entity: 'Student',
+      entityId: studentId,
+      newData: { ...dto, password: dto.password ? '***' : undefined },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return result;
   }
 
   /** Ortu menghapus data anak yang belum punya jejak bisnis (belum lunas/ditempatkan). */

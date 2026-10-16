@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { apiFetch, ApiError } from "@/lib/api-client";
+import { apiFetch, ApiError, resolveAssetUrl } from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import {
 	Card,
@@ -18,11 +18,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Send, Trash2 } from "lucide-react";
+import { Plus, Send, Trash2 } from "lucide-react";
 import { WhatsAppOutboxManager } from "@/components/phase5b/whatsapp-outbox-manager";
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
-import { ImagePickerField } from "@/components/shared/image-picker-field";
+import {
+	ImagePickerField,
+	MediaLibraryDialog,
+} from "@/components/shared/image-picker-field";
 
 interface CompanySettings {
 	name: string;
@@ -82,6 +85,11 @@ interface ReminderTemplates {
 	tutorAbsence: string;
 }
 
+interface DisplaySettings {
+	heroImages: string[];
+	registrationUrl: string;
+}
+
 interface AppSettings {
 	company: CompanySettings;
 	finance: FinanceSettingsData;
@@ -90,6 +98,7 @@ interface AppSettings {
 	mail: MailSettings;
 	midtrans: MidtransSettings;
 	reminders: ReminderTemplates;
+	display: DisplaySettings;
 }
 
 interface FinancialAccount {
@@ -173,8 +182,12 @@ export function FinanceSettings() {
 	const [reminders, setReminders] = useState<ReminderTemplates | null>(
 		() => settingsQ.data?.reminders ?? null,
 	);
+	const [display, setDisplay] = useState<DisplaySettings | null>(
+		() => settingsQ.data?.display ?? null,
+	);
 	const [newAcc, setNewAcc] = useState({ name: "", code: "", type: "CASH" });
 	const [accToDelete, setAccToDelete] = useState<FinancialAccount | null>(null);
+	const [heroPickerOpen, setHeroPickerOpen] = useState(false);
 
 	// Sinkronkan hasil query ke state form saat data berubah —
 	// pola "adjust state during render" (pengganti setState di dalam effect).
@@ -189,6 +202,7 @@ export function FinanceSettings() {
 			setMail(settingsQ.data.mail);
 			setMidtrans(settingsQ.data.midtrans);
 			setReminders(settingsQ.data.reminders);
+			setDisplay(settingsQ.data.display);
 		}
 	}
 
@@ -379,6 +393,115 @@ export function FinanceSettings() {
 							</div>
 						</form>
 					) : null}
+				</CardContent>
+			</Card>
+
+			{/* ---- Tampilan Landing ---- */}
+			<Card>
+				<CardHeader>
+					<CardTitle>Tampilan Landing</CardTitle>
+					<CardDescription>
+						Foto-foto siswa yang tampil sebagai slider di bagian atas halaman
+						awal, dan link formulir info/pendaftaran (buku tamu).
+					</CardDescription>
+				</CardHeader>
+				<CardContent>
+					{display ? (
+						<form
+							className="grid gap-4"
+							onSubmit={(e) => {
+								e.preventDefault();
+								saveMutation.mutate({ key: "display", value: display });
+							}}
+						>
+							<div className="grid gap-2">
+								<Label>Foto Hero (slider halaman awal)</Label>
+								{display.heroImages.length > 0 ? (
+									<div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+										{display.heroImages.map((url, i) => (
+											<div
+												key={`${url}-${i}`}
+												className="group relative overflow-hidden rounded-lg border bg-muted/20"
+											>
+												<img
+													src={resolveAssetUrl(url)}
+													alt={`Foto hero ${i + 1}`}
+													className="aspect-[4/3] w-full object-cover"
+												/>
+												<button
+													type="button"
+													aria-label={`Hapus foto ${i + 1}`}
+													onClick={() =>
+														setDisplay({
+															...display,
+															heroImages: display.heroImages.filter(
+																(_, j) => j !== i,
+															),
+														})
+													}
+													className="absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-md bg-background/90 text-destructive shadow transition-opacity hover:bg-destructive hover:text-white"
+												>
+													<Trash2 className="size-3.5" />
+												</button>
+											</div>
+										))}
+									</div>
+								) : (
+									<p className="text-xs text-muted-foreground">
+										Belum ada foto — hero landing menampilkan kartu fitur saja.
+									</p>
+								)}
+								<div>
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										disabled={display.heroImages.length >= 10}
+										onClick={() => setHeroPickerOpen(true)}
+									>
+										<Plus className="size-4" /> Tambah Foto
+									</Button>
+								</div>
+								<p className="text-xs text-muted-foreground">
+									Maksimal 10 foto — urutan tampil mengikuti urutan di sini.
+								</p>
+							</div>
+							<div className="grid max-w-md gap-1.5">
+								<Label htmlFor="reg-url">Link Formulir Pendaftaran</Label>
+								<Input
+									id="reg-url"
+									type="url"
+									value={display.registrationUrl}
+									onChange={(e) =>
+										setDisplay({ ...display, registrationUrl: e.target.value })
+									}
+									placeholder="https://s.id/info-daftarGFS2627"
+								/>
+								<p className="text-xs text-muted-foreground">
+									Tombol &quot;Info &amp; Pendaftaran&quot; di halaman awal
+									mengarah ke link ini (mis. Google Form buku tamu).
+								</p>
+							</div>
+							<div>
+								<Button type="submit" disabled={saving}>
+									{saving ? "Menyimpan…" : "Simpan Tampilan Landing"}
+								</Button>
+							</div>
+						</form>
+					) : null}
+					<MediaLibraryDialog
+						open={heroPickerOpen}
+						onOpenChange={setHeroPickerOpen}
+						category="BRANDING"
+						onPick={(url) => {
+							if (display) {
+								setDisplay({
+									...display,
+									heroImages: [...display.heroImages, url].slice(0, 10),
+								});
+							}
+						}}
+					/>
 				</CardContent>
 			</Card>
 

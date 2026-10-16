@@ -4,7 +4,11 @@ import Link from "next/link";
 import Image from "next/image";
 import { Clock, MapPin } from "lucide-react";
 import { useBranding } from "@/lib/use-branding";
-import { programSlug, useLanding } from "@/lib/landing";
+import {
+	DEFAULT_REGISTRATION_URL,
+	programSlug,
+	useLanding,
+} from "@/lib/landing";
 
 const FOOTER_LINKS = [
 	{ href: "/#beranda", label: "Beranda" },
@@ -21,6 +25,8 @@ export function SiteFooter() {
 	const landingQ = useLanding();
 	const programs = landingQ.data?.catalog ?? [];
 	const locations = landingQ.data?.locations ?? [];
+	const regUrl =
+		landingQ.data?.display?.registrationUrl || DEFAULT_REGISTRATION_URL;
 
 	return (
 		<footer className="border-t text-white" style={{ backgroundColor: "#032a41" }}>
@@ -61,9 +67,14 @@ export function SiteFooter() {
 								{l.label}
 							</Link>
 						))}
-						<Link href="/daftar" className="w-fit transition-colors hover:text-white">
-							Daftar
-						</Link>
+						<a
+							href={regUrl}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="w-fit transition-colors hover:text-white"
+						>
+							Info &amp; Pendaftaran
+						</a>
 						<Link href="/login" className="w-fit transition-colors hover:text-white">
 							Masuk
 						</Link>

@@ -59,6 +59,13 @@ export interface LandingLocation {
   address: string | null;
 }
 
+export interface LandingDisplay {
+  /** Foto-foto hero (slider) — diatur di Pengaturan > Tampilan Landing. */
+  heroImages: string[];
+  /** Link formulir info/pendaftaran (buku tamu Google Form). */
+  registrationUrl: string;
+}
+
 export interface LandingData {
   stats: {
     students: number;
@@ -69,7 +76,11 @@ export interface LandingData {
   catalog: LandingProgram[];
   facilities: LandingFacility[];
   locations: LandingLocation[];
+  display?: LandingDisplay;
 }
+
+/** Fallback link formulir bila pengaturan belum diisi. */
+export const DEFAULT_REGISTRATION_URL = 'https://s.id/info-daftarGFS2627';
 
 export function useLanding() {
   return useQuery({

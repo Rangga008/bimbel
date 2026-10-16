@@ -150,10 +150,16 @@ export class AuthController {
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
-    const tokens = await this.authService.login(dto.email, dto.password, {
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
-    });
+    // Login otomatis pakai email kalau diisi, kalau tidak pakai nomor HP —
+    // endpoint login sudah mendukung dua-duanya sebagai identifier.
+    const tokens = await this.authService.login(
+      dto.email || dto.phone,
+      dto.password,
+      {
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      },
+    );
     this.setRefreshCookie(res, tokens);
     return this.tokenPayload(req, tokens);
   }

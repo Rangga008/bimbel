@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import type { Prisma } from '@prisma/client';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { UsersService } from '../users/users.service';
@@ -146,10 +147,31 @@ export class AuthService {
    * User role ORANG_TUA + profil Parent dalam satu transaksi. Sandi
    * dipilih sendiri oleh pendaftar — bukan temporary password.
    */
+  /**
+   * Email placeholder dari nomor HP untuk pendaftar yang tidak mengisi email —
+   * kolom users.email wajib unik, jadi nomor HP dinormalisasi jadi alamat
+   * sintetis yang tetap bisa dipakai login bila suatu saat dibutuhkan.
+   */
+  private async synthEmailFromPhone(
+    tx: Prisma.TransactionClient,
+    phone: string,
+  ) {
+    const digits = phone.replace(/\D/g, '') || 'x';
+    for (let i = 0; i < 20; i += 1) {
+      const candidate = `wa.${digits}${i ? `.${i}` : ''}@hp.bimbel.local`;
+      const clash = await tx.user.findUnique({ where: { email: candidate } });
+      if (!clash) return candidate;
+    }
+    return `wa.${digits}.${Date.now()}@hp.bimbel.local`;
+  }
+
   async registerParent(dto: RegisterParentDto) {
     return this.prisma.$transaction(async (tx) => {
+      const email =
+        dto.email?.trim() ||
+        (await this.synthEmailFromPhone(tx, dto.phone));
       const created = await this.usersService.createUserForPersonInTx(tx, {
-        email: dto.email,
+        email,
         name: dto.name,
         phone: dto.phone,
         roleName: ROLE_NAMES.ORANG_TUA,

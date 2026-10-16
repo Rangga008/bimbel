@@ -25,7 +25,13 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { SiteHeader } from "@/components/public/site-header";
 import { SiteFooter } from "@/components/public/site-footer";
-import { fmtIDR, programSlug, useLanding, type LandingLevel } from "@/lib/landing";
+import {
+	DEFAULT_REGISTRATION_URL,
+	fmtIDR,
+	programSlug,
+	useLanding,
+	type LandingLevel,
+} from "@/lib/landing";
 
 const PROGRAM_ICONS: Record<string, typeof GraduationCap> = {
 	REG: GraduationCap,
@@ -119,6 +125,8 @@ export default function ProgramDetailPage({
 }) {
 	const { code } = use(params);
 	const landingQ = useLanding();
+	const regUrl =
+		landingQ.data?.display?.registrationUrl || DEFAULT_REGISTRATION_URL;
 	const program = landingQ.data?.catalog.find(
 		(p) => programSlug(p.code) === code.toLowerCase(),
 	);
@@ -322,16 +330,18 @@ export default function ProgramDetailPage({
 								<div>
 									<p className="font-medium">Siap bergabung ke {program.name}?</p>
 									<p className="text-sm text-muted-foreground">
-										Daftar online sekarang — invoice pendaftaran terbit otomatis
-										dan bisa dibayar transfer.
+										Isi formulir pendataan sekarang — tim kami akan menghubungi
+										Anda untuk proses selanjutnya.
 									</p>
 								</div>
 							</div>
 							<Button
-								render={<Link href="/daftar" />}
+								render={
+									<a href={regUrl} target="_blank" rel="noopener noreferrer" />
+								}
 								className="gap-2 bg-brand-gold-400 font-semibold text-brand-blue-900 hover:bg-brand-gold-300"
 							>
-								Daftar Sekarang
+								Info &amp; Pendaftaran
 								<ArrowRight className="size-4" />
 							</Button>
 						</div>

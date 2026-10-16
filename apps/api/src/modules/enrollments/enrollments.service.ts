@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { UsersService } from '../users/users.service';
@@ -15,7 +16,14 @@ import {
   CreateEnrollmentDto,
   PlaceEnrollmentDto,
   ReviewEnrollmentDto,
+  UpdateChildDto,
 } from './dto/enrollment.dto';
+
+const PASSWORD_SALT_ROUNDS = 12;
+
+/** Email placeholder anak yang dibuat ortu tanpa mengisi email — dikenali dari
+ *  suffix domain ini supaya UI bisa menandai "belum diatur". */
+const CHILD_PLACEHOLDER_DOMAIN = '@pendaftaran.bimbel.local';
 
 const enrollmentInclude = {
   student: {
@@ -225,20 +233,40 @@ export class EnrollmentsService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    // Info login anak dikembalikan SEKALI ke ortu — password hanya ada di
+    // respons ini (yang tersimpan di DB hanya hash-nya).
+    let studentLogin: {
+      email: string;
+      phone: string | null;
+      password: string;
+    } | null = null;
+
+    const enrollment = await this.prisma.$transaction(async (tx) => {
       let studentId: string;
       if (existingStudent) {
         studentId = existingStudent.id;
       } else {
         // Akun siswa dibuat nonaktif — baru bisa login setelah finance
-        // memverifikasi pendaftaran (ACCEPTED).
+        // memverifikasi pendaftaran (ACCEPTED). Identitas login memakai
+        // email/no HP yang diisi ortu; bila email kosong dipakai placeholder.
         const suffix = randomBytes(4).toString('hex');
+        const childEmail =
+          dto.childEmail?.trim() ||
+          `siswa.${suffix}${CHILD_PLACEHOLDER_DOMAIN}`;
+        const childPassword =
+          dto.childPassword || randomBytes(9).toString('base64url');
         const created = await this.users.createUserForPersonInTx(tx, {
-          email: `siswa.${suffix}@pendaftaran.bimbel.local`,
+          email: childEmail,
           name: childName,
+          phone: dto.childPhone?.trim() || undefined,
           roleName: ROLE_NAMES.SISWA,
-          tempPassword: randomBytes(9).toString('base64url'),
+          tempPassword: childPassword,
         });
+        studentLogin = {
+          email: childEmail,
+          phone: dto.childPhone?.trim() || null,
+          password: childPassword,
+        };
         await tx.user.update({
           where: { id: created.userId },
           data: { isActive: false },
@@ -302,6 +330,7 @@ export class EnrollmentsService {
         include: enrollmentInclude,
       });
     });
+    return { ...enrollment, studentLogin };
   }
 
   /**
@@ -448,7 +477,8 @@ export class EnrollmentsService {
     });
   }
 
-  /** Ortu: daftar anak yang tertaut ke akunnya. */
+  /** Ortu: daftar anak yang tertaut ke akunnya — termasuk identitas login
+   *  anak supaya ortu tahu akun mana yang dipakai anak untuk masuk. */
   async myChildren(actor: AuthenticatedUser) {
     const parent = await this.myParentOrThrow(actor.id);
     const links = await this.prisma.parentStudent.findMany({
@@ -458,7 +488,10 @@ export class EnrollmentsService {
           select: {
             id: true,
             isActive: true,
-            user: { select: { name: true } },
+            dateOfBirth: true,
+            schoolOrigin: true,
+            gender: true,
+            user: { select: { name: true, email: true, phone: true } },
           },
         },
       },
@@ -468,7 +501,109 @@ export class EnrollmentsService {
       id: l.student.id,
       name: l.student.user.name,
       isActive: l.student.isActive,
+      dateOfBirth: l.student.dateOfBirth,
+      schoolOrigin: l.student.schoolOrigin,
+      gender: l.student.gender,
+      email: l.student.user.email,
+      phone: l.student.user.phone,
+      /** false = email masih placeholder & no HP kosong → anak belum bisa login. */
+      hasUsableLogin:
+        Boolean(l.student.user.phone) ||
+        !l.student.user.email.endsWith(CHILD_PLACEHOLDER_DOMAIN),
     }));
+  }
+
+  /**
+   * Ortu mengubah data anak sendiri — termasuk identitas login (no HP/email)
+   * dan kata sandi, supaya akun anak yang awalnya placeholder bisa dipakai.
+   */
+  async updateChild(
+    actor: AuthenticatedUser,
+    studentId: string,
+    dto: UpdateChildDto,
+  ) {
+    const parent = await this.myParentOrThrow(actor.id);
+    const link = await this.prisma.parentStudent.findUnique({
+      where: {
+        parentId_studentId: { parentId: parent.id, studentId },
+      },
+      select: {
+        student: {
+          select: {
+            id: true,
+            userId: true,
+            user: { select: { email: true } },
+          },
+        },
+      },
+    });
+    if (!link) {
+      throw new NotFoundException('Anak tidak ditemukan di akun Anda.');
+    }
+    const userId = link.student.userId;
+
+    const email = dto.email?.trim();
+    if (email) {
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+        throw new BadRequestException('Email anak tidak valid.');
+      }
+      const clash = await this.prisma.user.findUnique({
+        where: { email },
+      });
+      if (clash && clash.id !== userId) {
+        throw new ConflictException('Email sudah dipakai akun lain.');
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.student.update({
+        where: { id: studentId },
+        data: {
+          dateOfBirth: dto.dateOfBirth
+            ? new Date(dto.dateOfBirth)
+            : undefined,
+          schoolOrigin:
+            dto.schoolOrigin !== undefined
+              ? dto.schoolOrigin.trim() || null
+              : undefined,
+          gender: dto.gender !== undefined ? dto.gender : undefined,
+        },
+      });
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          name: dto.name?.trim() || undefined,
+          phone:
+            dto.phone !== undefined ? dto.phone.trim() || null : undefined,
+          email:
+            dto.email !== undefined
+              ? email ||
+                // Email dikosongkan → kembali ke placeholder unik.
+                `siswa.${randomBytes(4).toString('hex')}${CHILD_PLACEHOLDER_DOMAIN}`
+              : undefined,
+        },
+      });
+      if (dto.password) {
+        const passwordHash = await bcrypt.hash(
+          dto.password,
+          PASSWORD_SALT_ROUNDS,
+        );
+        await tx.user.update({ where: { id: userId }, data: { passwordHash } });
+        // Revoke sesi lama — password baru langsung berlaku.
+        await tx.refreshToken.updateMany({
+          where: { userId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+      }
+      // Nama pada enrollment historis ikut selaras bila nama anak diubah.
+      if (dto.name?.trim()) {
+        await tx.enrollment.updateMany({
+          where: { studentId },
+          data: { childName: dto.name.trim() },
+        });
+      }
+    });
+    return { updated: true };
   }
 
   /**

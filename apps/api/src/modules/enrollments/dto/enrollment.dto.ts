@@ -1,5 +1,6 @@
 import {
   IsDateString,
+  IsEmail,
   IsIn,
   IsInt,
   IsOptional,
@@ -50,6 +51,68 @@ export class CreateEnrollmentDto {
   @Min(1)
   @Max(48)
   sessionCount?: number;
+
+  @IsOptional()
+  @IsDateString({}, { message: 'Tanggal lahir tidak valid.' })
+  dateOfBirth?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  schoolOrigin?: string;
+
+  @IsOptional()
+  @IsIn(['M', 'F'], { message: 'Jenis kelamin tidak valid.' })
+  gender?: 'M' | 'F';
+
+  /** No. HP anak — dipakai login siswa & notifikasi. Opsional tapi disarankan;
+   *  bila kosong akun anak hanya punya email placeholder. */
+  @IsOptional()
+  @IsString()
+  @MinLength(9, { message: 'Nomor HP anak minimal 9 digit.' })
+  @MaxLength(30)
+  childPhone?: string;
+
+  /** Email anak (opsional) — bila diisi dipakai sebagai identitas login. */
+  @IsOptional()
+  @IsEmail({}, { message: 'Email anak tidak valid.' })
+  childEmail?: string;
+
+  /** Kata sandi akun anak (opsional) — bila kosong sistem membuatkan dan
+   *  ditampilkan sekali ke orang tua di respons pendaftaran. */
+  @IsOptional()
+  @IsString()
+  @MinLength(8, { message: 'Kata sandi anak minimal 8 karakter.' })
+  @MaxLength(100)
+  childPassword?: string;
+}
+
+/** Ortu mengubah data anak sendiri — termasuk identitas login anak. */
+export class UpdateChildDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(3, { message: 'Nama anak minimal 3 karakter.' })
+  @MaxLength(100)
+  name?: string;
+
+  /** No. HP anak — kirim string kosong untuk menghapus. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  phone?: string;
+
+  /** Email anak — kirim string kosong untuk mengembalikan ke placeholder. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  email?: string;
+
+  /** Kata sandi baru anak — kosongkan bila tidak diubah. */
+  @IsOptional()
+  @IsString()
+  @MinLength(8, { message: 'Kata sandi minimal 8 karakter.' })
+  @MaxLength(100)
+  password?: string;
 
   @IsOptional()
   @IsDateString({}, { message: 'Tanggal lahir tidak valid.' })

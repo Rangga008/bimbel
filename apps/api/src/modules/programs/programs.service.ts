@@ -233,4 +233,20 @@ export class ProgramsService {
     if (dto.subjectId) await this.assertSubject(dto.subjectId);
     return this.prisma.program.update({ where: { id }, data: dto });
   }
+
+  /**
+   * Set harga program saja (biaya pendaftaran) — untuk Admin Finance
+   * (`price.manage`) tanpa akses ubah struktur program.
+   */
+  async setPricing(id: string, dto: UpdateProgramDto) {
+    await this.get(id);
+    const data: Record<string, unknown> = {};
+    if (dto.registrationFee !== undefined) {
+      data.registrationFee = dto.registrationFee;
+    }
+    if (!Object.keys(data).length) {
+      throw new BadRequestException('Tidak ada field harga yang dikirim.');
+    }
+    return this.prisma.program.update({ where: { id }, data });
+  }
 }

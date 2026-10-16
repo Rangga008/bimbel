@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Baby, Plus, Trash2 } from "lucide-react";
+import { Baby, Pencil, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -109,7 +109,7 @@ function rp(value: string | number | null | undefined) {
 }
 
 const UNIT_LABEL: Record<string, string> = {
-	YEAR: "tahun",
+	YEAR: "tahun ajaran",
 	MONTH: "bulan",
 	SESSION: "pertemuan",
 	PACKAGE: "paket",
@@ -137,11 +137,45 @@ const EMPTY_FORM = {
 	dateOfBirth: "",
 	gender: "",
 	schoolOrigin: "",
+	childPhone: "",
+	childEmail: "",
+	childPassword: "",
 	programId: "",
 	levelId: "",
 	paymentPlan: "MONTHLY",
 	studentCount: "1",
 	sessionCount: "8",
+};
+
+/** Data anak ortu — termasuk identitas login anak. */
+interface MyChild {
+	id: string;
+	name: string;
+	isActive: boolean;
+	dateOfBirth: string | null;
+	schoolOrigin: string | null;
+	gender: "M" | "F" | null;
+	email: string;
+	phone: string | null;
+	/** false = akun masih placeholder → anak belum bisa login. */
+	hasUsableLogin: boolean;
+}
+
+/** Info login anak — dikembalikan sekali oleh POST /me/enrollments. */
+interface StudentLogin {
+	email: string;
+	phone: string | null;
+	password: string;
+}
+
+const EMPTY_CHILD_EDIT = {
+	name: "",
+	phone: "",
+	email: "",
+	password: "",
+	dateOfBirth: "",
+	gender: "",
+	schoolOrigin: "",
 };
 
 /** Halaman "Pendaftaran" ortu: daftarkan anak → invoice → pantau status. */
@@ -150,6 +184,12 @@ export function ParentEnrollments() {
 	const [open, setOpen] = useState(false);
 	const [form, setForm] = useState(EMPTY_FORM);
 	const [deleteChild, setDeleteChild] = useState<{ id: string; name: string } | null>(null);
+	const [editChild, setEditChild] = useState<MyChild | null>(null);
+	const [childEditForm, setChildEditForm] = useState(EMPTY_CHILD_EDIT);
+	const [createdLogin, setCreatedLogin] = useState<{
+		name: string;
+		login: StudentLogin;
+	} | null>(null);
 
 	const enrollmentsQ = useQuery({
 		queryKey: ["my-enrollments"],
@@ -162,9 +202,7 @@ export function ParentEnrollments() {
 	const childrenQ = useQuery({
 		queryKey: ["my-children"],
 		queryFn: () =>
-			apiFetch<{ id: string; name: string; isActive: boolean }[]>(
-				"/me/enrollments/children",
-			),
+			apiFetch<MyChild[]>("/me/enrollments/children"),
 	});
 
 	const program = (catalogQ.data ?? []).find((p) => p.id === form.programId);
@@ -224,23 +262,54 @@ export function ParentEnrollments() {
 		onError: (e) => toast.error(err(e, "Gagal menghapus data anak.")),
 	});
 
-	const createM = useMutation({
+	const updateChildM = useMutation({
 		mutationFn: () =>
-			apiFetch<EnrollmentItem>("/me/enrollments", {
-				method: "POST",
+			apiFetch(`/me/enrollments/children/${editChild?.id}`, {
+				method: "PATCH",
 				body: {
-					childName: form.childName.trim(),
-					programId: form.programId,
-					levelId: form.levelId,
-					existingStudentId: form.existingStudentId || undefined,
-					paymentPlan: isReguler && activePlan ? activePlan : undefined,
-					studentCount: isPrivat ? studentCount : undefined,
-					sessionCount: isPrivat ? sessionCount : undefined,
-					dateOfBirth: form.dateOfBirth || undefined,
-					gender: (form.gender || undefined) as "M" | "F" | undefined,
-					schoolOrigin: form.schoolOrigin.trim() || undefined,
+					name: childEditForm.name.trim() || undefined,
+					phone: childEditForm.phone,
+					email: childEditForm.email,
+					password: childEditForm.password || undefined,
+					dateOfBirth: childEditForm.dateOfBirth || undefined,
+					gender: (childEditForm.gender || undefined) as
+						| "M"
+						| "F"
+						| undefined,
+					schoolOrigin: childEditForm.schoolOrigin,
 				},
 			}),
+		onSuccess: () => {
+			toast.success("Data anak diperbarui.");
+			setEditChild(null);
+			qc.invalidateQueries({ queryKey: ["my-children"] });
+		},
+		onError: (e) => toast.error(err(e, "Gagal memperbarui data anak.")),
+	});
+
+	const createM = useMutation({
+		mutationFn: () =>
+			apiFetch<EnrollmentItem & { studentLogin?: StudentLogin | null }>(
+				"/me/enrollments",
+				{
+					method: "POST",
+					body: {
+						childName: form.childName.trim(),
+						programId: form.programId,
+						levelId: form.levelId,
+						existingStudentId: form.existingStudentId || undefined,
+						paymentPlan: isReguler && activePlan ? activePlan : undefined,
+						studentCount: isPrivat ? studentCount : undefined,
+						sessionCount: isPrivat ? sessionCount : undefined,
+						dateOfBirth: form.dateOfBirth || undefined,
+						gender: (form.gender || undefined) as "M" | "F" | undefined,
+						schoolOrigin: form.schoolOrigin.trim() || undefined,
+						childPhone: form.childPhone.trim() || undefined,
+						childEmail: form.childEmail.trim() || undefined,
+						childPassword: form.childPassword || undefined,
+					},
+				},
+			),
 		onSuccess: (created) => {
 			toast.success(
 				`Pendaftaran ${created.childName} dibuat — invoice ${created.invoice?.number ?? ""} terbit. Silakan lakukan pembayaran.`,
@@ -248,7 +317,14 @@ export function ParentEnrollments() {
 			setOpen(false);
 			setForm(EMPTY_FORM);
 			qc.invalidateQueries({ queryKey: ["my-enrollments"] });
+			qc.invalidateQueries({ queryKey: ["my-children"] });
 			qc.invalidateQueries({ queryKey: ["parent-invoices"] });
+			if (created.studentLogin) {
+				setCreatedLogin({
+					name: created.childName,
+					login: created.studentLogin,
+				});
+			}
 		},
 		onError: (e) => toast.error(err(e, "Gagal membuat pendaftaran.")),
 	});
@@ -295,11 +371,12 @@ export function ParentEnrollments() {
 				<section className="flex flex-col gap-2">
 					<h2 className="text-lg font-medium">Anak Saya</h2>
 					<div className="overflow-x-auto rounded-md border">
-						<table className="w-full text-sm">
+						<table className="w-full min-w-[640px] text-sm">
 							<thead>
 								<tr className="border-b bg-muted/50">
 									<th className={th}>Nama Anak</th>
 									<th className={th}>Status Akun</th>
+									<th className={th}>Akun Login</th>
 									<th className={th}>Program</th>
 									<th className={th}></th>
 								</tr>
@@ -309,18 +386,53 @@ export function ParentEnrollments() {
 									const childEnrollments = enrollments.filter((e) => e.student?.id === c.id);
 									return (
 										<tr key={c.id} className="border-b last:border-0">
-											<td className={`${td} font-medium`}>{c.name}</td>
+											<td className={`${td} font-medium whitespace-nowrap`}>{c.name}</td>
 											<td className={td}>
 												<Badge variant={c.isActive ? "secondary" : "outline"}>
 													{c.isActive ? "Aktif" : "Nonaktif — menunggu verifikasi pembayaran"}
 												</Badge>
+											</td>
+											<td className={td}>
+												{c.hasUsableLogin ? (
+													<span className="text-xs">
+														{c.phone ? <span className="block font-medium">{c.phone}</span> : null}
+														{c.email ? (
+															<span className="block text-muted-foreground">{c.email}</span>
+														) : null}
+													</span>
+												) : (
+													<span className="text-xs text-amber-600">
+														Belum ada no HP/email — klik Edit untuk mengatur login anak.
+													</span>
+												)}
 											</td>
 											<td className={`${td} text-muted-foreground`}>
 												{childEnrollments.length > 0
 													? childEnrollments.map((e) => e.level.name).join(", ")
 													: "Belum terdaftar program"}
 											</td>
-											<td className={`${td} text-right`}>
+											<td className={`${td} text-right whitespace-nowrap`}>
+												<Button
+													variant="ghost"
+													size="icon-sm"
+													aria-label={`Edit ${c.name}`}
+													onClick={() => {
+														setEditChild(c);
+														setChildEditForm({
+															name: c.name,
+															phone: c.phone ?? "",
+															email: c.hasUsableLogin ? c.email : "",
+															password: "",
+															dateOfBirth: c.dateOfBirth
+																? c.dateOfBirth.slice(0, 10)
+																: "",
+															gender: c.gender ?? "",
+															schoolOrigin: c.schoolOrigin ?? "",
+														});
+													}}
+												>
+													<Pencil className="size-4" />
+												</Button>
 												<Button
 													variant="ghost"
 													size="icon-sm"
@@ -494,6 +606,49 @@ export function ParentEnrollments() {
 								placeholder="Contoh: SDN 1 Bandung"
 							/>
 						</div>
+						<div className="flex flex-col gap-2 rounded-md border border-dashed p-3">
+							<p className="text-xs font-medium">
+								Akun Login Anak <span className="font-normal text-muted-foreground">(opsional — bisa diisi nanti lewat Edit)</span>
+							</p>
+							<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+								<div className="flex flex-col gap-1.5">
+									<Label htmlFor="enr-cphone" className="text-xs">No. HP Anak (untuk login)</Label>
+									<Input
+										id="enr-cphone"
+										type="tel"
+										value={form.childPhone}
+										onChange={(e) => setForm({ ...form, childPhone: e.target.value })}
+										placeholder="08..."
+										minLength={9}
+									/>
+								</div>
+								<div className="flex flex-col gap-1.5">
+									<Label htmlFor="enr-cemail" className="text-xs">Email Anak (opsional)</Label>
+									<Input
+										id="enr-cemail"
+										type="email"
+										value={form.childEmail}
+										onChange={(e) => setForm({ ...form, childEmail: e.target.value })}
+										placeholder="nama@email.com"
+									/>
+								</div>
+							</div>
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="enr-cpass" className="text-xs">Kata Sandi Anak (opsional)</Label>
+								<Input
+									id="enr-cpass"
+									type="text"
+									autoComplete="off"
+									value={form.childPassword}
+									onChange={(e) => setForm({ ...form, childPassword: e.target.value })}
+									placeholder="Kosongkan untuk dibuatkan otomatis"
+									minLength={8}
+								/>
+							</div>
+							<p className="text-xs text-muted-foreground">
+								Anak bisa login pakai no HP atau email setelah pembayaran diverifikasi admin.
+							</p>
+						</div>
 							</>
 						) : null}
 						<div className="flex flex-col gap-1.5">
@@ -613,7 +768,7 @@ export function ParentEnrollments() {
 										<span className="text-muted-foreground">
 											{isReguler
 												? activePlan === "FULL"
-													? "Biaya les 1 tahun (lunas di awal)"
+													? "Biaya les 1 tahun ajaran (lunas di awal)"
 													: activePlan === "TWO_TIMES"
 														? "Angsuran 1 dari 2"
 														: `Angsuran bulan 1 dari ${level?.monthlyCount ?? 10}`
@@ -662,6 +817,148 @@ export function ParentEnrollments() {
 								}
 							>
 								{createM.isPending ? "Memproses..." : "Buat Pendaftaran"}
+							</Button>
+						</DialogFooter>
+					</form>
+				</DialogContent>
+			</Dialog>
+
+			{/* Info login anak — ditampilkan sekali setelah pendaftaran dibuat. */}
+			<Dialog open={createdLogin !== null} onOpenChange={(o) => !o && setCreatedLogin(null)}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Akun {createdLogin?.name ?? "Anak"} Dibuat</DialogTitle>
+						<DialogDescription>
+							Simpan info login ini — anak bisa masuk setelah pembayaran diverifikasi admin.
+						</DialogDescription>
+					</DialogHeader>
+					{createdLogin ? (
+						<div className="flex flex-col gap-2 rounded-md border bg-muted/40 p-3 text-sm">
+							{createdLogin.login.phone ? (
+								<div className="flex justify-between gap-2">
+									<span className="text-muted-foreground">No. HP (login)</span>
+									<span className="font-medium">{createdLogin.login.phone}</span>
+								</div>
+							) : null}
+							<div className="flex justify-between gap-2">
+								<span className="text-muted-foreground">Email</span>
+								<span className="break-all text-right font-medium">{createdLogin.login.email}</span>
+							</div>
+							<div className="flex justify-between gap-2">
+								<span className="text-muted-foreground">Kata sandi</span>
+								<span className="break-all text-right font-mono font-medium">{createdLogin.login.password}</span>
+							</div>
+							<p className="border-t pt-2 text-xs text-muted-foreground">
+								Login di halaman Masuk memakai no HP atau email di atas. Bila
+								lupa, buka menu Anak &amp; Pendaftaran → Edit untuk mengganti
+								no HP/email/kata sandi anak.
+							</p>
+						</div>
+					) : null}
+					<DialogFooter>
+						<Button onClick={() => setCreatedLogin(null)}>Mengerti</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* Edit data & akun login anak */}
+			<Dialog open={editChild !== null} onOpenChange={(o) => { if (!o) setEditChild(null); }}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Edit Data {editChild?.name ?? "Anak"}</DialogTitle>
+						<DialogDescription>
+							Atur no HP/email agar anak bisa login, dan lengkapi data anak.
+						</DialogDescription>
+					</DialogHeader>
+					<form
+						className="flex flex-col gap-3"
+						onSubmit={(ev) => {
+							ev.preventDefault();
+							updateChildM.mutate();
+						}}
+					>
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="ce-name">Nama Lengkap</Label>
+							<Input
+								id="ce-name"
+								value={childEditForm.name}
+								onChange={(e) => setChildEditForm({ ...childEditForm, name: e.target.value })}
+								required
+								minLength={3}
+							/>
+						</div>
+						<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="ce-phone">No. HP (untuk login)</Label>
+								<Input
+									id="ce-phone"
+									type="tel"
+									value={childEditForm.phone}
+									onChange={(e) => setChildEditForm({ ...childEditForm, phone: e.target.value })}
+									placeholder="08..."
+								/>
+							</div>
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="ce-email">Email (opsional)</Label>
+								<Input
+									id="ce-email"
+									type="email"
+									value={childEditForm.email}
+									onChange={(e) => setChildEditForm({ ...childEditForm, email: e.target.value })}
+									placeholder="nama@email.com"
+								/>
+							</div>
+						</div>
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="ce-password">Kata Sandi Baru (opsional)</Label>
+							<Input
+								id="ce-password"
+								type="text"
+								autoComplete="off"
+								value={childEditForm.password}
+								onChange={(e) => setChildEditForm({ ...childEditForm, password: e.target.value })}
+								placeholder="Kosongkan bila tidak diubah"
+								minLength={8}
+							/>
+						</div>
+						<div className="grid grid-cols-2 gap-2">
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="ce-dob">Tanggal Lahir</Label>
+								<Input
+									id="ce-dob"
+									type="date"
+									value={childEditForm.dateOfBirth}
+									onChange={(e) => setChildEditForm({ ...childEditForm, dateOfBirth: e.target.value })}
+								/>
+							</div>
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="ce-gender">Jenis Kelamin</Label>
+								<select
+									id="ce-gender"
+									value={childEditForm.gender}
+									onChange={(e) => setChildEditForm({ ...childEditForm, gender: e.target.value })}
+									className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+								>
+									<option value="">— Pilih —</option>
+									<option value="M">Laki-laki</option>
+									<option value="F">Perempuan</option>
+								</select>
+							</div>
+						</div>
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="ce-school">Asal Sekolah</Label>
+							<Input
+								id="ce-school"
+								value={childEditForm.schoolOrigin}
+								onChange={(e) => setChildEditForm({ ...childEditForm, schoolOrigin: e.target.value })}
+							/>
+						</div>
+						<DialogFooter>
+							<Button type="button" variant="outline" onClick={() => setEditChild(null)}>
+								Batal
+							</Button>
+							<Button type="submit" disabled={updateChildM.isPending}>
+								{updateChildM.isPending ? "Menyimpan..." : "Simpan"}
 							</Button>
 						</DialogFooter>
 					</form>

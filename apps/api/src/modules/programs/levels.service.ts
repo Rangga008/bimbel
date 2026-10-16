@@ -210,6 +210,7 @@ export class LevelsService {
       'promoPrice',
       'sessionPrices',
       'sessionDurationMin',
+      'registrationFee',
     ] as const;
     const data: Record<string, unknown> = {};
     for (const k of pricingKeys) {

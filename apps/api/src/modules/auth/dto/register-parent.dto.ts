@@ -1,12 +1,22 @@
-import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 /**
  * Pendaftaran mandiri orang tua dari landing page (`/daftar`).
  * Tidak ada studentIds — anak ditambahkan ortu setelah login (atau oleh admin).
+ * Email OPSIONAL — identitas utama pendaftar adalah nomor HP/WA; bila email
+ * kosong sistem membuat email placeholder dari nomor HP agar kolom unik
+ * `users.email` tetap terisi.
  */
 export class RegisterParentDto {
+  @IsOptional()
   @IsEmail({}, { message: 'Email tidak valid.' })
-  email: string;
+  email?: string;
 
   @IsString()
   @MinLength(3, { message: 'Nama minimal 3 karakter.' })

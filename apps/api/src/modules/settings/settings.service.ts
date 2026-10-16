@@ -78,6 +78,15 @@ export interface ReminderSettings {
   tutorWeeklySchedule: string;
 }
 
+export interface DisplaySettings {
+  /** URL foto hero landing (foto-foto siswa) — internal /api/media/:id/file
+   *  atau eksternal. Maksimal 10 gambar, ditampilkan sebagai slider. */
+  heroImages: string[];
+  /** Link eksternal formulir info & pendaftaran (buku tamu Google Form) —
+   *  tombol Daftar di landing mengarah ke sini. */
+  registrationUrl: string;
+}
+
 export interface MidtransSettings {
   /** Gateway aktif: true = pembayaran online via Midtrans Snap. */
   enabled: boolean;
@@ -104,7 +113,8 @@ type SettingValue =
   | BrandingSettings
   | MailSettings
   | MidtransSettings
-  | ReminderSettings;
+  | ReminderSettings
+  | DisplaySettings;
 
 interface SettingDef<T extends SettingValue> {
   defaults: T;
@@ -154,6 +164,7 @@ export const SETTING_DEFS: {
   mail: SettingDef<MailSettings>;
   midtrans: SettingDef<MidtransSettings>;
   reminders: SettingDef<ReminderSettings>;
+  display: SettingDef<DisplaySettings>;
 } = {
   company: {
     defaults: {
@@ -402,6 +413,39 @@ export const SETTING_DEFS: {
             ? req(o.tutorWeeklySchedule, 'reminders.tutorWeeklySchedule')
             : TUTOR_WEEKLY_SCHEDULE_DEFAULT,
       };
+    },
+  },
+  display: {
+    defaults: {
+      heroImages: [],
+      registrationUrl: 'https://s.id/info-daftarGFS2627',
+    },
+    validate(raw) {
+      const o = (raw ?? {}) as Record<string, unknown>;
+      if (!Array.isArray(o.heroImages)) {
+        throw new BadRequestException(
+          'display.heroImages wajib berupa array URL gambar.',
+        );
+      }
+      const heroImages = o.heroImages.map((v, i) =>
+        asString(v, `display.heroImages[${i}]`, 500),
+      );
+      if (heroImages.length > 10) {
+        throw new BadRequestException(
+          'display.heroImages maksimal 10 gambar.',
+        );
+      }
+      const registrationUrl = asString(
+        o.registrationUrl,
+        'display.registrationUrl',
+        500,
+      );
+      if (registrationUrl && !/^https?:\/\//.test(registrationUrl)) {
+        throw new BadRequestException(
+          'display.registrationUrl harus URL http(s):// yang valid.',
+        );
+      }
+      return { heroImages, registrationUrl };
     },
   },
 };

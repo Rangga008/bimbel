@@ -3,6 +3,7 @@ import { TutorsManager } from "@/components/phase1a/tutors-manager";
 import { StudentsManager } from "@/components/phase1a/students-manager";
 import { ParentsManager } from "@/components/phase1a/parents-manager";
 import { ProgramsManager } from "@/components/phase1a/programs-manager";
+import { PricingManager } from "@/components/phase1a/pricing-manager";
 import { LevelsManager } from "@/components/phase1a/levels-manager";
 import { AcademicEnrollments } from "@/components/enrollments/academic-enrollments";
 import { GroupsManager } from "@/components/phase1b/groups-manager";
@@ -38,6 +39,7 @@ export default async function AdminAcademicMenuPage({
 	const item = findNavItem("admin-academic", slug);
 	if (!item) notFound();
 	if (slug === "program") return <ProgramsManager canManage basePath="/admin-academic" />;
+	if (slug === "harga-program") return <PricingManager />;
 	if (slug === "level") return <LevelsManager canManage />;
 	if (slug === "pendaftaran") return <AcademicEnrollments />;
 	if (slug === "kelompok") return <GroupsManager canManage basePath="/admin-academic" />;

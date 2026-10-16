@@ -397,6 +397,13 @@ export const ROLE_NAV: Record<RoleKey, NavItem[]> = {
 			group: "Utama",
 		},
 		{
+			slug: "harga-program",
+			label: "Harga Program",
+			icon: Banknote,
+			placement: "lainnya",
+			group: "Transaksi",
+		},
+		{
 			slug: "invoice",
 			label: "Invoice",
 			icon: FileText,
@@ -544,6 +551,13 @@ export const ROLE_NAV: Record<RoleKey, NavItem[]> = {
 			icon: UserPlus,
 			placement: "lainnya",
 			group: "Data Orang",
+		},
+		{
+			slug: "harga-program",
+			label: "Harga Program",
+			icon: Banknote,
+			placement: "lainnya",
+			group: "Struktur",
 		},
 		{
 			slug: "level",
