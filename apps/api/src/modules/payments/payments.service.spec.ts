@@ -78,12 +78,17 @@ function makeService(prismaMock: ReturnType<typeof makePrismaMock>['prisma']) {
       }),
     ),
   };
+  // EnrollmentsService di-stub — ensureDueInstallments no-op di test pembayaran.
+  const enrollments = {
+    ensureDueInstallments: jest.fn(() => Promise.resolve()),
+  };
   return {
     svc: new PaymentsService(
       prismaMock as never,
       config,
       events as never,
       settings as never,
+      enrollments as never,
     ),
     events,
   };

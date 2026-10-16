@@ -10,9 +10,25 @@ import { PaymentsEmpty, PaymentsTable, VerifyDialog, usePaymentsList } from '@/c
 /** Fase 2b — Halaman "Bukti" (Admin Finance): antrean PENDING + verifikasi + riwayat. */
 export function ProofsManager({ canVerify = true }: { canVerify?: boolean }) {
   const [channel, setChannel] = useState('');
+  const [studentId, setStudentId] = useState('');
+  const [groupId, setGroupId] = useState('');
+  const [levelId, setLevelId] = useState('');
   const [verifyId, setVerifyId] = useState<string | null>(null);
-  const listQ = usePaymentsList({ status: 'PENDING', channel });
-  const histQ = usePaymentsList({ channel });
+  const studentsQ = useQuery({
+    queryKey: ['students-lite'],
+    queryFn: () => apiFetch<{ id: string; user: { name: string } }[]>('/students'),
+  });
+  const groupsQ = useQuery({
+    queryKey: ['groups-lite'],
+    queryFn: () => apiFetch<{ id: string; name: string }[]>('/groups'),
+  });
+  const levelsQ = useQuery({
+    queryKey: ['levels-lite'],
+    queryFn: () => apiFetch<{ id: string; name: string }[]>('/levels'),
+  });
+  const filters = { channel, studentId, groupId, levelId };
+  const listQ = usePaymentsList({ status: 'PENDING', ...filters });
+  const histQ = usePaymentsList(filters);
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -25,6 +41,24 @@ export function ProofsManager({ canVerify = true }: { canVerify?: boolean }) {
           <option value="MANUAL">MANUAL</option>
           <option value="GATEWAY">GATEWAY</option>
           <option value="CASH">CASH</option>
+        </select>
+        <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={studentId} onChange={(e) => setStudentId(e.target.value)} aria-label="Filter siswa">
+          <option value="">Semua siswa</option>
+          {(studentsQ.data ?? []).map((s) => (
+            <option key={s.id} value={s.id}>{s.user.name}</option>
+          ))}
+        </select>
+        <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={groupId} onChange={(e) => setGroupId(e.target.value)} aria-label="Filter kelompok">
+          <option value="">Semua kelompok</option>
+          {(groupsQ.data ?? []).map((g) => (
+            <option key={g.id} value={g.id}>{g.name}</option>
+          ))}
+        </select>
+        <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={levelId} onChange={(e) => setLevelId(e.target.value)} aria-label="Filter jenjang">
+          <option value="">Semua jenjang</option>
+          {(levelsQ.data ?? []).map((l) => (
+            <option key={l.id} value={l.id}>{l.name}</option>
+          ))}
         </select>
       </div>
       <h2 className="text-lg font-medium">Menunggu verifikasi ({listQ.data?.length ?? '…'})</h2>

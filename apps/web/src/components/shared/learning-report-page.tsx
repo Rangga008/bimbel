@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileText } from "lucide-react";
+import { FileText, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
@@ -285,7 +285,7 @@ export function LearningReportPage({
 					</div>
 				) : null}
 
-				<div>
+				<div className="flex flex-wrap items-center gap-2">
 					<Button
 						onClick={handleShow}
 						disabled={
@@ -297,6 +297,28 @@ export function LearningReportPage({
 						<FileText className="mr-1.5 size-4" />
 						{busy ? "Menyiapkan…" : "Tampilkan Laporan"}
 					</Button>
+					{reportHtml ? (
+						<Button
+							variant="outline"
+							onClick={() => {
+								// Cetak via jendela terpisah — <script> auto-print di HTML
+								// laporan tidak dieksekusi lewat innerHTML preview.
+								const win = window.open("", "_blank", "width=900,height=700");
+								if (!win) {
+									toast.error("Popup diblokir browser — izinkan popup untuk mencetak.");
+									return;
+								}
+								win.document.open();
+								win.document.write(reportHtml);
+								win.document.close();
+								win.focus();
+								setTimeout(() => win.print(), 400);
+							}}
+						>
+							<Printer className="mr-1.5 size-4" />
+							Cetak / Simpan PDF
+						</Button>
+					) : null}
 				</div>
 
 				{reportHtml ? (

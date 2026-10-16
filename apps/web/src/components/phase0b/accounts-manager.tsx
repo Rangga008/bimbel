@@ -62,6 +62,7 @@ export function AccountsManager({ basePath }: { basePath: string }) {
   const [resetUser, setResetUser] = useState<ManagedUser | null>(null);
   const [resetForm, setResetForm] = useState<Record<string, string>>({});
   const [userToToggle, setUserToToggle] = useState<ManagedUser | null>(null);
+  const [userToDelete, setUserToDelete] = useState<ManagedUser | null>(null);
   const [roleUser, setRoleUser] = useState<ManagedUser | null>(null);
 
   const usersQuery = useQuery({
@@ -133,6 +134,16 @@ export function AccountsManager({ basePath }: { basePath: string }) {
       inv();
     },
     onError: (e) => toast.error(err(e, "Gagal mengubah status akun.")),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => apiFetch(`/users/${userToDelete!.id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      setUserToDelete(null);
+      toast.success("Akun dihapus — email & no HP-nya bisa dipakai daftar ulang.");
+      inv();
+    },
+    onError: (e) => toast.error(err(e, "Gagal menghapus akun.")),
   });
 
   const resetMutation = useMutation({
@@ -265,6 +276,15 @@ export function AccountsManager({ basePath }: { basePath: string }) {
                 >
                   {u.isActive ? "Nonaktifkan" : "Aktifkan"}
                 </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={deleteMutation.isPending || me?.id === u.id}
+                  title={me?.id === u.id ? "Tidak bisa menghapus akun sendiri" : undefined}
+                  onClick={() => setUserToDelete(u)}
+                >
+                  Hapus
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -349,6 +369,19 @@ export function AccountsManager({ basePath }: { basePath: string }) {
         tone={userToToggle?.isActive ? "destructive" : "primary"}
         pending={toggleMutation.isPending}
         onConfirm={() => userToToggle && toggleMutation.mutate(userToToggle)}
+      />
+
+      <ConfirmDialog
+        open={userToDelete !== null}
+        onOpenChange={(o) => {
+          if (!o) setUserToDelete(null);
+        }}
+        title="Hapus akun?"
+        description={`Akun "${userToDelete?.name}" (${userToDelete?.email}) akan dihapus permanen: dinonaktifkan, sesi dicabut, dan email/no HP-nya dibebaskan untuk pendaftaran ulang. Riwayat transaksi & audit tetap tersimpan.`}
+        confirmLabel="Ya, hapus akun"
+        tone="destructive"
+        pending={deleteMutation.isPending}
+        onConfirm={() => deleteMutation.mutate()}
       />
     </div>
   );

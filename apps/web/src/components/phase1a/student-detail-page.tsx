@@ -92,6 +92,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
   const [discountTarget, setDiscountTarget] = useState<StaffEnrollment | null>(null);
   const [discountAmount, setDiscountAmount] = useState('');
   const [discountReason, setDiscountReason] = useState('');
+  const [discountMonths, setDiscountMonths] = useState('');
 
   const studentQ = useQuery({
     queryKey: ['students', studentId],
@@ -119,7 +120,11 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
         `/enrollments/${discountTarget!.id}/discount`,
         {
           method: 'POST',
-          body: { amount: Number(discountAmount), reason: discountReason },
+          body: {
+            amount: Number(discountAmount),
+            reason: discountReason,
+            months: discountMonths ? Number(discountMonths) : null,
+          },
         },
       ),
     onSuccess: (r) => {
@@ -127,6 +132,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
       setDiscountTarget(null);
       setDiscountAmount('');
       setDiscountReason('');
+      setDiscountMonths('');
       qc.invalidateQueries({ queryKey: ['students', studentId] });
       qc.invalidateQueries({ queryKey: ['enrollments'] });
       qc.invalidateQueries({ queryKey: ['invoices'] });
@@ -391,6 +397,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                               setDiscountTarget(e);
                               setDiscountAmount('');
                               setDiscountReason('');
+                              setDiscountMonths('');
                             }}
                           >
                             <BadgePercent className="size-3.5" /> Diskon
@@ -435,21 +442,50 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
             <DialogTitle>Diskon / Bantuan Paket</DialogTitle>
             <DialogDescription>
               {discountTarget
-                ? `${discountTarget.program.name} — ${discountTarget.level.name} (${discountTarget.student.user.name}). Nominal disebar ke invoice yang belum lunas; paket & jenjang tetap sama.`
+                ? `${discountTarget.program.name} — ${discountTarget.level.name} (${discountTarget.student.user.name}). Nominal dipotong dari SETIAP angsuran yang masih berjalan; paket & jenjang tetap sama.`
                 : ''}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="discount-amount">Nominal diskon (Rp)</Label>
+              <Label htmlFor="discount-amount">Diskon per angsuran (Rp)</Label>
               <Input
                 id="discount-amount"
                 type="number"
                 min={0}
-                placeholder="mis. 250000"
+                placeholder="mis. 10000"
                 value={discountAmount}
                 onChange={(e) => setDiscountAmount(e.target.value)}
               />
+              <p className="text-xs text-muted-foreground">
+                Tiap invoice angsuran siswa ini dipotong sebesar nominal ini.
+              </p>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="discount-months">Berlaku untuk</Label>
+              <select
+                id="discount-months"
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                value={discountMonths === '' ? 'all' : 'first'}
+                onChange={(e) =>
+                  setDiscountMonths(e.target.value === 'all' ? '' : '1')
+                }
+              >
+                <option value="all">Semua angsuran sampai lunas</option>
+                <option value="first">Hanya beberapa angsuran pertama</option>
+              </select>
+              {discountMonths !== '' ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    className="w-28"
+                    value={discountMonths}
+                    onChange={(e) => setDiscountMonths(e.target.value)}
+                  />
+                  <span className="text-xs text-muted-foreground">angsuran pertama</span>
+                </div>
+              ) : null}
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="discount-reason">Alasan</Label>

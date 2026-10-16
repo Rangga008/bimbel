@@ -90,6 +90,10 @@ interface DisplaySettings {
 	registrationUrl: string;
 }
 
+interface ExamSettings {
+	violationLimit: number;
+}
+
 interface AppSettings {
 	company: CompanySettings;
 	finance: FinanceSettingsData;
@@ -99,6 +103,7 @@ interface AppSettings {
 	midtrans: MidtransSettings;
 	reminders: ReminderTemplates;
 	display: DisplaySettings;
+	exam: ExamSettings;
 }
 
 interface FinancialAccount {
@@ -185,6 +190,9 @@ export function FinanceSettings() {
 	const [display, setDisplay] = useState<DisplaySettings | null>(
 		() => settingsQ.data?.display ?? null,
 	);
+	const [exam, setExam] = useState<ExamSettings | null>(
+		() => settingsQ.data?.exam ?? null,
+	);
 	const [newAcc, setNewAcc] = useState({ name: "", code: "", type: "CASH" });
 	const [accToDelete, setAccToDelete] = useState<FinancialAccount | null>(null);
 	const [heroPickerOpen, setHeroPickerOpen] = useState(false);
@@ -203,6 +211,7 @@ export function FinanceSettings() {
 			setMidtrans(settingsQ.data.midtrans);
 			setReminders(settingsQ.data.reminders);
 			setDisplay(settingsQ.data.display);
+			setExam(settingsQ.data.exam);
 		}
 	}
 
@@ -502,6 +511,58 @@ export function FinanceSettings() {
 							}
 						}}
 					/>
+				</CardContent>
+			</Card>
+
+			{/* ---- Ujian & Proctoring ---- */}
+			<Card>
+				<CardHeader>
+					<CardTitle>Ujian &amp; Perlindungan</CardTitle>
+					<CardDescription>
+						Batas pelanggaran proctoring (keluar halaman/tab/fullscreen).
+						Pelanggaran di bawah batas mengunci attempt sebagai peringatan;
+						pelanggaran ke-N mengumpulkan jawaban otomatis.
+					</CardDescription>
+				</CardHeader>
+				<CardContent>
+					{exam ? (
+						<form
+							className="grid gap-4"
+							onSubmit={(e) => {
+								e.preventDefault();
+								saveMutation.mutate({ key: "exam", value: exam });
+							}}
+						>
+							<div className="grid max-w-md gap-1.5">
+								<Label htmlFor="exam-violation-limit">
+									Batas pelanggaran sebelum auto-submit
+								</Label>
+								<Input
+									id="exam-violation-limit"
+									type="number"
+									min={1}
+									max={10}
+									value={exam.violationLimit}
+									onChange={(e) =>
+										setExam({
+											...exam,
+											violationLimit: Number(e.target.value),
+										})
+									}
+								/>
+								<p className="text-xs text-muted-foreground">
+									Contoh: 3 = peringatan ke-1 &amp; ke-2 mengunci attempt
+									(bisa dibuka pengawas), pelanggaran ke-3 langsung
+									mengumpulkan jawaban.
+								</p>
+							</div>
+							<div>
+								<Button type="submit" disabled={saving}>
+									{saving ? "Menyimpan…" : "Simpan Pengaturan Ujian"}
+								</Button>
+							</div>
+						</form>
+					) : null}
 				</CardContent>
 			</Card>
 

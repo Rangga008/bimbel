@@ -230,12 +230,20 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
           ? {
               ...prev,
               violationCount: result.violationCount,
-              status: result.locked ? ExamAttemptStatus.LOCKED : prev.status,
+              status: result.autoSubmitted
+                ? ExamAttemptStatus.SUBMITTED
+                : result.locked
+                  ? ExamAttemptStatus.LOCKED
+                  : prev.status,
             }
           : prev,
       );
+      if (result.autoSubmitted) {
+        // Sinkronkan detail (skor/status) dari server.
+        attemptQ.refetch();
+      }
     },
-    [attemptId, qc],
+    [attemptId, qc, attemptQ],
   );
 
   const proctoring = useExamProctoring({

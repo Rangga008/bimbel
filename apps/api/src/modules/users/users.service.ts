@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ROLE_NAMES, RoleName } from '../rbac/permissions.constants';
@@ -196,7 +197,10 @@ export class UsersService {
   }
 
   async listUsers(query: { search?: string; isActive?: string; role?: string }) {
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = {
+      // Akun yang sudah dihapus (dianonimkan) tidak tampil di daftar.
+      NOT: { email: { endsWith: '@deleted.local' } },
+    };
     if (query.isActive === 'true') where.isActive = true;
     if (query.isActive === 'false') where.isActive = false;
     if (query.search) {
@@ -359,6 +363,41 @@ export class UsersService {
 
   async activateUser(id: string) {
     return this.updateUser(id, { isActive: true });
+  }
+
+  /**
+   * Hapus akun — soft delete + anonimisasi. User berelasi ke banyak tabel
+   * (audit log, invoice, absensi, dsb.) sehingga hard-delete bisa merusak
+   * jejak data. Yang dilakukan: nonaktifkan, bebaskan email & no HP (supaya
+   * bisa dipakai daftar ulang), ganti password acak, cabut sesi & role.
+   */
+  async deleteUser(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('User tidak ditemukan.');
+    if (user.email.endsWith('@deleted.local')) {
+      throw new BadRequestException('Akun ini sudah dihapus.');
+    }
+    const anonymizedEmail = `deleted+${id}@deleted.local`;
+    const deadPassword = await bcrypt.hash(randomUUID(), PASSWORD_SALT_ROUNDS);
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id },
+        data: {
+          isActive: false,
+          email: anonymizedEmail,
+          phone: null,
+          avatarUrl: null,
+          passwordHash: deadPassword,
+        },
+      }),
+      this.prisma.refreshToken.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+      this.prisma.passwordResetToken.deleteMany({ where: { userId: id } }),
+      this.prisma.userRole.deleteMany({ where: { userId: id } }),
+    ]);
+    return { success: true as const };
   }
 
   async resetPassword(id: string, newPassword: string) {

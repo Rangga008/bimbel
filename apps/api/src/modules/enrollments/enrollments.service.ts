@@ -296,41 +296,114 @@ export class EnrollmentsService {
           paymentPlan: program.category === 'REGULER' ? (dto.paymentPlan ?? 'MONTHLY') : null,
           studentCount: dto.studentCount ?? null,
           sessionCount: dto.sessionCount ?? null,
+          // Sisa cicilan disimpan sebagai rencana — diterbitkan per bulan
+          // oleh ensureDueInstallments(), bukan sekaligus saat daftar.
+          billingPlan: plans.length > 1 ? (plans as unknown as Prisma.InputJsonValue) : undefined,
         },
       });
 
-      // Buat seluruh invoice berjadwal — invoice pertama = biaya daftar +
-      // tagihan pertama, sisanya cicilan sesuai cara bayar.
-      let firstInvoiceId: string | null = null;
-      for (const [idx, plan] of plans.entries()) {
-        const total = plan.items.reduce((s, i) => s + i.amount, 0);
-        const dueDate = new Date(Date.now() + (idx === 0 ? 7 : 0) * 24 * 60 * 60 * 1000);
-        if (idx > 0) {
-          dueDate.setMonth(dueDate.getMonth() + plan.dueOffsetMonths);
-        }
-        const inv = await tx.invoice.create({
-          data: {
-            number: await this.generateInvoiceNumber(tx),
-            studentId,
-            enrollmentId: enrollment.id,
-            status: 'ISSUED',
-            totalAmount: new Prisma.Decimal(total),
-            dueDate,
-            issuedAt: new Date(),
-            notes: `Pendaftaran ${enrollment.childName} — ${program.name} / ${level.name} (${plan.label})`,
-            items: { create: plan.items },
-          },
-        });
-        if (idx === 0) firstInvoiceId = inv.id;
-      }
+      // Invoice pertama = biaya daftar + tagihan pertama. Cicilan
+      // berikutnya (idx>0) diterbitkan otomatis per bulan.
+      const first = plans[0];
+      const total = first.items.reduce((s, i) => s + i.amount, 0);
+      const inv = await tx.invoice.create({
+        data: {
+          number: await this.generateInvoiceNumber(tx),
+          studentId,
+          enrollmentId: enrollment.id,
+          status: 'ISSUED',
+          totalAmount: new Prisma.Decimal(total),
+          dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          issuedAt: new Date(),
+          notes: `Pendaftaran ${enrollment.childName} — ${program.name} / ${level.name} (${first.label})`,
+          items: { create: first.items },
+        },
+      });
 
       return tx.enrollment.update({
         where: { id: enrollment.id },
-        data: { invoiceId: firstInvoiceId },
+        data: { invoiceId: inv.id },
         include: enrollmentInclude,
       });
     });
     return { ...enrollment, studentLogin };
+  }
+
+  /**
+   * Terbitkan invoice cicilan yang sudah jatuh tempo untuk pendaftaran yang
+   * menyimpan `billingPlan` (cicilan bulanan/2x). Dipanggil lazy saat daftar
+   * invoice dibaca — tidak perlu cron. Diskon per-siswa ikut diterapkan ke
+   * invoice baru sesuai discountMonths.
+   */
+  async ensureDueInstallments() {
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: {
+        billingPlan: { not: Prisma.DbNull },
+        status: { in: ['PENDING_PAYMENT', 'PAID', 'ACCEPTED', 'PLACED'] },
+      },
+      select: {
+        id: true,
+        studentId: true,
+        childName: true,
+        createdAt: true,
+        billingPlan: true,
+        discountAmount: true,
+        discountMonths: true,
+        discountReason: true,
+        program: { select: { name: true } },
+        level: { select: { name: true } },
+        // Hitung SEMUA invoice (termasuk void) supaya ordinal cicilan stabil.
+        invoices: { select: { id: true } },
+      },
+      take: 500,
+    });
+    type Plan = {
+      label: string;
+      dueOffsetMonths: number;
+      items: { description: string; quantity: number; unitPrice: number; amount: number }[];
+    };
+    for (const e of enrollments) {
+      const plans = (e.billingPlan as Plan[] | null) ?? [];
+      let issued = e.invoices.length;
+      await this.prisma.$transaction(async (tx) => {
+        for (let i = issued; i < plans.length; i += 1) {
+          const plan = plans[i];
+          // Replika rumus dueDate saat pendaftaran: createdAt+7h +offset bulan.
+          const due = new Date(e.createdAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+          due.setMonth(due.getMonth() + plan.dueOffsetMonths);
+          if (due.getTime() > Date.now()) break; // belum bulannya
+          const items = [...plan.items];
+          // Diskon per siswa: berlaku sampai lunas (null) atau N angsuran
+          // pertama (ordinal invoice i+1 <= discountMonths).
+          const disc = e.discountAmount ? Number(e.discountAmount) : 0;
+          const withinLimit =
+            e.discountMonths === null || i + 1 <= e.discountMonths;
+          if (disc > 0 && withinLimit) {
+            items.push({
+              description: `Diskon/Bantuan — ${e.discountReason?.trim() || 'Diskon'}`,
+              quantity: 1,
+              unitPrice: -disc,
+              amount: -disc,
+            });
+          }
+          const total = items.reduce((s, it) => s + it.amount, 0);
+          await tx.invoice.create({
+            data: {
+              number: await this.generateInvoiceNumber(tx),
+              studentId: e.studentId,
+              enrollmentId: e.id,
+              status: 'ISSUED',
+              totalAmount: new Prisma.Decimal(Math.max(0, total)),
+              dueDate: due,
+              issuedAt: new Date(),
+              notes: `Angsuran ${e.childName} — ${e.program.name} / ${e.level.name} (${plan.label})`,
+              items: { create: items },
+            },
+          });
+          issued += 1;
+        }
+      });
+    }
   }
 
   /**
@@ -771,13 +844,23 @@ export class EnrollmentsService {
   }
 
   /**
-   * Diskon/bantuan/promo per siswa — nominalnya disebar berurutan ke invoice
-   * ISSUED pendaftaran ini yang masih ada sisa (jatuh tempo terdekat dulu),
-   * ditulis sebagai item negatif. Paket/jenjang tidak berubah.
+   * Diskon/bantuan/promo per siswa — `amount` dipotong PER invoice angsuran
+   * (bukan total dibagi). `months` null = semua angsuran sampai lunas;
+   * N = hanya N angsuran pertama (ordinal invoice berdasar dueDate).
+   * Kebijakan disimpan di enrollment sehingga invoice cicilan yang diterbitkan
+   * kemudian (billingPlan) ikut terdiskon. Paket/jenjang tidak berubah.
    */
-  async applyDiscount(enrollmentId: string, amount: number, reason: string) {
+  async applyDiscount(
+    enrollmentId: string,
+    amount: number,
+    reason: string,
+    months: number | null = null,
+  ) {
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new BadRequestException('Nominal diskon harus lebih dari 0.');
+    }
+    if (months !== null && (!Number.isFinite(months) || months < 1)) {
+      throw new BadRequestException('Batas bulan diskon harus minimal 1.');
     }
     const label = reason?.trim() || 'Diskon';
     return this.prisma.$transaction(async (tx) => {
@@ -787,16 +870,19 @@ export class EnrollmentsService {
       });
       if (!e) throw new NotFoundException('Pendaftaran tidak ditemukan.');
       const invoices = await tx.invoice.findMany({
-        where: { enrollmentId, status: 'ISSUED' },
+        where: { enrollmentId },
         orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
       });
-      let remaining = amount;
+      // Target: seluruh invoice (sampai lunas) atau N angsuran pertama.
+      const targets =
+        months === null ? invoices : invoices.slice(0, Math.floor(months));
       let applied = 0;
       const touched: string[] = [];
-      for (const inv of invoices) {
+      for (const inv of targets) {
+        if (inv.status !== 'ISSUED') continue;
         const outstanding = Number(inv.totalAmount) - Number(inv.amountPaid);
         if (outstanding <= 0.009) continue;
-        const cut = Math.min(remaining, outstanding);
+        const cut = Math.min(amount, outstanding);
         await tx.invoiceItem.create({
           data: {
             invoiceId: inv.id,
@@ -813,16 +899,28 @@ export class EnrollmentsService {
           },
         });
         applied += cut;
-        remaining -= cut;
         touched.push(inv.number);
-        if (remaining <= 0.009) break;
       }
-      if (applied <= 0.009) {
+      // Simpan kebijakan — invoice cicilan yang belum terbit ikut terdiskon.
+      await tx.enrollment.update({
+        where: { id: enrollmentId },
+        data: {
+          discountAmount: new Prisma.Decimal(String(amount)),
+          discountMonths: months,
+          discountReason: label,
+        },
+      });
+      if (applied <= 0.009 && !(e.billingPlan as unknown[] | null)?.length) {
         throw new BadRequestException(
           'Tidak ada tagihan outstanding pada pendaftaran ini.',
         );
       }
-      return { applied: Math.round(applied * 100) / 100, invoices: touched };
+      return {
+        applied: Math.round(applied * 100) / 100,
+        perInstallment: amount,
+        months,
+        invoices: touched,
+      };
     });
   }
 

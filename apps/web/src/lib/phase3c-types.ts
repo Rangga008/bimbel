@@ -189,7 +189,10 @@ export interface ReportViolationDto {
 export interface ReportViolationResult {
   success: boolean;
   violationCount: number;
+  violationLimit?: number;
   locked: boolean;
+  /** Batas pelanggaran terlampaui — jawaban dikumpulkan otomatis oleh sistem. */
+  autoSubmitted?: boolean;
   message: string;
 }
 

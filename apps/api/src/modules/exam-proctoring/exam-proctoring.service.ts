@@ -2,28 +2,39 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { TutorScopeService } from '../../common/tutor-scope/tutor-scope.service';
+import { SettingsService } from '../settings/settings.service';
+import { ExamAttemptsService } from '../exam-attempts/exam-attempts.service';
 import { ReportViolationDto, ProctoringViolationType, UnlockAttemptDto } from './dto/exam-proctoring.dto';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 
 /**
  * Fase 3d — Proctoring & Anti-Leak
- * 
+ *
  * Fitur:
  * - Record violation (fullscreen exit, visibility change, blur, tab leave)
- * - Auto-lock attempt when violation threshold reached (default: 3 violations)
+ * - Pelanggaran < batas → attempt LOCKED (peringatan; pengawas bisa unlock).
+ *   Pelanggaran mencapai batas → jawaban AUTO-SUBMIT oleh sistem.
+ * - Batas pelanggaran (mis. 3 atau 5) di-set di Pengaturan > Ujian
+ *   (key `exam.violationLimit`), tidak lagi hardcode.
  * - Unlock attempt hanya oleh user dengan permission exam_proctor.unlock
  * - Unlock lintas kelompok/program (berdasarkan permission, bukan relasi tutor-siswa)
- * - Semua LOCK/UNLOCK wajib masuk audit log
+ * - Semua LOCK/UNLOCK/AUTO-SUBMIT wajib masuk audit log
  */
 @Injectable()
 export class ExamProctoringService {
-  private readonly VIOLATION_THRESHOLD = 3; // Default: lock after 3 violations
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly tutorScope: TutorScopeService,
+    private readonly settings: SettingsService,
+    private readonly attempts: ExamAttemptsService,
   ) {}
+
+  /** Batas pelanggaran dari Pengaturan > Ujian (default 3). */
+  private async violationLimit() {
+    const cfg = await this.settings.get('exam');
+    return cfg.violationLimit || 3;
+  }
 
   /**
    * Overview peserta ujian per kelompok untuk pengawas.
@@ -231,6 +242,8 @@ export class ExamProctoringService {
       };
     }
 
+    const limit = await this.violationLimit();
+
     // Increment violation count
     const updated = await this.prisma.examAttempt.update({
       where: { id: attemptId },
@@ -239,19 +252,47 @@ export class ExamProctoringService {
       },
     });
 
-    // Proteksi aktif: keluar aplikasi/halaman langsung mengunci attempt —
-    // siswa tidak bisa lanjut sampai pengawas membuka kembali.
+    // Pelanggaran mencapai batas → auto-submit jawaban apa adanya
+    // (bukan sekadar lock — siswa tidak bisa lanjut lagi).
+    if (updated.violationCount >= limit) {
+      await this.attempts.autoSubmit(attemptId);
+      await this.audit.log({
+        actorId: null,
+        action: 'exam_attempt.auto_submit_violation',
+        entity: 'ExamAttempt',
+        entityId: attemptId,
+        newData: {
+          violationCount: updated.violationCount,
+          violationLimit: limit,
+          lastViolation: dto.violationType,
+        },
+      });
+      return {
+        success: true,
+        violationCount: updated.violationCount,
+        violationLimit: limit,
+        locked: false,
+        autoSubmitted: true,
+        message: `Batas pelanggaran (${limit}x) terlampaui — jawaban Anda dikumpulkan otomatis.`,
+      };
+    }
+
+    // Pelanggaran di bawah batas: attempt dikunci sebagai PERINGATAN —
+    // pengawas bisa membuka kembali; pelanggaran ke-N = auto-submit.
     await this.lockAttempt(
       attemptId,
       'SYSTEM',
-      `Terkunci otomatis: siswa ${dto.violationType}.`,
+      `Peringatan ${updated.violationCount}/${limit}: siswa ${dto.violationType}.`,
     );
     return {
       success: true,
       violationCount: updated.violationCount,
+      violationLimit: limit,
       locked: true,
+      autoSubmitted: false,
       message:
-        'Attempt dikunci karena Anda keluar dari ujian. Hubungi pengawas untuk melanjutkan.',
+        `Peringatan ${updated.violationCount} dari ${limit}: attempt dikunci karena Anda keluar dari ujian. ` +
+        'Hubungi pengawas untuk melanjutkan — pelanggaran berikutnya bisa mengumpulkan jawaban otomatis.',
     };
   }
 
@@ -365,6 +406,7 @@ export class ExamProctoringService {
       throw new ForbiddenException('Anda tidak berhak melihat status attempt ini.');
     }
 
+    const limit = await this.violationLimit();
     return {
       id: attempt.id,
       status: attempt.status,
@@ -374,8 +416,8 @@ export class ExamProctoringService {
       lockedReason: attempt.lockedReason,
       unlockedAt: attempt.unlockedAt,
       unlockedBy: attempt.unlockedBy,
-      violationThreshold: this.VIOLATION_THRESHOLD,
-      canBeLocked: attempt.status === 'IN_PROGRESS' && attempt.violationCount < this.VIOLATION_THRESHOLD,
+      violationThreshold: limit,
+      canBeLocked: attempt.status === 'IN_PROGRESS' && attempt.violationCount < limit,
     };
   }
 }

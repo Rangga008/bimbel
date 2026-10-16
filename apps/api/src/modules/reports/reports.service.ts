@@ -463,9 +463,11 @@ ${summary}
   }
 
   /**
-   * Rekap pembayaran per jenjang: 1 baris per pendaftaran, kolom angsuran
-   * "Bayar ke-N" mengikuti urutan invoice (bulan ke-1, ke-2, dst). Tanpa
-   * filter jenjang → semua jenjang muncul, diurutkan per jenjang.
+   * Rekap pembayaran per jenjang ala rekap Excel lama:
+   * NO | ID | Kelas/Prog | Nama | Harga | Pemb Ke | Sisa | AGU..JUL | Total Masuk.
+   * Kolom bulan mengikuti tahun ajaran (Agustus–Juli); sel bulan = uang masuk
+   * untuk invoice yang jatuh tempo di bulan tsb. Baris diurutkan per jenjang —
+   * tanpa filter jenjang semua jenjang muncul.
    */
   private async buildPaymentRecap(filters: ReportFilters): Promise<ReportDoc> {
     const where: Record<string, unknown> = {};
@@ -480,8 +482,10 @@ ${summary}
     const enrollments = await this.prisma.enrollment.findMany({
       where,
       include: {
-        student: { select: { user: { select: { name: true } } } },
-        program: { select: { name: true } },
+        student: {
+          select: { nis: true, user: { select: { name: true } } },
+        },
+        program: { select: { name: true, code: true } },
         level: {
           select: {
             name: true,
@@ -489,11 +493,26 @@ ${summary}
           },
         },
         group: { select: { name: true } },
-        invoices: {
+        // Invoice utama ditaut via enrollment.invoiceId (relasi
+        // EnrollmentPrimaryInvoice), cicilan via invoice.enrollmentId —
+        // keduanya harus digabung supaya "Harga" tidak kosong.
+        invoice: {
           select: {
+            id: true,
             totalAmount: true,
             amountPaid: true,
             dueDate: true,
+            createdAt: true,
+            status: true,
+          },
+        },
+        invoices: {
+          select: {
+            id: true,
+            totalAmount: true,
+            amountPaid: true,
+            dueDate: true,
+            createdAt: true,
             status: true,
           },
           orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
@@ -502,65 +521,67 @@ ${summary}
       take: 500,
     });
 
-    const PLAN: Record<string, string> = {
-      FULL: 'Lunas',
-      TWO_TIMES: 'Angsuran 2x',
-      MONTHLY: 'Bulanan',
-    };
-
-    const maxInst = Math.min(
-      12,
-      Math.max(0, ...enrollments.map((e) => e.invoices.length)),
-    );
+    // Tahun ajaran: Agustus (index 0) … Juli (index 11).
+    const MONTHS = [
+      'AGU', 'SEP', 'OKT', 'NOV', 'DES', 'JAN',
+      'FEB', 'MAR', 'APR', 'MEI', 'JUN', 'JUL',
+    ];
     const headers = [
-      'Jenjang',
-      'Nama',
-      'Paket',
-      'Skema',
-      'Harga Total',
-      ...Array.from({ length: maxInst }, (_, i) => `Bayar ke-${i + 1}`),
-      'Terbayar',
-      'Sisa',
+      'NO', 'ID', 'Kelas/Prog', 'Nama', 'Harga', 'Pemb Ke', 'Sisa',
+      ...MONTHS, 'Total Masuk',
     ];
 
     let billed = 0;
     let paidAll = 0;
-    const rows = enrollments
-      .slice()
-      .sort((a, b) => {
-        const la = a.level?.gradeLevel?.sortOrder ?? 999;
-        const lb = b.level?.gradeLevel?.sortOrder ?? 999;
-        if (la !== lb) return la - lb;
-        const ln = (a.level?.name ?? '').localeCompare(b.level?.name ?? '');
-        if (ln !== 0) return ln;
-        return a.student.user.name.localeCompare(b.student.user.name);
-      })
-      .map((e) => {
-        const total = e.invoices.reduce((s, i) => s + reportMoney(i.totalAmount), 0);
-        const paid = e.invoices.reduce((s, i) => s + reportMoney(i.amountPaid), 0);
-        billed += total;
-        paidAll += paid;
-        const inst = e.invoices.map((inv) => {
-          const t = reportMoney(inv.totalAmount);
-          const out = Math.max(0, t - reportMoney(inv.amountPaid));
-          return out <= 0.009 ? `${numCell(t)} (lunas)` : `${numCell(t)} (sisa ${numCell(out)})`;
-        });
-        const jenjang =
-          e.level?.gradeLevel && e.level.gradeLevel.name !== e.level.name
-            ? `${e.level.gradeLevel.name} · ${e.level.name}`
-            : (e.level?.name ?? '-');
-        return [
-          jenjang,
-          e.student.user.name,
-          `${e.program.name}${e.group ? ` · ${e.group.name}` : ''}`,
-          PLAN[e.paymentPlan ?? ''] ?? '-',
-          numCell(total),
-          ...inst,
-          ...Array.from({ length: maxInst - inst.length }, () => '-'),
-          numCell(paid),
-          numCell(Math.max(0, total - paid)),
-        ];
-      });
+    const sorted = enrollments.slice().sort((a, b) => {
+      const la = a.level?.gradeLevel?.sortOrder ?? 999;
+      const lb = b.level?.gradeLevel?.sortOrder ?? 999;
+      if (la !== lb) return la - lb;
+      const ln = (a.level?.name ?? '').localeCompare(b.level?.name ?? '');
+      if (ln !== 0) return ln;
+      return a.student.user.name.localeCompare(b.student.user.name);
+    });
+
+    const rows = sorted.map((e, i) => {
+      // Gabung invoice primer + cicilan, dedupe by id, urut dueDate.
+      const all = [...e.invoices];
+      if (e.invoice && !all.some((v) => v.id === e.invoice!.id)) {
+        all.push(e.invoice);
+      }
+      all.sort(
+        (a, b) =>
+          new Date(a.dueDate ?? a.createdAt).getTime() -
+          new Date(b.dueDate ?? b.createdAt).getTime(),
+      );
+      const total = all.reduce((s, v) => s + reportMoney(v.totalAmount), 0);
+      const paid = all.reduce((s, v) => s + reportMoney(v.amountPaid), 0);
+      billed += total;
+      paidAll += paid;
+      // Sel bulan = uang masuk invoice yang jatuh tempo di bulan tsb.
+      const months = new Array<number>(12).fill(0);
+      let paidCount = 0;
+      for (const inv of all) {
+        const p = reportMoney(inv.amountPaid);
+        if (p > 0.009) paidCount += 1;
+        const d = new Date(inv.dueDate ?? inv.createdAt);
+        const idx = (((d.getMonth() - 7) % 12) + 12) % 12;
+        months[idx] += p;
+      }
+      const kelasProg = e.level?.gradeLevel
+        ? `${e.level.gradeLevel.name}/${e.program.code || e.program.name}`
+        : `${e.level?.name ?? '-'}/${e.program.code || e.program.name}`;
+      return [
+        String(i + 1),
+        e.student.nis || '-',
+        kelasProg,
+        e.student.user.name,
+        numCell(total),
+        String(paidCount),
+        numCell(Math.max(0, total - paid)),
+        ...months.map((m) => (m > 0.009 ? numCell(m) : '-')),
+        numCell(paid),
+      ];
+    });
 
     return this.baseDoc(
       'payment-recap',

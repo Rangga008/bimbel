@@ -485,6 +485,15 @@ model Enrollment {
   sessionCount Int?
   /// Nama anak persis seperti diisi ortu saat mendaftar.
   childName    String
+  /// Diskon/bantuan per siswa — nominal DIPOTONG PER invoice angsuran
+  /// (bukan total dibagi), paket/jenjang tidak berubah. null = tanpa diskon.
+  discountAmount Decimal? @db.Decimal(14, 2)
+  /// Batas bulan berlaku: null = semua angsuran sampai lunas; N = N angsuran pertama.
+  discountMonths Int?
+  discountReason String?
+  /// Sisa rencana tagihan cicilan — invoice bulan berikutnya diterbitkan
+  /// otomatis saat bulannya tiba (bukan langsung semua saat daftar).
+  billingPlan  Json?
   notes        String?
   reviewedById String?
   reviewedAt   DateTime?

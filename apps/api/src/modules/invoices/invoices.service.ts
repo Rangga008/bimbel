@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { NotificationEventsService } from '../notifications/notification-events.service';
 import { SettingsService } from '../settings/settings.service';
+import { EnrollmentsService } from '../enrollments/enrollments.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 
 const invoiceStudentSelect = {
@@ -67,6 +68,7 @@ export class InvoicesService {
     private readonly prisma: PrismaService,
     private readonly events: NotificationEventsService,
     private readonly settings: SettingsService,
+    private readonly enrollments: EnrollmentsService,
   ) {}
 
   private prefix(now = new Date()) {
@@ -110,6 +112,9 @@ export class InvoicesService {
   }
 
   async list(query: { search?: string; status?: string; studentId?: string; programId?: string; levelId?: string }) {
+    // Terbitkan cicilan yang bulannya sudah tiba (lazy billing plan) —
+    // kegagalan generator tidak boleh memutus listing invoice.
+    await this.enrollments.ensureDueInstallments().catch(() => undefined);
     const where: Record<string, unknown> = {};
     if (query.studentId) where.studentId = query.studentId;
     // Filter program/jenjang via paket ATAU enrollment — invoice pendaftaran

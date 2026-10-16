@@ -22,6 +22,7 @@ import {
 } from './gateway/payment-gateway.provider';
 import { MidtransGatewayProvider } from './gateway/midtrans.provider';
 import { SettingsService } from '../settings/settings.service';
+import { EnrollmentsService } from '../enrollments/enrollments.service';
 import { receiptDetailInclude } from './receipt.includes';
 import {
   CreateCashPaymentDto,
@@ -97,6 +98,7 @@ export class PaymentsService {
     private readonly config: ConfigService,
     private readonly events: NotificationEventsService,
     private readonly settings: SettingsService,
+    private readonly enrollments: EnrollmentsService,
   ) {
     this.dummyGateway = new DummyGatewayProvider(
       this.config.get<string>('PAYMENT_WEBHOOK_SECRET', 'dev-webhook-secret'),
@@ -296,6 +298,7 @@ export class PaymentsService {
     channel?: string;
     studentId?: string;
     groupId?: string;
+    levelId?: string;
     search?: string;
     from?: string;
     to?: string;
@@ -361,6 +364,22 @@ export class PaymentsService {
           ],
         },
       ];
+    }
+    if (query.levelId) {
+      const and = (where.AND as unknown[] | undefined) ?? [];
+      and.push({
+        allocations: {
+          some: {
+            invoice: {
+              OR: [
+                { enrollmentLink: { levelId: query.levelId } },
+                { enrollment: { levelId: query.levelId } },
+              ],
+            },
+          },
+        },
+      });
+      where.AND = and;
     }
     if (query.search) {
       where.OR = [
@@ -482,6 +501,9 @@ export class PaymentsService {
   }
 
   async myChildrenInvoices(userId: string, studentId?: string) {
+    // Terbitkan cicilan bulan ini dulu (lazy billing plan) sebelum daftar
+    // invoice dibaca — kegagalan generator tidak boleh memutus listing.
+    await this.enrollments.ensureDueInstallments().catch(() => undefined);
     const allowed = await this.allowedStudentsOrThrow(userId);
     const ids = studentId
       ? allowed.includes(studentId)
@@ -977,12 +999,25 @@ export class PaymentsService {
   async listReceipts(query: {
     studentId?: string;
     groupId?: string;
+    levelId?: string;
     invoiceId?: string;
     search?: string;
   }) {
     const where: Record<string, unknown> = {};
     if (query.studentId) where.studentId = query.studentId;
     if (query.invoiceId) where.invoiceId = query.invoiceId;
+    if (query.levelId) {
+      where.AND = [
+        {
+          invoice: {
+            OR: [
+              { enrollmentLink: { levelId: query.levelId } },
+              { enrollment: { levelId: query.levelId } },
+            ],
+          },
+        },
+      ];
+    }
     if (query.groupId) {
       const memberIds = (
         await this.prisma.groupMember.findMany({
@@ -1008,12 +1043,12 @@ export class PaymentsService {
           },
         },
       ];
-      // Gabungkan dengan OR filter kelompok bila keduanya aktif.
+      // Gabungkan dengan OR filter kelompok (dan AND jenjang) bila keduanya aktif.
       if (where.OR) {
-        where.AND = [{ OR: where.OR }, { OR: searchOr }];
+        where.AND = [...((where.AND as unknown[]) ?? []), { OR: where.OR }, { OR: searchOr }];
         delete where.OR;
       } else {
-        where.OR = searchOr;
+        where.AND = [...((where.AND as unknown[]) ?? []), { OR: searchOr }];
       }
     }
     return this.prisma.receipt.findMany({

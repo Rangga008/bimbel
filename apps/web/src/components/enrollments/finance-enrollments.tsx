@@ -105,6 +105,7 @@ export function FinanceEnrollments() {
 	const [discountTarget, setDiscountTarget] = useState<StaffEnrollment | null>(null);
 	const [discountAmount, setDiscountAmount] = useState("");
 	const [discountReason, setDiscountReason] = useState("");
+	const [discountMonths, setDiscountMonths] = useState("");
 
 	// Ambil semua sekali — count per kategori dihitung lokal agar tab akurat.
 	const listQ = useQuery({
@@ -136,13 +137,18 @@ export function FinanceEnrollments() {
 		mutationFn: () =>
 			apiFetch<{ applied: number; invoices: string[] }>(`/enrollments/${discountTarget!.id}/discount`, {
 				method: "POST",
-				body: { amount: Number(discountAmount), reason: discountReason },
+				body: {
+					amount: Number(discountAmount),
+					reason: discountReason,
+					months: discountMonths ? Number(discountMonths) : null,
+				},
 			}),
 		onSuccess: (r) => {
 			toast.success(`Diskon ${rp(r.applied)} diterapkan ke ${r.invoices.length} invoice.`);
 			setDiscountTarget(null);
 			setDiscountAmount("");
 			setDiscountReason("");
+			setDiscountMonths("");
 			qc.invalidateQueries({ queryKey: ["enrollments"] });
 			qc.invalidateQueries({ queryKey: ["invoices"] });
 		},
@@ -385,14 +391,33 @@ export function FinanceEnrollments() {
 						<DialogTitle>Diskon / Bantuan — {discountTarget?.childName}</DialogTitle>
 						<DialogDescription>
 							Potongan harga khusus siswa ini (diskon, bantuan, promo). Paket & jenjang
-							tidak berubah — nominal disebar otomatis ke invoice yang belum lunas.
+							tidak berubah — nominal dipotong dari SETIAP angsuran sesuai masa berlaku.
 						</DialogDescription>
 					</DialogHeader>
 					<form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); discountM.mutate(); }}>
 						<div className="flex flex-col gap-1.5">
-							<Label htmlFor="enr-disc-amount">Nominal diskon (Rp)</Label>
+							<Label htmlFor="enr-disc-amount">Diskon per angsuran (Rp)</Label>
 							<Input id="enr-disc-amount" type="number" min={1} required value={discountAmount}
-								onChange={(e) => setDiscountAmount(e.target.value)} placeholder="mis. 500000" />
+								onChange={(e) => setDiscountAmount(e.target.value)} placeholder="mis. 10000" />
+						</div>
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="enr-disc-months">Berlaku untuk</Label>
+							<select
+								id="enr-disc-months"
+								className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+								value={discountMonths === "" ? "all" : "first"}
+								onChange={(e) => setDiscountMonths(e.target.value === "all" ? "" : "1")}
+							>
+								<option value="all">Semua angsuran sampai lunas</option>
+								<option value="first">Hanya beberapa angsuran pertama</option>
+							</select>
+							{discountMonths !== "" ? (
+								<div className="flex items-center gap-2">
+									<Input type="number" min={1} className="w-28" value={discountMonths}
+										onChange={(e) => setDiscountMonths(e.target.value)} />
+									<span className="text-xs text-muted-foreground">angsuran pertama</span>
+								</div>
+							) : null}
 						</div>
 						<div className="flex flex-col gap-1.5">
 							<Label htmlFor="enr-disc-reason">Alasan</Label>

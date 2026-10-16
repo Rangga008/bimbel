@@ -15,7 +15,10 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { PermissionsGuard } from '../rbac/permissions.guard';
-import { RequirePermissions } from '../rbac/permissions.decorator';
+import {
+  RequireAnyPermissions,
+  RequirePermissions,
+} from '../rbac/permissions.decorator';
 import { PERMISSION_CODES } from '../rbac/permissions.constants';
 import { AuditService } from '../../common/audit/audit.service';
 import { EnrollmentsService } from './enrollments.service';
@@ -169,10 +172,13 @@ export class EnrollmentsController {
    * pendaftaran ini yang belum lunas (paket/jenjang tidak berubah).
    */
   @Post('enrollments/:id/discount')
-  @RequirePermissions(PERMISSION_CODES.INVOICE_MANAGE)
+  @RequireAnyPermissions(
+    PERMISSION_CODES.INVOICE_MANAGE,
+    PERMISSION_CODES.ENROLLMENT_PLACE,
+  )
   async discount(
     @Param('id') id: string,
-    @Body() dto: { amount?: number; reason?: string },
+    @Body() dto: { amount?: number; months?: number | null; reason?: string },
     @CurrentUser() actor: AuthenticatedUser,
     @Req() req: Request,
   ) {
@@ -180,13 +186,21 @@ export class EnrollmentsController {
       id,
       Number(dto.amount),
       String(dto.reason ?? ''),
+      dto.months === null || dto.months === undefined
+        ? null
+        : Number(dto.months),
     );
     await this.audit.log({
       actorId: actor.id,
       action: 'ENROLLMENT_DISCOUNTED',
       entity: 'Enrollment',
       entityId: id,
-      newData: { amount: dto.amount, reason: dto.reason, applied: result.applied },
+      newData: {
+        amount: dto.amount,
+        months: dto.months ?? null,
+        reason: dto.reason,
+        applied: result.applied,
+      },
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });

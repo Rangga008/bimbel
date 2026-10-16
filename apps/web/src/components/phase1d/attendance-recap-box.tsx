@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ComboboxField } from '@/components/shared/combobox-field';
+import { Button } from '@/components/ui/button';
 import { apiFetch } from '@/lib/api-client';
 import { useAuthStore } from '@/stores/auth-store';
 import type { AttendanceRecap } from '@/lib/phase1d-types';
@@ -27,17 +28,27 @@ export function AttendanceRecapBox() {
   // Filter daftar orang memerlukan people.view — tutor/ortu tidak punya (403).
   const canPickPeople = roles.includes('ADMIN_ACADEMIC') || roles.includes('OWNER') || roles.includes('ADMIN_FINANCE');
   const [f, setF] = useState({ studentId: '', groupId: '', tutorId: '', from: '', to: '' });
+  // Rekap tidak auto-load — user wajib memilih filter/tanggal lalu klik
+  // "Tampilkan" supaya data besar tidak langsung turun semua.
+  const [applied, setApplied] = useState<{ studentId: string; groupId: string; tutorId: string; from: string; to: string } | null>(null);
   const [openSession, setOpenSession] = useState<string | null>(null);
 
   const params = new URLSearchParams();
-  if (f.studentId) params.set('studentId', f.studentId);
-  if (f.groupId) params.set('groupId', f.groupId);
-  if (f.tutorId) params.set('tutorId', f.tutorId);
-  if (f.from) params.set('from', new Date(f.from).toISOString());
-  if (f.to) params.set('to', new Date(f.to).toISOString());
+  if (applied) {
+    if (applied.studentId) params.set('studentId', applied.studentId);
+    if (applied.groupId) params.set('groupId', applied.groupId);
+    if (applied.tutorId) params.set('tutorId', applied.tutorId);
+    if (applied.from) params.set('from', new Date(applied.from).toISOString());
+    if (applied.to) params.set('to', new Date(applied.to).toISOString());
+  }
   const qs = params.toString();
 
-  const q = useQuery({ queryKey: ['attendance-recap', qs], queryFn: () => apiFetch<AttendanceRecap>(`/attendance/recap${qs ? `?${qs}` : ''}`) });
+  const q = useQuery({
+    queryKey: ['attendance-recap', qs],
+    queryFn: () => apiFetch<AttendanceRecap>(`/attendance/recap${qs ? `?${qs}` : ''}`),
+    enabled: applied !== null,
+  });
+  const filterReady = !!(f.studentId || f.groupId || f.tutorId || f.from || f.to);
   const stale = { staleTime: 5 * 60 * 1000, retry: 1 };
   const studentsQ = useQuery({ queryKey: ['recap-opt-students'], queryFn: () => apiFetch<PersonOpt[]>('/students'), ...stale, enabled: canPickPeople });
   const tutorsQ = useQuery({ queryKey: ['recap-opt-tutors'], queryFn: () => apiFetch<PersonOpt[]>('/tutors'), ...stale, enabled: canPickPeople });
@@ -103,6 +114,19 @@ export function AttendanceRecapBox() {
         ) : null}
         <div className="flex flex-col gap-1.5"><Label>Dari tanggal</Label><Input type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} /></div>
         <div className="flex flex-col gap-1.5"><Label>Sampai tanggal</Label><Input type="date" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} /></div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button size="sm" disabled={!filterReady} onClick={() => setApplied({ ...f })}>
+          Tampilkan Rekap
+        </Button>
+        {applied ? (
+          <Button size="sm" variant="ghost" onClick={() => setApplied(null)}>
+            Reset
+          </Button>
+        ) : null}
+        {!applied ? (
+          <p className="text-xs text-muted-foreground">Pilih tanggal/kelompok/siswa dulu, lalu klik Tampilkan.</p>
+        ) : null}
       </div>
       {q.isLoading ? <Skeleton className="h-20 w-full" /> : null}
       {q.data ? (

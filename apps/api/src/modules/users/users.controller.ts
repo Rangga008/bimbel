@@ -167,6 +167,36 @@ export class UsersController {
     return updated;
   }
 
+  @Delete(':id')
+  @RequirePermissions(PERMISSION_CODES.USERS_MANAGE)
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    if (actor.id === id) {
+      throw new ForbiddenException('Tidak bisa menghapus akun sendiri.');
+    }
+    const before = await this.usersService.findByIdWithRoles(id);
+    if (!before) throw new NotFoundException('User tidak ditemukan.');
+    await this.usersService.deleteUser(id);
+    await this.auditService.log({
+      actorId: actor.id,
+      action: 'USER_DELETED',
+      entity: 'User',
+      entityId: id,
+      oldData: {
+        email: before.email,
+        name: before.name,
+        phone: before.phone,
+      },
+      newData: { deleted: true },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return { success: true };
+  }
+
   @Post(':id/reset-password')
   @RequirePermissions(PERMISSION_CODES.USERS_RESET_PASSWORD)
   async resetPassword(

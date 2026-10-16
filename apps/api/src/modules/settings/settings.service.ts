@@ -87,6 +87,13 @@ export interface DisplaySettings {
   registrationUrl: string;
 }
 
+export interface ExamSettings {
+  /** Batas pelanggaran proctoring: pelanggaran ke-N memicu auto-submit
+   *  (siswa tidak bisa lanjut). Pelanggaran < N → attempt terkunci dan bisa
+   *  dibuka pengawas. Default 3. */
+  violationLimit: number;
+}
+
 export interface MidtransSettings {
   /** Gateway aktif: true = pembayaran online via Midtrans Snap. */
   enabled: boolean;
@@ -114,7 +121,8 @@ type SettingValue =
   | MailSettings
   | MidtransSettings
   | ReminderSettings
-  | DisplaySettings;
+  | DisplaySettings
+  | ExamSettings;
 
 interface SettingDef<T extends SettingValue> {
   defaults: T;
@@ -165,6 +173,7 @@ export const SETTING_DEFS: {
   midtrans: SettingDef<MidtransSettings>;
   reminders: SettingDef<ReminderSettings>;
   display: SettingDef<DisplaySettings>;
+  exam: SettingDef<ExamSettings>;
 } = {
   company: {
     defaults: {
@@ -446,6 +455,20 @@ export const SETTING_DEFS: {
         );
       }
       return { heroImages, registrationUrl };
+    },
+  },
+  exam: {
+    defaults: { violationLimit: 3 },
+    validate(raw) {
+      const o = (raw ?? {}) as Record<string, unknown>;
+      return {
+        violationLimit: asIntRange(
+          o.violationLimit,
+          'exam.violationLimit',
+          1,
+          10,
+        ),
+      };
     },
   },
 };

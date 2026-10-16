@@ -33,6 +33,7 @@ export interface PaymentFilters {
   channel?: string;
   studentId?: string;
   groupId?: string;
+  levelId?: string;
   search?: string;
 }
 
@@ -43,6 +44,7 @@ export function usePaymentsList(filters: PaymentFilters) {
     if (filters.channel) p.set('channel', filters.channel);
     if (filters.studentId) p.set('studentId', filters.studentId);
     if (filters.groupId) p.set('groupId', filters.groupId);
+    if (filters.levelId) p.set('levelId', filters.levelId);
     if (filters.search) p.set('search', filters.search);
     return p.toString();
   })();

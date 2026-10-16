@@ -99,7 +99,7 @@ function HeroPhotoSlider({ images }: { images: string[] }) {
 	const go = (dir: number) => setActive((a) => (a + dir + count) % count);
 
 	return (
-		<div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl border border-white/15 shadow-2xl">
+		<div className="relative aspect-[16/10] w-full overflow-hidden rounded-2xl border shadow-2xl sm:aspect-[21/9]">
 			{images.map((src, i) => (
 				<Image
 					key={src}
@@ -113,7 +113,7 @@ function HeroPhotoSlider({ images }: { images: string[] }) {
 			))}
 			<div
 				aria-hidden
-				className="absolute inset-0 bg-gradient-to-t from-brand-blue-900/60 via-transparent to-transparent"
+				className="absolute inset-0 bg-gradient-to-t from-brand-blue-900/50 via-transparent to-transparent"
 			/>
 			{count > 1 ? (
 				<>
@@ -581,9 +581,6 @@ export default function LandingPage() {
 						</div>
 					</div>
 					<div className="flex flex-col gap-4">
-						{heroImages.length > 0 ? (
-							<HeroPhotoSlider images={heroImages} />
-						) : null}
 						<Card className="border-white/15 bg-white/10 text-white shadow-2xl backdrop-blur-md">
 						<CardHeader>
 							<CardTitle className="flex items-center gap-2 text-base text-white">
@@ -622,6 +619,14 @@ export default function LandingPage() {
 					className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-background to-transparent"
 				/>
 			</section>
+
+			{/* ---- Galeri foto siswa (slider terpisah dari hero, di-set di
+			    Pengaturan > Tampilan Landing) ---- */}
+			{heroImages.length > 0 ? (
+				<section aria-label="Galeri siswa" className="mx-auto max-w-6xl px-4 pt-12 sm:px-6">
+					<HeroPhotoSlider images={heroImages} />
+				</section>
+			) : null}
 
 			{/* ---- Tentang ---- */}
 			<section id="tentang" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-16 sm:px-6 md:py-20">
