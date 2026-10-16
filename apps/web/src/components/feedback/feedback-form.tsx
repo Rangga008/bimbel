@@ -79,6 +79,9 @@ export function FeedbackForm() {
 	const [drafts, setDrafts] = useState<Record<string, string>>({});
 	// Ortu dengan >1 anak wajib pilih anak dulu — feedback tidak dicampur.
 	const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+	// Siswa yang terdaftar di >1 kelompok/program pilih dulu kelompok mana yang
+	// feedbacknya diisi — form tidak menumpuk semua kelompok sekaligus.
+	const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
 	const weekIso = weekStart?.toISOString() ?? "";
 	const weekEnd = weekStart
 		? new Date(weekStart.getTime() + 6 * 86400000)
@@ -131,7 +134,16 @@ export function FeedbackForm() {
 	// Siswa tunggal otomatis terpilih; multi-anak harus pilih eksplisit.
 	const activeStudentId =
 		allStudents.length === 1 ? allStudents[0].id : selectedStudentId;
-	const students = allStudents.filter((s) => s.id === activeStudentId);
+	const activeStudent = allStudents.find((s) => s.id === activeStudentId);
+	const groupCount = activeStudent?.groups.length ?? 0;
+	// Kelompok tunggal otomatis terpilih; >1 harus dipilih eksplisit.
+	const activeGroupId = groupCount === 1 ? activeStudent?.groups[0].id : selectedGroupId;
+	const students = allStudents
+		.filter((s) => s.id === activeStudentId)
+		.map((s) => ({
+			...s,
+			groups: s.groups.filter((g) => g.id === activeGroupId),
+		}));
 	const key = (studentId: string, groupId: string, subjectId: string) =>
 		`${studentId}:${groupId}:${subjectId}`;
 
@@ -176,6 +188,7 @@ export function FeedbackForm() {
 								type="button"
 								onClick={() => {
 									setSelectedStudentId(st.id);
+									setSelectedGroupId(null);
 									setDrafts({});
 								}}
 								className={`rounded-lg border px-4 py-2 text-left text-sm transition-colors ${
@@ -201,8 +214,47 @@ export function FeedbackForm() {
 				</Card>
 			) : null}
 
-			{/* Langkah 2 — pilih minggu dari tanggal (hanya setelah anak dipilih) */}
-			{activeStudentId ? (
+			{/* Langkah 1b — pilih kelompok/program bila anak terdaftar lebih dari satu */}
+			{activeStudentId && groupCount > 1 ? (
+				<div className="flex flex-col gap-2">
+					<p className="text-sm font-medium">Pilih kelompok yang mau diisi feedbacknya:</p>
+					<div className="flex flex-wrap gap-2">
+						{activeStudent?.groups.map((g) => (
+							<button
+								key={g.id}
+								type="button"
+								onClick={() => {
+									setSelectedGroupId(g.id);
+									setDrafts({});
+								}}
+								className={`rounded-lg border px-4 py-2 text-left text-sm transition-colors ${
+									activeGroupId === g.id
+										? "border-primary bg-primary/5 font-medium ring-1 ring-primary"
+										: "hover:border-primary/50"
+								}`}
+							>
+								{g.name}
+								{g.code ? (
+									<span className="ml-1 font-mono text-xs text-muted-foreground">({g.code})</span>
+								) : null}
+								<span className="block text-xs text-muted-foreground">
+									{g.subjects.length} mapel
+								</span>
+							</button>
+						))}
+					</div>
+					{!activeGroupId ? (
+						<Card>
+							<CardContent className="py-6 text-center text-sm text-muted-foreground">
+								Pilih salah satu kelompok di atas dulu — feedback tiap kelompok diisi terpisah.
+							</CardContent>
+						</Card>
+					) : null}
+				</div>
+			) : null}
+
+			{/* Langkah 2 — pilih minggu dari tanggal (hanya setelah anak+kelompok dipilih) */}
+			{activeStudentId && activeGroupId ? (
 				<Card>
 					<CardContent className="flex flex-col gap-3 pt-4">
 						<Label htmlFor="fb-week-date" className="text-sm font-medium">
@@ -261,7 +313,7 @@ export function FeedbackForm() {
 				</Card>
 			) : null}
 
-			{activeStudentId && !weekStart && !contextQ.isLoading ? (
+			{activeStudentId && activeGroupId && !weekStart && !contextQ.isLoading ? (
 				<Card>
 					<CardContent className="py-8 text-center text-sm text-muted-foreground">
 						Pilih tanggal lalu tekan &quot;Tampilkan minggu ini&quot; untuk mengisi
@@ -281,7 +333,7 @@ export function FeedbackForm() {
 				</Card>
 			) : null}
 
-			{weekStart && contextQ.data && activeStudentId && !students.some((s) => s.groups.length > 0) ? (
+			{weekStart && contextQ.data && activeStudentId && activeGroupId && !students.some((s) => s.groups.length > 0) ? (
 				<EmptyState
 					icon={MessageSquareText}
 					title="Belum ada kelompok"

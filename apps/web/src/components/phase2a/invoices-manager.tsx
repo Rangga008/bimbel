@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Ban, Eye, FileCheck2, FileText, Search } from 'lucide-react';
+import { Ban, BadgePercent, Eye, FileCheck2, FileText, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -82,6 +82,9 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
   const [extraItems, setExtraItems] = useState<{ description: string; unitPrice: string }[]>([]);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [voidTarget, setVoidTarget] = useState<InvoiceListItem | null>(null);
+  const [discountTarget, setDiscountTarget] = useState<InvoiceListItem | null>(null);
+  const [discountAmount, setDiscountAmount] = useState('');
+  const [discountReason, setDiscountReason] = useState('');
 
   const listQ = useQuery({
     queryKey: ['invoices', debouncedSearch, status, filterProgramId, filterLevelId],
@@ -160,6 +163,23 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
       qc.invalidateQueries({ queryKey: ['invoices'] });
     },
     onError: (e) => toast.error(err(e, 'Gagal menerbitkan invoice.')),
+  });
+
+  const discountM = useMutation({
+    mutationFn: () =>
+      apiFetch<InvoiceDetail>(`/invoices/${discountTarget!.id}/discount`, {
+        method: 'POST',
+        body: { amount: Number(discountAmount), reason: discountReason },
+      }),
+    onSuccess: (updated) => {
+      toast.success(`Diskon diterapkan ke ${updated.number} — total baru ${rupiah(updated.totalAmount)}.`);
+      setDiscountTarget(null);
+      setDiscountAmount('');
+      setDiscountReason('');
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+      qc.invalidateQueries({ queryKey: ['ar'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal menerapkan diskon.')),
   });
 
   const voidM = useMutation({
@@ -316,6 +336,17 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
                           disabled={issueM.isPending}
                         >
                           <FileCheck2 className="size-4 text-success-600" />
+                        </Button>
+                      ) : null}
+                      {canManage && inv.status === 'ISSUED' && Number(inv.totalAmount) - Number(inv.amountPaid) > 0.009 ? (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Diskon ${inv.number}`}
+                          title="Diskon / bantuan / promo untuk siswa ini"
+                          onClick={() => { setDiscountTarget(inv); setDiscountAmount(''); setDiscountReason(''); }}
+                        >
+                          <BadgePercent className="size-4 text-brand-gold-600" />
                         </Button>
                       ) : null}
                       {canManage && inv.status !== 'VOID' ? (
@@ -493,6 +524,40 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
             </div>
           ) : null}
           <DialogFooter><Button variant="outline" onClick={() => setDetailId(null)}>Tutup</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={discountTarget !== null} onOpenChange={(o) => { if (!o) setDiscountTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Diskon / Bantuan — {discountTarget?.number}</DialogTitle>
+            <DialogDescription>
+              Potongan harga khusus siswa ini (diskon, bantuan, promo). Paket & program
+              tidak berubah — tercatat sebagai item negatif di invoice.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); discountM.mutate(); }}>
+            {discountTarget ? (
+              <p className="text-sm text-muted-foreground">
+                Sisa tagihan: {rupiah(Number(discountTarget.totalAmount) - Number(discountTarget.amountPaid))}
+              </p>
+            ) : null}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="disc-amount">Nominal diskon (Rp)</Label>
+              <Input id="disc-amount" type="number" min={1} required value={discountAmount}
+                onChange={(e) => setDiscountAmount(e.target.value)} placeholder="mis. 250000" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="disc-reason">Alasan</Label>
+              <Input id="disc-reason" required maxLength={200} value={discountReason}
+                onChange={(e) => setDiscountReason(e.target.value)} placeholder="mis. Diskon saudara kandung / bantuan yayasan" />
+            </div>
+            <DialogFooter>
+              <Button type="submit" disabled={discountM.isPending}>
+                {discountM.isPending ? 'Menyimpan...' : 'Terapkan Diskon'}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

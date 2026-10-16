@@ -164,6 +164,35 @@ export class EnrollmentsController {
     return updated;
   }
 
+  /**
+   * Diskon/bantuan/promo per siswa — nominalnya disebar ke invoice cicilan
+   * pendaftaran ini yang belum lunas (paket/jenjang tidak berubah).
+   */
+  @Post('enrollments/:id/discount')
+  @RequirePermissions(PERMISSION_CODES.INVOICE_MANAGE)
+  async discount(
+    @Param('id') id: string,
+    @Body() dto: { amount?: number; reason?: string },
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const result = await this.enrollments.applyDiscount(
+      id,
+      Number(dto.amount),
+      String(dto.reason ?? ''),
+    );
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'ENROLLMENT_DISCOUNTED',
+      entity: 'Enrollment',
+      entityId: id,
+      newData: { amount: dto.amount, reason: dto.reason, applied: result.applied },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return result;
+  }
+
   @Post('enrollments/:id/place')
   @RequirePermissions(PERMISSION_CODES.ENROLLMENT_PLACE)
   async place(

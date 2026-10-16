@@ -137,6 +137,8 @@ const ROLE_PERMISSION_MAP: Record<string, string[]> = {
     // create/update/delete di-scope via TutorScopeService di MaterialsService.
     PERMISSION_CODES.MATERIAL_MANAGE,
     PERMISSION_CODES.QUESTION_VIEW,
+    // Tutor membuat/mengubah soal di scope kelompoknya — dicek TutorScopeService.
+    PERMISSION_CODES.QUESTION_MANAGE,
     PERMISSION_CODES.LATSOL_VIEW,
     PERMISSION_CODES.LATSOL_MANAGE,
     PERMISSION_CODES.EXAM_VIEW,

@@ -19,15 +19,28 @@ export function PaymentsManager({ canVerify }: { canVerify: boolean }) {
   const [status, setStatus] = useState('');
   const [channel, setChannel] = useState('');
   const [openCash, setOpenCash] = useState(false);
+  const [studentId, setStudentId] = useState('');
   const [invoiceId, setInvoiceId] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [verifyId, setVerifyId] = useState<string | null>(null);
   const listQ = usePaymentsList(status, channel);
-  const invoicesQ = useQuery({
-    queryKey: ['invoices-issued-lite'],
-    queryFn: () => apiFetch<InvoiceListItem[]>('/invoices?status=ISSUED'),
+  // Pilih siswa dulu — invoice yang ditawarkan hanya milik siswa itu,
+  // tidak semua invoice ISSUED sekaligus.
+  const studentsQ = useQuery({
+    queryKey: ['students-lite'],
+    queryFn: () =>
+      apiFetch<{ id: string; user: { name: string } }[]>('/students'),
     enabled: openCash,
+    staleTime: 60 * 1000,
+  });
+  const invoicesQ = useQuery({
+    queryKey: ['invoices-issued-lite', studentId],
+    queryFn: () =>
+      apiFetch<InvoiceListItem[]>(
+        `/invoices?status=ISSUED${studentId ? `&studentId=${studentId}` : ''}`,
+      ),
+    enabled: openCash && Boolean(studentId),
   });
   const pendingQ = useQuery({
     queryKey: ['payments-pending-count'],
@@ -43,6 +56,7 @@ export function PaymentsManager({ canVerify }: { canVerify: boolean }) {
       toast.success(`Cash terverifikasi — kwitansi ${p.receipts?.[0]?.number ?? 'terbit'}.`);
       setOpenCash(false);
       setInvoiceId('');
+      setStudentId('');
       setAmount('');
       setNote('');
       qc.invalidateQueries({ queryKey: ['payments'] });
@@ -92,9 +106,13 @@ export function PaymentsManager({ canVerify }: { canVerify: boolean }) {
             </DialogDescription>
           </DialogHeader>
           <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); cashM.mutate(); }}>
+            <Phase1aSelectField id="cash-student" label="Siswa" value={studentId}
+              onChange={(v) => { setStudentId(v); setInvoiceId(''); }}
+              options={(studentsQ.data ?? []).map((s) => ({ value: s.id, label: s.user.name }))}
+              placeholder={studentsQ.isLoading ? 'Memuat...' : 'Pilih siswa dulu...'} required />
             <Phase1aSelectField id="cash-invoice" label="Invoice ISSUED" value={invoiceId} onChange={setInvoiceId}
-              options={(invoicesQ.data ?? []).map((i) => ({ value: i.id, label: `${i.number} — ${i.student.user.name} — ${rupiah(i.totalAmount)}` }))}
-              placeholder={invoicesQ.isLoading ? 'Memuat...' : 'Pilih invoice...'} required />
+              options={(invoicesQ.data ?? []).map((i) => ({ value: i.id, label: `${i.number} — sisa ${rupiah(Number(i.totalAmount) - Number(i.amountPaid))}` }))}
+              placeholder={!studentId ? 'Pilih siswa dulu' : invoicesQ.isLoading ? 'Memuat...' : (invoicesQ.data?.length ?? 0) === 0 ? 'Siswa ini tidak punya tagihan' : 'Pilih invoice...'} required />
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="cash-amount">Nominal (Rp)</Label>
               <Input id="cash-amount" type="number" min={1000} required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="mis. 1200000" />

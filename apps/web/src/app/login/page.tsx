@@ -24,6 +24,7 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/shared/form-field";
 import { AuthShell } from "@/components/shared/auth-shell";
 import { apiFetch, ApiError } from "@/lib/api-client";
@@ -163,15 +164,18 @@ export default function LoginPage() {
 							Masuk
 							<ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
 						</SubmitButton>
-						<p className="border-t pt-4 text-center text-xs text-muted-foreground">
-							Orang tua baru?{" "}
-							<Link
-								href="/daftar"
-								className="font-medium text-brand-blue-600 underline-offset-4 hover:text-brand-blue-700 hover:underline"
+						<div className="flex flex-col gap-2 border-t pt-4">
+							<p className="text-center text-xs text-muted-foreground">
+								Orang tua baru? Buat akun dulu untuk mendaftarkan anak.
+							</p>
+							<Button
+								variant="outline"
+								render={<Link href="/daftar" />}
+								className="w-full"
 							>
-								Daftar akun di sini
-							</Link>
-						</p>
+								Daftar Akun Orang Tua
+							</Button>
+						</div>
 					</form>
 				</CardContent>
 			</Card>

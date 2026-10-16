@@ -463,10 +463,16 @@ export class PaymentsService {
       throw new ForbiddenException(
         'Anak tersebut tidak terhubung ke akun ini.',
       );
+    // Cicilan: invoice bulan berikutnya baru tampil saat bulannya tiba —
+    // ortu tidak disodori semua invoice sekaligus.
+    const endOfMonth = new Date();
+    endOfMonth.setMonth(endOfMonth.getMonth() + 1, 0);
+    endOfMonth.setHours(23, 59, 59, 999);
     const rows = await this.prisma.invoice.findMany({
       where: {
         studentId: { in: ids.length ? ids : ['__none__'] },
         status: 'ISSUED',
+        OR: [{ dueDate: null }, { dueDate: { lte: endOfMonth } }],
       },
       include: {
         student: {

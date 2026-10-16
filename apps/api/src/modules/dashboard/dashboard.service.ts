@@ -188,6 +188,9 @@ export class DashboardService {
       namesByGroup.set(m.groupId, arr);
     }
     const { start, end } = this.weekRange();
+    const endOfMonth = new Date();
+    endOfMonth.setMonth(endOfMonth.getMonth() + 1, 0);
+    endOfMonth.setHours(23, 59, 59, 999);
     const [upcoming, weekAttendance, dueInvoices, childAttempts, unread] = await Promise.all([
       this.prisma.session.findMany({
         where: { groupId: { in: groupIds.length ? groupIds : ['__none__'] }, startsAt: { gte: start, lte: end }, status: { not: 'CANCELLED' } },
@@ -197,9 +200,14 @@ export class DashboardService {
         where: { studentId: { in: studentIds.length ? studentIds : ['__none__'] }, session: { startsAt: { gte: start, lte: end } } },
         select: { status: true, studentId: true },
       }),
-      // Tagihan outstanding anak — urut jatuh tempo terdekat.
+      // Tagihan outstanding anak — urut jatuh tempo terdekat. Cicilan bulan
+      // depan belum ditagihkan (tampil saat bulannya tiba, selaras /me/invoices).
       this.prisma.invoice.findMany({
-        where: { studentId: { in: studentIds.length ? studentIds : ['__none__'] }, status: 'ISSUED' },
+        where: {
+          studentId: { in: studentIds.length ? studentIds : ['__none__'] },
+          status: 'ISSUED',
+          OR: [{ dueDate: null }, { dueDate: { lte: endOfMonth } }],
+        },
         select: {
           id: true, number: true, studentId: true, dueDate: true,
           totalAmount: true, amountPaid: true,

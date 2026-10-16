@@ -64,21 +64,63 @@ export function ArManager({ canRefund }: { canRefund: boolean }) {
   const debouncedSearch = useDebouncedValue(search);
   const [reminder, setReminder] = useState('');
   const [overdue, setOverdue] = useState(false);
+  const [programId, setProgramId] = useState('');
+  const [levelId, setLevelId] = useState('');
+  const [groupId, setGroupId] = useState('');
+  const [studentId, setStudentId] = useState('');
   const [refundInv, setRefundInv] = useState<ArInvoice | null>(null);
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
 
   const listQ = useQuery({
-    queryKey: ['ar', debouncedSearch, reminder, overdue],
+    queryKey: ['ar', debouncedSearch, reminder, overdue, programId, levelId, groupId, studentId],
     queryFn: () => {
       const p = new URLSearchParams();
       if (debouncedSearch) p.set('search', debouncedSearch);
       if (reminder) p.set('reminderStatus', reminder);
       if (overdue) p.set('overdue', '1');
+      if (studentId) p.set('studentId', studentId);
+      if (programId) p.set('programId', programId);
+      if (levelId) p.set('levelId', levelId);
+      if (groupId) p.set('groupId', groupId);
       const qs = p.toString();
       return apiFetch<ArInvoice[]>(`/ar${qs ? `?${qs}` : ''}`);
     },
   });
+
+  // Opsi filter — daftar read-only yang sudah ada.
+  const stale = { staleTime: 5 * 60 * 1000, retry: 1 };
+  const programsQ = useQuery({
+    queryKey: ['ar-opt-programs'],
+    queryFn: () =>
+      apiFetch<{ id: string; name: string; levels: { id: string; name: string }[] }[]>(
+        '/programs/options',
+      ),
+    ...stale,
+  });
+  const groupsQ = useQuery({
+    queryKey: ['ar-opt-groups'],
+    queryFn: () =>
+      apiFetch<{ id: string; name: string; code: string | null; programId: string; levelId: string | null }[]>(
+        '/groups',
+      ),
+    ...stale,
+  });
+  const studentsQ = useQuery({
+    queryKey: ['ar-opt-students'],
+    queryFn: () =>
+      apiFetch<{ id: string; user: { name: string } }[]>('/students'),
+    ...stale,
+  });
+  const levelOpts =
+    (programId
+      ? programsQ.data?.find((p) => p.id === programId)?.levels
+      : programsQ.data?.flatMap((p) => p.levels)) ?? [];
+  const groupOpts = (groupsQ.data ?? []).filter(
+    (g) =>
+      (!programId || g.programId === programId) &&
+      (!levelId || g.levelId === levelId),
+  );
 
   const remindM = useMutation({
     mutationFn: (args: { id: string; status: 'NONE' | 'PENDING' | 'SENT' }) =>
@@ -240,6 +282,50 @@ export function ArManager({ canRefund }: { canRefund: boolean }) {
           <option value="NONE">Belum dikirim</option>
           <option value="PENDING">PENDING</option>
           <option value="SENT">Sudah dikirim</option>
+        </select>
+        <select
+          className="h-9 max-w-44 rounded-md border border-input bg-background px-3 text-sm"
+          value={studentId}
+          onChange={(e) => setStudentId(e.target.value)}
+          aria-label="Filter siswa"
+        >
+          <option value="">Semua siswa</option>
+          {(studentsQ.data ?? []).map((s) => (
+            <option key={s.id} value={s.id}>{s.user.name}</option>
+          ))}
+        </select>
+        <select
+          className="h-9 max-w-44 rounded-md border border-input bg-background px-3 text-sm"
+          value={programId}
+          onChange={(e) => { setProgramId(e.target.value); setLevelId(''); setGroupId(''); }}
+          aria-label="Filter program"
+        >
+          <option value="">Semua program</option>
+          {(programsQ.data ?? []).map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+        <select
+          className="h-9 max-w-44 rounded-md border border-input bg-background px-3 text-sm"
+          value={levelId}
+          onChange={(e) => { setLevelId(e.target.value); setGroupId(''); }}
+          aria-label="Filter jenjang"
+        >
+          <option value="">Semua jenjang</option>
+          {levelOpts.map((l) => (
+            <option key={l.id} value={l.id}>{l.name}</option>
+          ))}
+        </select>
+        <select
+          className="h-9 max-w-44 rounded-md border border-input bg-background px-3 text-sm"
+          value={groupId}
+          onChange={(e) => setGroupId(e.target.value)}
+          aria-label="Filter kelompok"
+        >
+          <option value="">Semua kelompok</option>
+          {groupOpts.map((g) => (
+            <option key={g.id} value={g.id}>{g.code ? `${g.code} — ${g.name}` : g.name}</option>
+          ))}
         </select>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={overdue} onChange={(e) => setOverdue(e.target.checked)} />

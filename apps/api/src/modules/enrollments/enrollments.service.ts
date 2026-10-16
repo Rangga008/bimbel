@@ -769,6 +769,62 @@ export class EnrollmentsService {
     });
   }
 
+  /**
+   * Diskon/bantuan/promo per siswa — nominalnya disebar berurutan ke invoice
+   * ISSUED pendaftaran ini yang masih ada sisa (jatuh tempo terdekat dulu),
+   * ditulis sebagai item negatif. Paket/jenjang tidak berubah.
+   */
+  async applyDiscount(enrollmentId: string, amount: number, reason: string) {
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('Nominal diskon harus lebih dari 0.');
+    }
+    const label = reason?.trim() || 'Diskon';
+    return this.prisma.$transaction(async (tx) => {
+      const e = await tx.enrollment.findUnique({
+        where: { id: enrollmentId },
+        include: { student: { select: { user: { select: { name: true } } } } },
+      });
+      if (!e) throw new NotFoundException('Pendaftaran tidak ditemukan.');
+      const invoices = await tx.invoice.findMany({
+        where: { enrollmentId, status: 'ISSUED' },
+        orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+      });
+      let remaining = amount;
+      let applied = 0;
+      const touched: string[] = [];
+      for (const inv of invoices) {
+        const outstanding = Number(inv.totalAmount) - Number(inv.amountPaid);
+        if (outstanding <= 0.009) continue;
+        const cut = Math.min(remaining, outstanding);
+        await tx.invoiceItem.create({
+          data: {
+            invoiceId: inv.id,
+            description: `Diskon/Bantuan — ${label}`,
+            quantity: 1,
+            unitPrice: new Prisma.Decimal(String(-cut)),
+            amount: new Prisma.Decimal(String(-cut)),
+          },
+        });
+        await tx.invoice.update({
+          where: { id: inv.id },
+          data: {
+            totalAmount: new Prisma.Decimal(String(Number(inv.totalAmount) - cut)),
+          },
+        });
+        applied += cut;
+        remaining -= cut;
+        touched.push(inv.number);
+        if (remaining <= 0.009) break;
+      }
+      if (applied <= 0.009) {
+        throw new BadRequestException(
+          'Tidak ada tagihan outstanding pada pendaftaran ini.',
+        );
+      }
+      return { applied: Math.round(applied * 100) / 100, invoices: touched };
+    });
+  }
+
   /** Academic: tempatkan siswa ke kelompok (status ACCEPTED → PLACED). */
   async place(id: string, dto: PlaceEnrollmentDto) {
     const e = await this.getOrThrow(id);

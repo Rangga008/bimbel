@@ -73,8 +73,25 @@ export class RefundsService {
     return { ...inv, outstanding, isOverdue };
   }
 
-  async listAr(query: { search?: string; reminderStatus?: string; overdue?: string }) {
+  async listAr(query: {
+    search?: string;
+    reminderStatus?: string;
+    overdue?: string;
+    studentId?: string;
+    programId?: string;
+    levelId?: string;
+    groupId?: string;
+  }) {
     const where: Record<string, unknown> = { status: 'ISSUED' };
+    if (query.studentId) where.studentId = query.studentId;
+    // Jenjang/kelompok/program invoice mengikuti pendaftaran yang menautkannya.
+    if (query.levelId || query.groupId || query.programId) {
+      const link: Record<string, unknown> = {};
+      if (query.levelId) link.levelId = query.levelId;
+      if (query.groupId) link.groupId = query.groupId;
+      if (query.programId) link.programId = query.programId;
+      where.enrollmentLink = link;
+    }
     if (query.reminderStatus) {
       const s = query.reminderStatus.toUpperCase();
       if (!['NONE', 'PENDING', 'SENT'].includes(s)) {

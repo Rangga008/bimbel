@@ -486,7 +486,7 @@ export class QuestionsImportService {
     let created = 0;
     if (!refs.dryRun) {
       for (const { dto } of valid) {
-        await this.questions.create(actor.id, dto);
+        await this.questions.create(actor, dto);
         created++;
       }
     }

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -24,15 +25,21 @@ export class QuestionsService {
   ) {}
 
   /**
-   * Dedup opsi berdasar konten (pertahankan kemunculan pertama). Melindungi
-   * dari payload dobel (bug klien/data korup lama) — opsi identik memang
-   * tidak pernah bermakna ganda dalam satu soal.
+   * Dedup opsi berdasar identitas baris penuh (konten persis + gambar +
+   * posisi). Melindungi dari payload dobel (bug klien/data korup lama)
+   * TANPA membuang opsi yang memang sengaja dibuat sama — dua opsi dengan
+   * teks sama (atau hanya beda kapital) di posisi berbeda tetap disimpan.
    */
-  private dedupOptions<T extends { content?: string; imageUrl?: string }>(options: T[]): T[] {
+  private dedupOptions<T extends { content?: string; imageUrl?: string; sortOrder?: number }>(
+    options: T[],
+  ): T[] {
     const seen = new Set<string>();
-    return options.filter((o) => {
-      const key = `${(o.content ?? '').trim().toLowerCase()}|${(o.imageUrl ?? '').trim()}`;
-      if (key === '|' || seen.has(key)) return false;
+    return options.filter((o, idx) => {
+      const content = (o.content ?? '').trim();
+      const image = (o.imageUrl ?? '').trim();
+      const hasSort = typeof o.sortOrder === 'number';
+      const key = `${content}|${image}|${hasSort ? o.sortOrder : idx}`;
+      if (key === '||' || seen.has(key)) return false;
       seen.add(key);
       return true;
     });
@@ -166,7 +173,13 @@ export class QuestionsService {
     return question;
   }
 
-  async create(actorId: string, dto: CreateQuestionDto) {
+  async create(actor: AuthenticatedUser, dto: CreateQuestionDto) {
+    const actorId = actor.id;
+    // Tutor hanya membuat soal di program/level/mapel yang dia ampu.
+    const scope = await this.tutorScope.for(actor);
+    if (scope) {
+      this.tutorScope.assertContentRef(scope, dto.programId, dto.levelId, dto.subjectId);
+    }
     // Validasi foreign keys jika ada
     if (dto.programId) {
       const program = await this.prisma.program.findUnique({
@@ -239,9 +252,27 @@ export class QuestionsService {
     });
   }
 
-  async update(id: string, dto: UpdateQuestionDto) {
+  async update(id: string, dto: UpdateQuestionDto, actor?: AuthenticatedUser) {
     const question = await this.prisma.question.findUnique({ where: { id } });
     if (!question) throw new NotFoundException('Soal tidak ditemukan.');
+    // Tutor hanya mengubah soal dalam scope-nya atau buatannya sendiri.
+    if (actor) {
+      const scope = await this.tutorScope.for(actor);
+      if (scope) {
+        const ok =
+          (question.programId && scope.programIds.includes(question.programId)) ||
+          (question.levelId && scope.levelIds.includes(question.levelId)) ||
+          (question.subjectId && scope.subjectIds.includes(question.subjectId)) ||
+          question.createdBy === actor.id;
+        if (!ok) throw new ForbiddenException('Soal ini di luar kelompok yang Anda ampu.');
+        this.tutorScope.assertContentRef(
+          scope,
+          dto.programId ?? question.programId,
+          dto.levelId ?? question.levelId,
+          dto.subjectId ?? question.subjectId,
+        );
+      }
+    }
 
     // Validasi foreign keys jika berubah
     if (dto.programId && dto.programId !== question.programId) {
@@ -295,16 +326,26 @@ export class QuestionsService {
         const options = this.dedupOptions(dto.options);
         const existing = await tx.questionOption.findMany({ where: { questionId: id } });
         const byId = new Map(existing.map((o) => [o.id, o]));
-        const byKey = new Map(
-          existing.map((o) => [`${o.content.trim().toLowerCase()}|${(o.imageUrl ?? '').trim()}`, o]),
-        );
         const keepIds = new Set<string>();
+        // Pencocokan konten bersifat konsumtif — dua opsi dengan teks yang
+        // sama (mis. beda kapital atau memang kembar) masing-masing dipasangkan
+        // ke baris opsi berbeda, bukan menimpa satu baris yang sama.
+        const keyPool = new Map<string, typeof existing>();
+        for (const o of existing) {
+          const k = `${o.content.trim().toLowerCase()}|${(o.imageUrl ?? '').trim()}`;
+          const arr = keyPool.get(k) ?? [];
+          arr.push(o);
+          keyPool.set(k, arr);
+        }
 
         for (const [idx, opt] of options.entries()) {
           const content = (opt.content ?? '').trim();
           const imageUrl = opt.imageUrl || null;
           const key = `${content.toLowerCase()}|${(imageUrl ?? '').trim()}`;
-          const match = (opt.id ? byId.get(opt.id) : undefined) ?? byKey.get(key);
+          const pool = keyPool.get(key);
+          const match =
+            (opt.id ? byId.get(opt.id) : undefined) ??
+            (pool && pool.length ? pool.shift() : undefined);
           if (match) {
             keepIds.add(match.id);
             await tx.questionOption.update({
@@ -346,9 +387,19 @@ export class QuestionsService {
     });
   }
 
-  async delete(id: string) {
+  async delete(id: string, actor?: AuthenticatedUser) {
     const question = await this.prisma.question.findUnique({ where: { id } });
     if (!question) throw new NotFoundException('Soal tidak ditemukan.');
+    if (actor) {
+      const scope = await this.tutorScope.for(actor);
+      if (scope && question.createdBy !== actor.id) {
+        const ok =
+          (question.programId && scope.programIds.includes(question.programId)) ||
+          (question.levelId && scope.levelIds.includes(question.levelId)) ||
+          (question.subjectId && scope.subjectIds.includes(question.subjectId));
+        if (!ok) throw new ForbiddenException('Soal ini di luar kelompok yang Anda ampu.');
+      }
+    }
 
     // Soal yang sudah dipakai tidak boleh di-hard-delete (FK onDelete: Restrict di
     // ExamItem/LatsolPackageItem/ExamAnswer/LatsolAnswer) — tolak dengan pesan jelas

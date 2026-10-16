@@ -14,6 +14,7 @@ import {
   buildFilterText,
   effectiveRange,
   groupScopeWhere,
+  invoiceScopeWhere,
   studentInScope,
   fmtDateId,
   fmtDateTimeId,
@@ -338,8 +339,8 @@ ${summary}
     if (range.gte || range.lt) where.createdAt = { gte: range.gte, lt: range.lt };
     if (filters.studentId) where.studentId = filters.studentId;
     if (filters.status) where.status = filters.status;
-    const studentScope = studentInScope(filters);
-    if (studentScope) where.student = studentScope;
+    const invScope = invoiceScopeWhere(filters);
+    if (invScope) Object.assign(where, invScope);
 
     const invoices = await this.prisma.invoice.findMany({
       where,
@@ -394,9 +395,9 @@ ${summary}
     if (range.gte || range.lt) where.createdAt = { gte: range.gte, lt: range.lt };
     if (filters.channel) where.channel = filters.channel;
     if (filters.status) where.status = filters.status;
-    const payScope = studentInScope(filters);
+    const payScope = invoiceScopeWhere(filters);
     if (payScope) {
-      where.allocations = { some: { invoice: { student: payScope } } };
+      where.allocations = { some: { invoice: payScope } };
     }
 
     const payments = await this.prisma.payment.findMany({

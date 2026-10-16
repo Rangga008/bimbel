@@ -110,12 +110,26 @@ export function SiteHeader() {
 						</Link>
 					))}
 				</nav>
-				<div className="ml-2 hidden items-center gap-3 lg:flex">
+				<div className="ml-2 hidden items-center gap-2 lg:flex">
 					<Button
+						variant="outline"
+						size="sm"
 						render={<a href={regUrl} target="_blank" rel="noopener noreferrer" />}
+						className="gap-1.5 border-white/30 bg-white/5 text-white hover:bg-white/15 hover:text-white"
+					>
+						Info Pendaftaran
+					</Button>
+					<Link
+						href="/login"
+						className="rounded-lg px-2 py-2 text-sm font-medium text-brand-blue-100 transition-colors hover:text-white"
+					>
+						Masuk
+					</Link>
+					<Button
+						render={<Link href="/daftar" />}
 						className="gap-2 bg-brand-gold-400 text-brand-blue-900 hover:bg-brand-gold-300"
 					>
-						Info &amp; Pendaftaran
+						Daftar
 						<ArrowRight className="size-4" />
 					</Button>
 				</div>
@@ -169,8 +183,18 @@ export function SiteHeader() {
 										<a href={regUrl} target="_blank" rel="noopener noreferrer" />
 									}
 								>
-									<span className="block rounded-lg bg-brand-gold-400 px-3 py-2.5 text-center text-sm font-semibold text-brand-blue-900">
+									<span className="block rounded-lg border px-3 py-2.5 text-center text-sm font-medium">
 										Info &amp; Pendaftaran (Formulir)
+									</span>
+								</SheetClose>
+								<SheetClose render={<Link href="/daftar" />}>
+									<span className="block rounded-lg bg-brand-gold-400 px-3 py-2.5 text-center text-sm font-semibold text-brand-blue-900">
+										Daftar Akun Orang Tua
+									</span>
+								</SheetClose>
+								<SheetClose render={<Link href="/login" />}>
+									<span className="block rounded-lg border px-3 py-2.5 text-center text-sm font-medium">
+										Masuk
 									</span>
 								</SheetClose>
 							</div>

@@ -25,6 +25,7 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/shared/form-field";
 import { AuthShell } from "@/components/shared/auth-shell";
 import { apiFetch, ApiError } from "@/lib/api-client";
@@ -222,15 +223,18 @@ export default function DaftarPage() {
 						>
 							Daftar &amp; Masuk
 						</SubmitButton>
-						<p className="border-t pt-4 text-center text-xs text-muted-foreground">
-							Sudah punya akun?{" "}
-							<Link
-								href="/login"
-								className="font-medium text-brand-blue-600 underline-offset-4 hover:text-brand-blue-700 hover:underline"
+						<div className="flex flex-col gap-2 border-t pt-4">
+							<p className="text-center text-xs text-muted-foreground">
+								Sudah punya akun? Langsung masuk dengan no HP/email.
+							</p>
+							<Button
+								variant="outline"
+								render={<Link href="/login" />}
+								className="w-full"
 							>
-								Masuk di sini
-							</Link>
-						</p>
+								Masuk ke Akun Saya
+							</Button>
+						</div>
 					</form>
 				</CardContent>
 			</Card>

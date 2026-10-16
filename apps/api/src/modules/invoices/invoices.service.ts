@@ -389,6 +389,41 @@ export class InvoicesService {
     });
   }
 
+  /**
+   * Penyesuaian harga per siswa — diskon/bantuan/promo ditulis sebagai item
+   * negatif pada invoice (paket/program tidak berubah; histori tetap utuh).
+   * Tidak boleh melebihi sisa tagihan yang belum dibayar.
+   */
+  async applyDiscount(id: string, amount: number, reason: string) {
+    if (!Number.isFinite(amount) || amount <= 0)
+      throw new BadRequestException('Nominal diskon harus lebih dari 0.');
+    const label = reason?.trim() || 'Diskon';
+    return this.prisma.$transaction(async (tx) => {
+      const inv = await tx.invoice.findUnique({ where: { id } });
+      if (!inv) throw new NotFoundException('Invoice tidak ditemukan.');
+      if (inv.status !== 'ISSUED')
+        throw new BadRequestException('Diskon hanya untuk invoice ISSUED.');
+      const outstanding = Number(inv.totalAmount) - Number(inv.amountPaid);
+      if (outstanding <= 0.009)
+        throw new BadRequestException('Invoice sudah lunas — tidak ada yang bisa didiskon.');
+      const cut = Math.min(amount, outstanding);
+      await tx.invoiceItem.create({
+        data: {
+          invoiceId: id,
+          description: `Diskon/Bantuan — ${label}`,
+          quantity: 1,
+          unitPrice: new Prisma.Decimal(String(-cut)),
+          amount: new Prisma.Decimal(String(-cut)),
+        },
+      });
+      await tx.invoice.update({
+        where: { id },
+        data: { totalAmount: new Prisma.Decimal(String(Number(inv.totalAmount) - cut)) },
+      });
+      return this.get(id);
+    });
+  }
+
   listAccounts() {
     return this.prisma.financialAccount.findMany({ orderBy: { name: 'asc' } });
   }

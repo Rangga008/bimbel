@@ -456,22 +456,28 @@ export default function LandingPage() {
 						<div className="flex flex-wrap items-center gap-3">
 							<Button
 								size="lg"
-								render={
-									<a href={regUrl} target="_blank" rel="noopener noreferrer" />
-								}
+								render={<Link href="/daftar" />}
 								className="gap-2 bg-brand-gold-400 font-semibold text-brand-blue-900 hover:bg-brand-gold-300"
 							>
-								Info &amp; Pendaftaran
+								Daftar Sekarang
 								<ArrowRight className="size-4" />
 							</Button>
 							<Button
 								size="lg"
 								variant="outline"
-								render={<Link href="/program" />}
+								render={<Link href="/login" />}
 								className="border-white/30 bg-white/5 text-white hover:bg-white/15 hover:text-white"
 							>
-								Lihat Program
+								Masuk
 							</Button>
+							<a
+								href={regUrl}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="text-sm font-medium text-brand-gold-300 underline-offset-4 transition-colors hover:text-brand-gold-200 hover:underline"
+							>
+								Info pendaftaran (buku tamu) →
+							</a>
 						</div>
 						{/* Statistik ringkas dalam hero */}
 						<div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -953,14 +959,28 @@ export default function LandingPage() {
 						<div className="mt-2 flex flex-wrap items-center justify-center gap-3">
 							<Button
 								size="lg"
-								render={
-									<a href={regUrl} target="_blank" rel="noopener noreferrer" />
-								}
+								render={<Link href="/daftar" />}
 								className="gap-2 bg-brand-gold-400 font-semibold text-brand-blue-900 hover:bg-brand-gold-300"
 							>
-								Info &amp; Pendaftaran
+								Daftar Sekarang
 								<ArrowRight className="size-4" />
 							</Button>
+							<Button
+								size="lg"
+								variant="outline"
+								render={<Link href="/login" />}
+								className="border-white/30 bg-white/5 text-white hover:bg-white/15 hover:text-white"
+							>
+								Masuk
+							</Button>
+							<a
+								href={regUrl}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="text-sm font-medium text-brand-gold-300 underline-offset-4 transition-colors hover:text-brand-gold-200 hover:underline"
+							>
+								Info pendaftaran (buku tamu) →
+							</a>
 						</div>
 					</div>
 				</div>

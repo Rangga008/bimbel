@@ -30,8 +30,20 @@ export class RefundsController {
     @Query('search') search?: string,
     @Query('reminderStatus') reminderStatus?: string,
     @Query('overdue') overdue?: string,
+    @Query('studentId') studentId?: string,
+    @Query('programId') programId?: string,
+    @Query('levelId') levelId?: string,
+    @Query('groupId') groupId?: string,
   ) {
-    return this.refunds.listAr({ search, reminderStatus, overdue });
+    return this.refunds.listAr({
+      search,
+      reminderStatus,
+      overdue,
+      studentId,
+      programId,
+      levelId,
+      groupId,
+    });
   }
 
   // Koreksi flag reminder piutang (bukan pengiriman WA — itu Fase 5).

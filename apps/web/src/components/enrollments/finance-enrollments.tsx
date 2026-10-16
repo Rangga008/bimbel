@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, ClipboardList, X } from "lucide-react";
+import { BadgePercent, Check, ClipboardList, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -102,6 +102,9 @@ export function FinanceEnrollments() {
 	const [programId, setProgramId] = useState("");
 	const [reviewTarget, setReviewTarget] = useState<{ item: StaffEnrollment; action: "accept" | "reject" } | null>(null);
 	const [notes, setNotes] = useState("");
+	const [discountTarget, setDiscountTarget] = useState<StaffEnrollment | null>(null);
+	const [discountAmount, setDiscountAmount] = useState("");
+	const [discountReason, setDiscountReason] = useState("");
 
 	// Ambil semua sekali — count per kategori dihitung lokal agar tab akurat.
 	const listQ = useQuery({
@@ -126,6 +129,24 @@ export function FinanceEnrollments() {
 			qc.invalidateQueries({ queryKey: ["enrollments"] });
 		},
 		onError: (e) => toast.error(err(e, "Gagal memproses pendaftaran.")),
+	});
+
+	// Diskon/bantuan per siswa — disebar ke invoice cicilan yang belum lunas.
+	const discountM = useMutation({
+		mutationFn: () =>
+			apiFetch<{ applied: number; invoices: string[] }>(`/enrollments/${discountTarget!.id}/discount`, {
+				method: "POST",
+				body: { amount: Number(discountAmount), reason: discountReason },
+			}),
+		onSuccess: (r) => {
+			toast.success(`Diskon ${rp(r.applied)} diterapkan ke ${r.invoices.length} invoice.`);
+			setDiscountTarget(null);
+			setDiscountAmount("");
+			setDiscountReason("");
+			qc.invalidateQueries({ queryKey: ["enrollments"] });
+			qc.invalidateQueries({ queryKey: ["invoices"] });
+		},
+		onError: (e) => toast.error(err(e, "Gagal menerapkan diskon.")),
 	});
 
 	const allItems = listQ.data ?? [];
@@ -297,6 +318,13 @@ export function FinanceEnrollments() {
 														<X /> Tolak
 													</Button>
 												) : null}
+												{invoiceList.some((i) => i.status === "ISSUED" && Number(i.totalAmount) - Number(i.amountPaid) > 0.009) ? (
+													<Button size="sm" variant="outline"
+														title="Diskon / bantuan / promo untuk siswa ini"
+														onClick={() => { setDiscountTarget(e); setDiscountAmount(""); setDiscountReason(""); }}>
+														<BadgePercent /> Diskon
+													</Button>
+												) : null}
 											</div>
 										</td>
 									</tr>
@@ -345,6 +373,36 @@ export function FinanceEnrollments() {
 								disabled={reviewM.isPending}
 							>
 								{reviewM.isPending ? "Memproses..." : reviewTarget?.action === "accept" ? "Ya, Terima" : "Ya, Tolak"}
+							</Button>
+						</DialogFooter>
+					</form>
+				</DialogContent>
+			</Dialog>
+
+			<Dialog open={discountTarget !== null} onOpenChange={(o) => { if (!o) setDiscountTarget(null); }}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Diskon / Bantuan — {discountTarget?.childName}</DialogTitle>
+						<DialogDescription>
+							Potongan harga khusus siswa ini (diskon, bantuan, promo). Paket & jenjang
+							tidak berubah — nominal disebar otomatis ke invoice yang belum lunas.
+						</DialogDescription>
+					</DialogHeader>
+					<form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); discountM.mutate(); }}>
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="enr-disc-amount">Nominal diskon (Rp)</Label>
+							<Input id="enr-disc-amount" type="number" min={1} required value={discountAmount}
+								onChange={(e) => setDiscountAmount(e.target.value)} placeholder="mis. 500000" />
+						</div>
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="enr-disc-reason">Alasan</Label>
+							<Input id="enr-disc-reason" required maxLength={200} value={discountReason}
+								onChange={(e) => setDiscountReason(e.target.value)} placeholder="mis. Diskon saudara kandung / bantuan yayasan / promo awal tahun" />
+						</div>
+						<DialogFooter>
+							<Button type="button" variant="outline" onClick={() => setDiscountTarget(null)}>Batal</Button>
+							<Button type="submit" disabled={discountM.isPending}>
+								{discountM.isPending ? "Menyimpan..." : "Terapkan Diskon"}
 							</Button>
 						</DialogFooter>
 					</form>

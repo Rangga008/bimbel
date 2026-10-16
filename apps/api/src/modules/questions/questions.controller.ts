@@ -147,7 +147,7 @@ export class QuestionsController {
     @CurrentUser() actor: AuthenticatedUser,
     @Req() req: Request,
   ) {
-    const created = await this.questions.create(actor.id, dto);
+    const created = await this.questions.create(actor, dto);
     await this.audit.log({
       actorId: actor.id,
       action: 'QUESTION_CREATED',
@@ -168,7 +168,7 @@ export class QuestionsController {
     @Req() req: Request,
   ) {
     const before = await this.questions.get(id);
-    const updated = await this.questions.update(id, dto);
+    const updated = await this.questions.update(id, dto, actor);
     await this.audit.log({
       actorId: actor.id,
       action: 'QUESTION_UPDATED',
@@ -189,7 +189,7 @@ export class QuestionsController {
     @Req() req: Request,
   ) {
     const before = await this.questions.get(id);
-    await this.questions.delete(id);
+    await this.questions.delete(id, actor);
     await this.audit.log({
       actorId: actor.id,
       action: 'QUESTION_DELETED',

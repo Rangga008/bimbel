@@ -75,6 +75,34 @@ export class InvoicesController {
     return updated;
   }
 
+  /**
+   * Diskon/bantuan/promo per siswa — item negatif pada invoice ISSUED,
+   * paket & program tidak berubah. Juga dipakai untuk potongan cicilan.
+   */
+  @Post('invoices/:id/discount')
+  @RequirePermissions(PERMISSION_CODES.INVOICE_MANAGE)
+  async discount(
+    @Param('id') id: string,
+    @Body() dto: { amount?: number; reason?: string },
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const updated = await this.invoices.applyDiscount(
+      id,
+      Number(dto.amount),
+      String(dto.reason ?? ''),
+    );
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'INVOICE_DISCOUNTED',
+      entity: 'Invoice',
+      entityId: id,
+      newData: { amount: dto.amount, reason: dto.reason },
+      ...this.ctx(req),
+    });
+    return updated;
+  }
+
   @Patch('invoices/:id/void')
   @RequirePermissions(PERMISSION_CODES.INVOICE_MANAGE)
   async void(@Param('id') id: string, @CurrentUser() actor: AuthenticatedUser, @Req() req: Request) {

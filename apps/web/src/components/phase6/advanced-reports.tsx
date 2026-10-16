@@ -7,7 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, apiFetchBlob } from "@/lib/api-client";
+import { toast } from "sonner";
+import { FileDown } from "lucide-react";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Phase1aSelectField } from "@/components/phase1a/phase1a-form-dialog";
 import { useAuthStore } from "@/stores/auth-store";
@@ -278,6 +280,30 @@ export function AdvancedReportsManager() {
 		(filters.programId
 			? programsQ.data?.find((p) => p.id === filters.programId)?.levels
 			: programsQ.data?.flatMap((p) => p.levels)) ?? [];
+
+	// Export mengikuti filter aktif — Excel/CSV terunduh, "PDF" berupa HTML
+	// siap-print yang dibuka di tab baru (browser: Print → Save as PDF).
+	const exportReport = async (ext: "xlsx" | "csv" | "pdf") => {
+		if (!activeKind) return;
+		try {
+			const qs = filterQuery(filters);
+			const blob = await apiFetchBlob(
+				`/reports/${activeKind}/export.${ext}${qs ? `?${qs}` : ""}`,
+			);
+			const url = URL.createObjectURL(blob);
+			if (ext === "pdf") {
+				window.open(url, "_blank", "noopener");
+				return;
+			}
+			const a = document.createElement("a");
+			a.href = url;
+			a.download = `${docQ.data?.fileBase ?? `laporan-${activeKind}`}.${ext}`;
+			a.click();
+			URL.revokeObjectURL(url);
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Gagal export laporan.");
+		}
+	};
 	const groupOptions = (groupsQ.data ?? []).filter(
 		(g) =>
 			(!filters.programId || g.programId === filters.programId) &&
@@ -496,6 +522,37 @@ export function AdvancedReportsManager() {
 								}
 							/>
 						</label>
+						<div className="ml-auto flex items-end gap-1.5">
+							<Button
+								size="sm"
+								variant="outline"
+								className="gap-1.5"
+								disabled={!docQ.data || docQ.isLoading}
+								onClick={() => exportReport("xlsx")}
+							>
+								<FileDown className="size-3.5" />
+								Excel
+							</Button>
+							<Button
+								size="sm"
+								variant="outline"
+								className="gap-1.5"
+								disabled={!docQ.data || docQ.isLoading}
+								onClick={() => exportReport("pdf")}
+							>
+								<FileDown className="size-3.5" />
+								PDF
+							</Button>
+							<Button
+								size="sm"
+								variant="ghost"
+								className="gap-1.5"
+								disabled={!docQ.data || docQ.isLoading}
+								onClick={() => exportReport("csv")}
+							>
+								CSV
+							</Button>
+						</div>
 					</div>
 				</CardContent>
 			</Card>

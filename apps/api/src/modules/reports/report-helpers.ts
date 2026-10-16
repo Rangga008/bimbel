@@ -52,6 +52,24 @@ export function studentInScope(filters: ReportFilters) {
   return { groupMembers: { some: { group } } };
 }
 
+/**
+ * Where-klausul Invoice dari filter program/level/kelompok — cocok lewat
+ * pendaftaran penautnya (`enrollmentLink`) MAUPUN keanggotaan kelompok siswa,
+ * sehingga invoice siswa yang belum ditempatkan kelompok tetap terhitung.
+ */
+export function invoiceScopeWhere(filters: ReportFilters): Record<string, unknown> | null {
+  const link: Record<string, string> = {};
+  if (filters.levelId) link.levelId = filters.levelId;
+  if (filters.programId) link.programId = filters.programId;
+  if (filters.groupId) link.groupId = filters.groupId;
+  const studentScope = studentInScope(filters);
+  const clauses: Record<string, unknown>[] = [];
+  if (Object.keys(link).length) clauses.push({ enrollmentLink: link });
+  if (studentScope) clauses.push({ student: studentScope });
+  if (!clauses.length) return null;
+  return clauses.length === 1 ? clauses[0] : { OR: clauses };
+}
+
 /** Alias mundur-compatible dengan tipe Fase 2d. */
 export type FinanceReportFilters = ReportFilters;
 
