@@ -118,8 +118,8 @@ export class EnrollmentsController {
 
   @Get('enrollments')
   @RequirePermissions(PERMISSION_CODES.ENROLLMENT_VIEW)
-  list(@Query('status') status?: string) {
-    return this.enrollments.list({ status });
+  list(@Query('status') status?: string, @Query('studentId') studentId?: string) {
+    return this.enrollments.list({ status, studentId });
   }
 
   @Post('enrollments/:id/accept')

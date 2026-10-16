@@ -18,22 +18,30 @@ export function PaymentsManager({ canVerify }: { canVerify: boolean }) {
   const qc = useQueryClient();
   const [status, setStatus] = useState('');
   const [channel, setChannel] = useState('');
+  const [filterStudent, setFilterStudent] = useState('');
+  const [filterGroup, setFilterGroup] = useState('');
+  const [search, setSearch] = useState('');
   const [openCash, setOpenCash] = useState(false);
   const [studentId, setStudentId] = useState('');
   const [invoiceId, setInvoiceId] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [verifyId, setVerifyId] = useState<string | null>(null);
-  const listQ = usePaymentsList(status, channel);
-  // Pilih siswa dulu — invoice yang ditawarkan hanya milik siswa itu,
-  // tidak semua invoice ISSUED sekaligus.
-  const studentsQ = useQuery({
+  const listQ = usePaymentsList({ status, channel, studentId: filterStudent, groupId: filterGroup, search });
+  // Opsi filter siswa & kelompok untuk daftar pembayaran.
+  const filterStudentsQ = useQuery({
     queryKey: ['students-lite'],
-    queryFn: () =>
-      apiFetch<{ id: string; user: { name: string } }[]>('/students'),
-    enabled: openCash,
+    queryFn: () => apiFetch<{ id: string; user: { name: string } }[]>('/students'),
     staleTime: 60 * 1000,
   });
+  const groupsQ = useQuery({
+    queryKey: ['groups-lite'],
+    queryFn: () => apiFetch<{ id: string; name: string }[]>('/groups'),
+    staleTime: 60 * 1000,
+  });
+  // Pilih siswa dulu — invoice yang ditawarkan hanya milik siswa itu,
+  // tidak semua invoice ISSUED sekaligus.
+  const studentsQ = filterStudentsQ;
   const invoicesQ = useQuery({
     queryKey: ['invoices-issued-lite', studentId],
     queryFn: () =>
@@ -79,6 +87,12 @@ export function PaymentsManager({ canVerify }: { canVerify: boolean }) {
         {canVerify ? <Button onClick={() => setOpenCash(true)}>Terima Tunai di Kantor</Button> : null}
       </div>
       <div className="flex flex-wrap gap-2">
+        <Input
+          className="h-9 w-full sm:w-56"
+          placeholder="Cari no invoice / ref..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
         <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter status">
           <option value="">Semua status</option>
           <option value="PENDING">PENDING</option>
@@ -90,6 +104,18 @@ export function PaymentsManager({ canVerify }: { canVerify: boolean }) {
           <option value="CASH">CASH</option>
           <option value="MANUAL">MANUAL</option>
           <option value="GATEWAY">GATEWAY</option>
+        </select>
+        <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={filterStudent} onChange={(e) => setFilterStudent(e.target.value)} aria-label="Filter siswa">
+          <option value="">Semua siswa</option>
+          {(filterStudentsQ.data ?? []).map((s) => (
+            <option key={s.id} value={s.id}>{s.user.name}</option>
+          ))}
+        </select>
+        <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={filterGroup} onChange={(e) => setFilterGroup(e.target.value)} aria-label="Filter kelompok">
+          <option value="">Semua kelompok</option>
+          {(groupsQ.data ?? []).map((g) => (
+            <option key={g.id} value={g.id}>{g.name}</option>
+          ))}
         </select>
       </div>
       <PaymentsEmpty isLoading={listQ.isLoading} isError={listQ.isError} count={listQ.data?.length} />

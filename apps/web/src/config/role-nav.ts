@@ -261,6 +261,13 @@ export const ROLE_NAV: Record<RoleKey, NavItem[]> = {
 			group: "Utama",
 		},
 		{
+			slug: "rekap-absensi",
+			label: "Rekap Kehadiran",
+			icon: ChartColumn,
+			placement: "lainnya",
+			group: "Utama",
+		},
+		{
 			slug: "feedback",
 			label: "Feedback",
 			icon: MessageSquareText,

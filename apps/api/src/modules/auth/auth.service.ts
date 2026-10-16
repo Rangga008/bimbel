@@ -76,32 +76,39 @@ export class AuthService {
 
   /** Normalisasi nomor HP ke varian umum (0xxx, 62xxx, +62xxx, 8xxx). */
   private phoneVariants(raw: string): string[] {
-    const digits = raw.replace(/\D/g, '');
-    const variants = new Set<string>([raw.trim(), digits]);
-    if (digits.startsWith('62')) variants.add('0' + digits.slice(2));
-    if (digits.startsWith('0')) variants.add('62' + digits.slice(1));
-    if (digits.startsWith('8')) {
-      variants.add('0' + digits);
-      variants.add('62' + digits);
-    }
-    return [...variants].filter(Boolean);
+    return UsersService.phoneVariants(raw);
   }
 
   async validateCredentials(identifier: string, password: string) {
     const id = identifier.trim();
-    const user = id.includes('@')
-      ? await this.usersService.findByEmailWithRoles(id)
-      : await this.usersService.findByPhoneWithRoles(this.phoneVariants(id));
-    if (!user || !user.isActive) {
-      this.invalidCredentials();
+    if (id.includes('@')) {
+      const user = await this.usersService.findByEmailWithRoles(id);
+      if (!user || !user.isActive) {
+        this.invalidCredentials();
+      }
+      const passwordMatches = await bcrypt.compare(
+        password,
+        user.passwordHash,
+      );
+      if (!passwordMatches) {
+        this.invalidCredentials();
+      }
+      return user;
     }
 
-    const passwordMatches = await bcrypt.compare(password, user.passwordHash);
-    if (!passwordMatches) {
-      this.invalidCredentials();
+    // Login via no HP: nomor bisa dipakai lebih dari satu akun (mis. akun
+    // lama dinonaktifkan lalu nomor didaftarkan ulang). Cocokkan sandi ke
+    // setiap kandidat, bukan hanya akun tertua — dan akun nonaktif tidak
+    // boleh menghalangi akun aktif bernomor sama.
+    const candidates = await this.usersService.findAllByPhoneWithRoles(
+      this.phoneVariants(id),
+    );
+    for (const user of candidates) {
+      if (!user.isActive) continue;
+      const matches = await bcrypt.compare(password, user.passwordHash);
+      if (matches) return user;
     }
-
-    return user;
+    this.invalidCredentials();
   }
 
   private signAccessToken(authUser: AuthenticatedUser): string {
@@ -167,6 +174,21 @@ export class AuthService {
 
   async registerParent(dto: RegisterParentDto) {
     return this.prisma.$transaction(async (tx) => {
+      // Cegah duplikasi akun aktif: no HP yang sudah dipakai akun aktif
+      // tidak boleh didaftarkan lagi (nanti login-nya ambigu). Akun
+      // nonaktif dengan nomor sama tidak menghalangi — daftar ulang aman.
+      const phoneTaken = await tx.user.findFirst({
+        where: {
+          phone: { in: this.phoneVariants(dto.phone) },
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      if (phoneTaken) {
+        throw new BadRequestException(
+          'Nomor HP sudah terdaftar pada akun aktif. Silakan login atau hubungi admin.',
+        );
+      }
       const email =
         dto.email?.trim() ||
         (await this.synthEmailFromPhone(tx, dto.phone));

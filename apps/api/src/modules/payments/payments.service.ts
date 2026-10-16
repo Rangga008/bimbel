@@ -291,10 +291,11 @@ export class PaymentsService {
     }
   }
 
-  list(query: {
+  async list(query: {
     status?: string;
     channel?: string;
     studentId?: string;
+    groupId?: string;
     search?: string;
     from?: string;
     to?: string;
@@ -333,6 +334,34 @@ export class PaymentsService {
       where.channel = c;
     }
     if (query.studentId) where.studentId = query.studentId;
+    // Kelompok: cocok via pendaftaran penaut invoice MAUPUN keanggotaan
+    // kelompok siswa (Payment tidak punya relasi student — pakai daftar id).
+    if (query.groupId) {
+      const memberIds = (
+        await this.prisma.groupMember.findMany({
+          where: { groupId: query.groupId },
+          select: { studentId: true },
+        })
+      ).map((m) => m.studentId);
+      where.AND = [
+        {
+          OR: [
+            {
+              allocations: {
+                some: {
+                  invoice: { enrollmentLink: { groupId: query.groupId } },
+                },
+              },
+            },
+            {
+              studentId: {
+                in: memberIds.length > 0 ? memberIds : ['__no_member__'],
+              },
+            },
+          ],
+        },
+      ];
+    }
     if (query.search) {
       where.OR = [
         { providerRef: { contains: query.search, mode: 'insensitive' } },
@@ -945,16 +974,48 @@ export class PaymentsService {
     return this.handleWebhook(canonical, payload, signature);
   }
 
-  listReceipts(query: {
+  async listReceipts(query: {
     studentId?: string;
+    groupId?: string;
     invoiceId?: string;
     search?: string;
   }) {
     const where: Record<string, unknown> = {};
     if (query.studentId) where.studentId = query.studentId;
     if (query.invoiceId) where.invoiceId = query.invoiceId;
-    if (query.search)
-      where.number = { contains: query.search, mode: 'insensitive' };
+    if (query.groupId) {
+      const memberIds = (
+        await this.prisma.groupMember.findMany({
+          where: { groupId: query.groupId },
+          select: { studentId: true },
+        })
+      ).map((m) => m.studentId);
+      where.OR = [
+        { invoice: { enrollmentLink: { groupId: query.groupId } } },
+        {
+          studentId: {
+            in: memberIds.length > 0 ? memberIds : ['__no_member__'],
+          },
+        },
+      ];
+    }
+    if (query.search) {
+      const searchOr = [
+        { number: { contains: query.search, mode: 'insensitive' } },
+        {
+          invoice: {
+            number: { contains: query.search, mode: 'insensitive' },
+          },
+        },
+      ];
+      // Gabungkan dengan OR filter kelompok bila keduanya aktif.
+      if (where.OR) {
+        where.AND = [{ OR: where.OR }, { OR: searchOr }];
+        delete where.OR;
+      } else {
+        where.OR = searchOr;
+      }
+    }
     return this.prisma.receipt.findMany({
       where,
       include: receiptDetailInclude,
@@ -985,18 +1046,36 @@ export class PaymentsService {
         : Promise.resolve(null),
     ]);
     // Nomor angsuran: urutan invoice pendaftaran yang sama (fallback: paket).
+    // Diurutkan per bulan jatuh tempo (dueDate) supaya "Pembayaran ke-3"
+    // selalu = invoice bulan ke-3; fallback issuedAt/createdAt bila dueDate kosong.
     let installmentNo: number | null = null;
     const inv = receipt.invoice;
     if (inv) {
+      const pivot = inv.dueDate ?? inv.issuedAt ?? inv.createdAt;
       const earlier = await this.prisma.invoice.count({
         where: {
           studentId: inv.studentId,
+          id: { not: inv.id },
           ...(inv.enrollmentId
             ? { enrollmentId: inv.enrollmentId }
             : { packageId: inv.packageId ?? undefined }),
           OR: [
-            { issuedAt: { lt: inv.issuedAt ?? inv.createdAt } },
-            { issuedAt: null, createdAt: { lt: inv.createdAt } },
+            { dueDate: { lt: pivot } },
+            {
+              AND: [
+                { dueDate: pivot },
+                { createdAt: { lt: inv.createdAt } },
+              ],
+            },
+            {
+              dueDate: null,
+              issuedAt: { lt: inv.issuedAt ?? inv.createdAt },
+            },
+            {
+              dueDate: null,
+              issuedAt: null,
+              createdAt: { lt: inv.createdAt },
+            },
           ],
         },
       });

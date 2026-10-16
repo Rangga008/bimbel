@@ -5,10 +5,20 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, ClipboardCheck, GraduationCap, Layers, MapPin, Pencil, School, Trash2, Users } from 'lucide-react';
+import { ArrowLeft, BadgePercent, ClipboardCheck, GraduationCap, Layers, MapPin, Pencil, School, Trash2, Users, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/shared/empty-state';
 import { UserAvatar } from '@/components/shared/user-avatar';
@@ -19,6 +29,11 @@ import { apiFetch, ApiError } from '@/lib/api-client';
 import { useAuthStore } from '@/stores/auth-store';
 import type { StudentItem } from '@/lib/phase1a-types';
 import { Phase1aFormDialog, Phase1aSelectField, type Phase1aField } from '@/components/phase1a/phase1a-form-dialog';
+import {
+  PLAN_LABEL,
+  ENROLLMENT_STATUS_META,
+  type StaffEnrollment,
+} from '@/components/enrollments/finance-enrollments';
 
 interface ActivityItem {
   kind: 'ABSENSI' | 'UJIAN' | 'LATSOL';
@@ -56,6 +71,13 @@ function err(e: unknown, fb: string) {
   return e instanceof ApiError ? e.message : fb;
 }
 
+function rp(value: string | number | null | undefined) {
+  if (value === null || value === undefined) return '-';
+  const n = Number(value);
+  if (Number.isNaN(n)) return '-';
+  return `Rp ${n.toLocaleString('id-ID')}`;
+}
+
 /** Halaman detail siswa — profil + kelompok + kalender sesi + log aktivitas. */
 export function StudentDetailPage({ studentId, basePath, canManage }: { studentId: string; basePath: string; canManage: boolean }) {
   const canPrintReport =
@@ -67,6 +89,9 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [discountTarget, setDiscountTarget] = useState<StaffEnrollment | null>(null);
+  const [discountAmount, setDiscountAmount] = useState('');
+  const [discountReason, setDiscountReason] = useState('');
 
   const studentQ = useQuery({
     queryKey: ['students', studentId],
@@ -77,6 +102,36 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
   const activityQ = useQuery({
     queryKey: ['students', studentId, 'activity'],
     queryFn: () => apiFetch<ActivityItem[]>(`/students/${studentId}/activity`),
+  });
+
+  // Paket yang diambil siswa + rincian tagihannya — hanya untuk staff.
+  const enrollmentsQ = useQuery({
+    queryKey: ['students', studentId, 'enrollments'],
+    queryFn: () =>
+      apiFetch<StaffEnrollment[]>(`/enrollments?studentId=${studentId}`),
+  });
+
+  // Diskon/bantuan/promo per siswa pada paket yang diambil — disebar ke
+  // invoice pendaftaran yang belum lunas; paket/jenjang tidak berubah.
+  const discountM = useMutation({
+    mutationFn: () =>
+      apiFetch<{ applied: number; invoices: string[] }>(
+        `/enrollments/${discountTarget!.id}/discount`,
+        {
+          method: 'POST',
+          body: { amount: Number(discountAmount), reason: discountReason },
+        },
+      ),
+    onSuccess: (r) => {
+      toast.success(`Diskon ${rp(r.applied)} diterapkan ke ${r.invoices.length} invoice.`);
+      setDiscountTarget(null);
+      setDiscountAmount('');
+      setDiscountReason('');
+      qc.invalidateQueries({ queryKey: ['students', studentId] });
+      qc.invalidateQueries({ queryKey: ['enrollments'] });
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal menerapkan diskon.')),
   });
 
   const editM = useMutation({
@@ -298,6 +353,125 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
           ) : null}
         </div>
       ) : null}
+
+      {s ? (
+        <div className="flex flex-col gap-2">
+          <h2 className="flex items-center gap-2 text-lg font-semibold">
+            <Wallet className="size-5" /> Paket &amp; Rincian Harga
+          </h2>
+          {enrollmentsQ.isLoading ? <Skeleton className="h-20 w-full" /> : null}
+          {(enrollmentsQ.data?.length ?? 0) === 0 && !enrollmentsQ.isLoading ? (
+            <p className="text-sm text-muted-foreground">Belum ada pendaftaran paket.</p>
+          ) : null}
+          <div className="grid gap-3 lg:grid-cols-2">
+            {enrollmentsQ.data?.map((e) => {
+              const invoices = e.invoices?.length ? e.invoices : e.invoice ? [e.invoice] : [];
+              const statusMeta = ENROLLMENT_STATUS_META[e.status];
+              return (
+                <Card key={e.id}>
+                  <CardContent className="flex flex-col gap-3 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">
+                          {e.program.name} — {e.level.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {PLAN_LABEL[e.paymentPlan ?? ''] ?? 'Sesuai paket'}
+                          {e.group ? ` · ${e.group.name}` : ''}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <Badge variant={statusMeta?.variant ?? 'outline'}>{statusMeta?.label ?? e.status}</Badge>
+                        {canManage ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1"
+                            onClick={() => {
+                              setDiscountTarget(e);
+                              setDiscountAmount('');
+                              setDiscountReason('');
+                            }}
+                          >
+                            <BadgePercent className="size-3.5" /> Diskon
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      {invoices.map((inv) => {
+                        const remaining = Number(inv.totalAmount) - Number(inv.amountPaid);
+                        return (
+                          <div key={inv.id} className="flex items-center justify-between gap-2 rounded border px-2.5 py-1.5 text-sm">
+                            <span className="truncate text-muted-foreground">
+                              {inv.number}
+                              {('dueDate' in inv && inv.dueDate)
+                                ? ` · ${new Date(String(inv.dueDate)).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`
+                                : ''}
+                            </span>
+                            <span className="shrink-0 tabular-nums">
+                              {rp(inv.totalAmount)}
+                              {Number(inv.amountPaid) > 0 ? (
+                                <span className="ml-1.5 text-xs text-muted-foreground">
+                                  (sisa {rp(remaining)})
+                                </span>
+                              ) : null}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      <Dialog open={!!discountTarget} onOpenChange={(o) => !o && setDiscountTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Diskon / Bantuan Paket</DialogTitle>
+            <DialogDescription>
+              {discountTarget
+                ? `${discountTarget.program.name} — ${discountTarget.level.name} (${discountTarget.student.user.name}). Nominal disebar ke invoice yang belum lunas; paket & jenjang tetap sama.`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="discount-amount">Nominal diskon (Rp)</Label>
+              <Input
+                id="discount-amount"
+                type="number"
+                min={0}
+                placeholder="mis. 250000"
+                value={discountAmount}
+                onChange={(e) => setDiscountAmount(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="discount-reason">Alasan</Label>
+              <Input
+                id="discount-reason"
+                placeholder="mis. Diskon saudara, bantuan, promo"
+                value={discountReason}
+                onChange={(e) => setDiscountReason(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDiscountTarget(null)}>Batal</Button>
+            <Button
+              disabled={discountM.isPending || !(Number(discountAmount) > 0)}
+              onClick={() => discountM.mutate()}
+            >
+              {discountM.isPending ? 'Menerapkan…' : 'Terapkan Diskon'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Phase1aFormDialog
         open={editOpen}

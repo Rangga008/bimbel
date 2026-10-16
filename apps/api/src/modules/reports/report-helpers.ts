@@ -5,6 +5,7 @@ export type ReportKind =
   // Keuangan
   | 'invoice'
   | 'payment'
+  | 'payment-recap'
   | 'rab'
   | 'revenue'
   | 'ar'
@@ -98,6 +99,7 @@ export const FINANCE_REPORT_BRAND = 'Bimbel — Laporan Finance';
 export const REPORT_KIND_META: Record<ReportKind, { title: string; domain: string }> = {
   invoice: { title: 'Laporan Invoice', domain: 'Keuangan' },
   payment: { title: 'Laporan Pembayaran', domain: 'Keuangan' },
+  'payment-recap': { title: 'Rekap Pembayaran per Jenjang', domain: 'Keuangan' },
   rab: { title: 'Laporan RAB vs Actual', domain: 'Keuangan' },
   revenue: { title: 'Laporan Revenue', domain: 'Keuangan' },
   ar: { title: 'Laporan Piutang (AR)', domain: 'Keuangan' },

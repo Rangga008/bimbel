@@ -692,9 +692,10 @@ export class EnrollmentsService {
     return { deleted: true, name: link.student.user.name };
   }
 
-  /** Staff (finance/academic/owner): daftar pendaftaran, filter status opsional. */
-  list(query: { status?: string }) {
+  /** Staff (finance/academic/owner): daftar pendaftaran, filter status/siswa opsional. */
+  list(query: { status?: string; studentId?: string }) {
     const where: Record<string, unknown> = {};
+    if (query.studentId) where.studentId = query.studentId;
     if (query.status) {
       const s = query.status.toUpperCase();
       if (

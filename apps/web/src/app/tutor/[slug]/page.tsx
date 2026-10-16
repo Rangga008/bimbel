@@ -40,12 +40,8 @@ export default async function TutorMenuPage({
 			/>
 		);
 	if (slug === "absensi")
-		return (
-			<div className="flex flex-col gap-8">
-				<AttendanceMarker sessionsEndpoint="/sessions/mine" />
-				<AttendanceRecapBox />
-			</div>
-		);
+		return <AttendanceMarker sessionsEndpoint="/sessions/mine" />;
+	if (slug === "rekap-absensi") return <AttendanceRecapBox />;
 	if (slug === "feedback")
 		return (
 			<FeedbackMatrix

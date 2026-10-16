@@ -11,8 +11,8 @@ import { PaymentsEmpty, PaymentsTable, VerifyDialog, usePaymentsList } from '@/c
 export function ProofsManager({ canVerify = true }: { canVerify?: boolean }) {
   const [channel, setChannel] = useState('');
   const [verifyId, setVerifyId] = useState<string | null>(null);
-  const listQ = usePaymentsList('PENDING', channel);
-  const histQ = usePaymentsList('', channel);
+  const listQ = usePaymentsList({ status: 'PENDING', channel });
+  const histQ = usePaymentsList({ channel });
   return (
     <div className="flex flex-col gap-4">
       <div>

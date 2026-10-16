@@ -54,6 +54,8 @@ export class ReportsService {
         return this.buildInvoice(filters);
       case 'payment':
         return this.buildPayment(filters);
+      case 'payment-recap':
+        return this.buildPaymentRecap(filters);
       case 'rab':
         return this.buildRab(filters);
       case 'revenue':
@@ -456,6 +458,121 @@ ${summary}
         `Total nominal: ${reportRupiah(total)}`,
         `Terverifikasi: ${verified} (${reportRupiah(verifiedAmount)})`,
         `Rasio verifikasi: ${safePercent(verified, payments.length)}%`,
+      ],
+    );
+  }
+
+  /**
+   * Rekap pembayaran per jenjang: 1 baris per pendaftaran, kolom angsuran
+   * "Bayar ke-N" mengikuti urutan invoice (bulan ke-1, ke-2, dst). Tanpa
+   * filter jenjang → semua jenjang muncul, diurutkan per jenjang.
+   */
+  private async buildPaymentRecap(filters: ReportFilters): Promise<ReportDoc> {
+    const where: Record<string, unknown> = {};
+    if (filters.studentId) where.studentId = filters.studentId;
+    if (filters.programId) where.programId = filters.programId;
+    if (filters.levelId) where.levelId = filters.levelId;
+    if (filters.groupId) where.groupId = filters.groupId;
+    if (filters.search) {
+      where.student = { user: { name: { contains: filters.search, mode: 'insensitive' } } };
+    }
+
+    const enrollments = await this.prisma.enrollment.findMany({
+      where,
+      include: {
+        student: { select: { user: { select: { name: true } } } },
+        program: { select: { name: true } },
+        level: {
+          select: {
+            name: true,
+            gradeLevel: { select: { name: true, sortOrder: true } },
+          },
+        },
+        group: { select: { name: true } },
+        invoices: {
+          select: {
+            totalAmount: true,
+            amountPaid: true,
+            dueDate: true,
+            status: true,
+          },
+          orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+        },
+      },
+      take: 500,
+    });
+
+    const PLAN: Record<string, string> = {
+      FULL: 'Lunas',
+      TWO_TIMES: 'Angsuran 2x',
+      MONTHLY: 'Bulanan',
+    };
+
+    const maxInst = Math.min(
+      12,
+      Math.max(0, ...enrollments.map((e) => e.invoices.length)),
+    );
+    const headers = [
+      'Jenjang',
+      'Nama',
+      'Paket',
+      'Skema',
+      'Harga Total',
+      ...Array.from({ length: maxInst }, (_, i) => `Bayar ke-${i + 1}`),
+      'Terbayar',
+      'Sisa',
+    ];
+
+    let billed = 0;
+    let paidAll = 0;
+    const rows = enrollments
+      .slice()
+      .sort((a, b) => {
+        const la = a.level?.gradeLevel?.sortOrder ?? 999;
+        const lb = b.level?.gradeLevel?.sortOrder ?? 999;
+        if (la !== lb) return la - lb;
+        const ln = (a.level?.name ?? '').localeCompare(b.level?.name ?? '');
+        if (ln !== 0) return ln;
+        return a.student.user.name.localeCompare(b.student.user.name);
+      })
+      .map((e) => {
+        const total = e.invoices.reduce((s, i) => s + reportMoney(i.totalAmount), 0);
+        const paid = e.invoices.reduce((s, i) => s + reportMoney(i.amountPaid), 0);
+        billed += total;
+        paidAll += paid;
+        const inst = e.invoices.map((inv) => {
+          const t = reportMoney(inv.totalAmount);
+          const out = Math.max(0, t - reportMoney(inv.amountPaid));
+          return out <= 0.009 ? `${numCell(t)} (lunas)` : `${numCell(t)} (sisa ${numCell(out)})`;
+        });
+        const jenjang =
+          e.level?.gradeLevel && e.level.gradeLevel.name !== e.level.name
+            ? `${e.level.gradeLevel.name} · ${e.level.name}`
+            : (e.level?.name ?? '-');
+        return [
+          jenjang,
+          e.student.user.name,
+          `${e.program.name}${e.group ? ` · ${e.group.name}` : ''}`,
+          PLAN[e.paymentPlan ?? ''] ?? '-',
+          numCell(total),
+          ...inst,
+          ...Array.from({ length: maxInst - inst.length }, () => '-'),
+          numCell(paid),
+          numCell(Math.max(0, total - paid)),
+        ];
+      });
+
+    return this.baseDoc(
+      'payment-recap',
+      filters,
+      headers,
+      rows,
+      [
+        `Jumlah pendaftaran: ${enrollments.length}`,
+        `Total ditagihkan: ${reportRupiah(billed)}`,
+        `Total terbayar: ${reportRupiah(paidAll)}`,
+        `Total sisa: ${reportRupiah(Math.max(0, billed - paidAll))}`,
+        `Kolektibilitas: ${safePercent(paidAll, billed)}%`,
       ],
     );
   }

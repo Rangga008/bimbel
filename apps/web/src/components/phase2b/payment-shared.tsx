@@ -28,16 +28,27 @@ export function ChannelBadges({ p }: { p: PaymentListItem }) {
   );
 }
 
-export function usePaymentsList(status: string, channel: string) {
+export interface PaymentFilters {
+  status?: string;
+  channel?: string;
+  studentId?: string;
+  groupId?: string;
+  search?: string;
+}
+
+export function usePaymentsList(filters: PaymentFilters) {
+  const qs = (() => {
+    const p = new URLSearchParams();
+    if (filters.status) p.set('status', filters.status);
+    if (filters.channel) p.set('channel', filters.channel);
+    if (filters.studentId) p.set('studentId', filters.studentId);
+    if (filters.groupId) p.set('groupId', filters.groupId);
+    if (filters.search) p.set('search', filters.search);
+    return p.toString();
+  })();
   return useQuery({
-    queryKey: ['payments', status, channel],
-    queryFn: () => {
-      const p = new URLSearchParams();
-      if (status) p.set('status', status);
-      if (channel) p.set('channel', channel);
-      const qs = p.toString();
-      return apiFetch<PaymentListItem[]>(`/payments${qs ? `?${qs}` : ''}`);
-    },
+    queryKey: ['payments', qs],
+    queryFn: () => apiFetch<PaymentListItem[]>(`/payments${qs ? `?${qs}` : ''}`),
   });
 }
 

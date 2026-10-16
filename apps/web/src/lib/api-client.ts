@@ -67,6 +67,9 @@ async function tryRefreshSession(): Promise<boolean> {
 				const res = await rawRequest("/auth/refresh", {
 					method: "POST",
 					auth: false,
+					// Batasi supaya bootstrap sesi tidak menggantung halaman
+					// terproteksi selamanya bila API lambat/tidak terjangkau.
+					signal: AbortSignal.timeout(15_000),
 				});
 				// Refresh gagal permanen (cookie hilang/kedaluwarsa/direvoke):
 				// bersihkan sesi lokal supaya tidak retry tanpa henti (badai 401).

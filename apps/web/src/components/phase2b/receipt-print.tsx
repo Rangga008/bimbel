@@ -114,8 +114,17 @@ export function buildReceiptHtml(r: ReceiptDetail, c: CompanyInfo | null): strin
 		? [enr.program?.name, enr.level?.name].filter(Boolean).join(' — ')
 		: (r.invoice?.package?.name ?? '');
 	const no = r.installmentNo ?? null;
+	// Bulan angsuran mengikuti jatuh tempo invoice (bukan tanggal bayar).
+	const dueLabel = r.invoice?.dueDate
+		? new Date(r.invoice.dueDate).toLocaleDateString('id-ID', {
+				month: 'long',
+				year: 'numeric',
+			})
+		: '';
 	const keperluan =
-		(no && no > 1 ? `Angsuran ke-${no}` : 'Pendaftaran / Pembayaran awal') +
+		(no
+			? `Pembayaran ke-${no} / Bulan ke-${no}${dueLabel ? ` (${dueLabel})` : ''}`
+			: 'Pembayaran') +
 		(programLabel ? ` ${programLabel}` : '') +
 		(r.invoice?.number ? ` (Invoice ${r.invoice.number})` : '');
 	const payDate = r.payment?.paidAt ?? r.issuedAt;

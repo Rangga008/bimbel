@@ -55,9 +55,25 @@ export class UsersService {
     });
   }
 
-  /** Cari user lewat nomor HP (sudah dinormalisasi ke beberapa varian). */
-  async findByPhoneWithRoles(phoneVariants: string[]) {
-    return this.prisma.user.findFirst({
+  /** Normalisasi nomor HP ke varian umum (0xxx, 62xxx, +62xxx, 8xxx). */
+  static phoneVariants(raw: string): string[] {
+    const digits = raw.replace(/\D/g, '');
+    const variants = new Set<string>([raw.trim(), digits]);
+    if (digits.startsWith('62')) variants.add('0' + digits.slice(2));
+    if (digits.startsWith('0')) variants.add('62' + digits.slice(1));
+    if (digits.startsWith('8')) {
+      variants.add('0' + digits);
+      variants.add('62' + digits);
+    }
+    return [...variants].filter(Boolean);
+  }
+
+  /** Cari user lewat nomor HP (sudah dinormalisasi ke beberapa varian).
+   *  Bisa mengembalikan >1 akun (mis. akun lama dinonaktifkan lalu nomor
+   *  yang sama didaftarkan ulang) — pemanggil wajib memilih kandidat yang
+   *  cocok, bukan sekadar yang tertua. */
+  async findAllByPhoneWithRoles(phoneVariants: string[]) {
+    return this.prisma.user.findMany({
       where: { phone: { in: phoneVariants } },
       orderBy: { createdAt: 'asc' },
       include: {
@@ -298,6 +314,21 @@ export class UsersService {
       });
       if (clash) throw new ConflictException('Email sudah dipakai akun lain.');
     }
+    if (dto.phone && dto.phone !== user.phone) {
+      const phoneTaken = await this.prisma.user.findFirst({
+        where: {
+          phone: { in: UsersService.phoneVariants(dto.phone) },
+          isActive: true,
+          id: { not: id },
+        },
+        select: { id: true },
+      });
+      if (phoneTaken) {
+        throw new ConflictException(
+          'Nomor HP sudah dipakai akun aktif lain.',
+        );
+      }
+    }
     const updated = await this.prisma.user.update({
       where: { id },
       data: {
@@ -379,6 +410,22 @@ export class UsersService {
       where: { email: input.email },
     });
     if (clash) throw new ConflictException('Email sudah dipakai akun lain.');
+    // No HP dipakai untuk login — tolak bila sudah dimiliki akun AKTIF
+    // (akun nonaktif dengan nomor sama tetap boleh, login sudah disaring).
+    if (input.phone) {
+      const phoneTaken = await tx.user.findFirst({
+        where: {
+          phone: { in: UsersService.phoneVariants(input.phone) },
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      if (phoneTaken) {
+        throw new ConflictException(
+          'Nomor HP sudah dipakai akun aktif lain. Nonaktifkan/ubah nomor akun lama dulu.',
+        );
+      }
+    }
     const role = await tx.role.findUnique({
       where: { name: input.roleName },
     });

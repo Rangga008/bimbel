@@ -294,6 +294,9 @@ export function PricingManager() {
 	});
 	const [regFees, setRegFees] = useState<Record<string, string>>({});
 	const [regFeeDirty, setRegFeeDirty] = useState<Record<string, boolean>>({});
+	// Tampilkan satu program + satu jenjang per filter — tidak semua sekaligus.
+	const [programId, setProgramId] = useState("");
+	const [levelId, setLevelId] = useState("");
 
 	const saveRegFeeM = useMutation({
 		mutationFn: (args: { id: string; fee: string }) =>
@@ -310,6 +313,10 @@ export function PricingManager() {
 	});
 
 	const programs = catalogQ.data ?? [];
+	const activeProgram =
+		programs.find((p) => p.id === programId) ?? null;
+	const activeLevel =
+		activeProgram?.levels.find((l) => l.id === levelId) ?? null;
 
 	return (
 		<div className="flex flex-col gap-5">
@@ -321,14 +328,53 @@ export function PricingManager() {
 				</p>
 			</div>
 			{catalogQ.isLoading ? <Skeleton className="h-48 w-full" /> : null}
-			{programs.map((p) => (
-				<Card key={p.id}>
+			{programs.length > 0 ? (
+				<div className="grid gap-2 sm:grid-cols-2">
+					<div className="flex flex-col gap-1.5">
+						<Label>Program</Label>
+						<select
+							className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+							value={programId}
+							onChange={(e) => {
+								setProgramId(e.target.value);
+								setLevelId("");
+							}}
+						>
+							<option value="">— Pilih program —</option>
+							{programs.map((p) => (
+								<option key={p.id} value={p.id}>
+									{p.name} ({CATEGORY_LABEL[p.category] ?? p.category})
+								</option>
+							))}
+						</select>
+					</div>
+					<div className="flex flex-col gap-1.5">
+						<Label>Jenjang</Label>
+						<select
+							className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+							value={levelId}
+							disabled={!activeProgram}
+							onChange={(e) => setLevelId(e.target.value)}
+						>
+							<option value="">— Pilih jenjang —</option>
+							{activeProgram?.levels.map((l) => (
+								<option key={l.id} value={l.id}>
+									{l.gradeLevel ? `${l.gradeLevel.name} · ` : ""}
+									{l.name}
+								</option>
+							))}
+						</select>
+					</div>
+				</div>
+			) : null}
+			{activeProgram ? (
+				<Card key={activeProgram.id}>
 					<CardHeader>
 						<div className="flex flex-wrap items-center justify-between gap-3">
 							<div>
-								<CardTitle className="text-lg">{p.name}</CardTitle>
+								<CardTitle className="text-lg">{activeProgram.name}</CardTitle>
 								<CardDescription>
-									{CATEGORY_LABEL[p.category] ?? p.category}
+									{CATEGORY_LABEL[activeProgram.category] ?? activeProgram.category}
 								</CardDescription>
 							</div>
 							<div className="flex items-end gap-2">
@@ -339,26 +385,26 @@ export function PricingManager() {
 										min={0}
 										className="h-8 w-40"
 										value={
-											regFees[p.id] ??
-											(p.registrationFee === null ||
-											p.registrationFee === undefined
+											regFees[activeProgram.id] ??
+											(activeProgram.registrationFee === null ||
+											activeProgram.registrationFee === undefined
 												? ""
-												: String(p.registrationFee))
+												: String(activeProgram.registrationFee))
 										}
 										onChange={(e) => {
-											setRegFees((m) => ({ ...m, [p.id]: e.target.value }));
-											setRegFeeDirty((m) => ({ ...m, [p.id]: true }));
+											setRegFees((m) => ({ ...m, [activeProgram.id]: e.target.value }));
+											setRegFeeDirty((m) => ({ ...m, [activeProgram.id]: true }));
 										}}
 									/>
 								</div>
 								<Button
 									size="sm"
 									variant="outline"
-									disabled={!regFeeDirty[p.id] || saveRegFeeM.isPending}
+									disabled={!regFeeDirty[activeProgram.id] || saveRegFeeM.isPending}
 									onClick={() =>
 										saveRegFeeM.mutate({
-											id: p.id,
-											fee: regFees[p.id] ?? "",
+											id: activeProgram.id,
+											fee: regFees[activeProgram.id] ?? "",
 										})
 									}
 								>
@@ -368,24 +414,32 @@ export function PricingManager() {
 						</div>
 					</CardHeader>
 					<CardContent className="flex flex-col gap-3">
-						{p.levels.length === 0 ? (
+						{activeProgram.levels.length === 0 ? (
 							<p className="text-sm text-muted-foreground">
 								Belum ada jenjang di program ini.
 							</p>
+						) : !activeLevel ? (
+							<p className="text-sm text-muted-foreground">
+								Pilih jenjang di atas untuk mengatur harganya.
+							</p>
 						) : (
-							p.levels.map((l) => (
-								// key memuat fingerprint harga — setelah simpan+refetch form
-								// kembali menampilkan nilai terbaru dari server.
-								<LevelPricingForm
-									key={`${l.id}:${l.price}:${l.priceUnit}:${l.fullPayPrice}:${l.installment2x}:${l.monthlyAmount}:${l.monthlyCount}:${l.promoPrice}:${l.sessionDurationMin}:${l.registrationFee}`}
-									level={l}
-									programRegFee={p.registrationFee}
-								/>
-							))
+							// key memuat fingerprint harga — setelah simpan+refetch form
+							// kembali menampilkan nilai terbaru dari server.
+							<LevelPricingForm
+								key={`${activeLevel.id}:${activeLevel.price}:${activeLevel.priceUnit}:${activeLevel.fullPayPrice}:${activeLevel.installment2x}:${activeLevel.monthlyAmount}:${activeLevel.monthlyCount}:${activeLevel.promoPrice}:${activeLevel.sessionDurationMin}:${activeLevel.registrationFee}`}
+								level={activeLevel}
+								programRegFee={activeProgram.registrationFee}
+							/>
 						)}
 					</CardContent>
 				</Card>
-			))}
+			) : !catalogQ.isLoading ? (
+				<Card>
+					<CardContent className="py-8 text-center text-sm text-muted-foreground">
+						Pilih program terlebih dahulu untuk mengatur harganya.
+					</CardContent>
+				</Card>
+			) : null}
 		</div>
 	);
 }

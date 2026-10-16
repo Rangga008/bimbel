@@ -43,6 +43,13 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/components/ui/card";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { resolveAssetUrl } from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
@@ -61,6 +68,7 @@ import {
 interface PackageSlide {
 	key: string;
 	programName: string;
+	programCode: string;
 	levelName: string;
 	pkg: LandingPackage;
 }
@@ -230,10 +238,13 @@ const TESTIMONIALS = [
 	},
 ];
 
-/** Slider paket program: scroll-snap, swipe di HP + tombol di PC. */
+/** Slider paket program: scroll-snap, swipe di HP + tombol di PC.
+ *  Kartu menonjolkan yang didapat (sesi, durasi, peminat) — harga baru
+ *  terlihat saat kartu diklik, lewat dialog detail + tombol daftar. */
 function PackageSlider({ slides }: { slides: PackageSlide[] }) {
 	const trackRef = useRef<HTMLDivElement>(null);
 	const [active, setActive] = useState(0);
+	const [selected, setSelected] = useState<PackageSlide | null>(null);
 
 	const cardStep = () => {
 		const el = trackRef.current;
@@ -265,7 +276,13 @@ function PackageSlider({ slides }: { slides: PackageSlide[] }) {
 						<Card
 							key={s.key}
 							data-slide
-							className="group flex w-[82%] shrink-0 snap-start flex-col overflow-hidden transition-shadow hover:shadow-xl sm:w-[46%] lg:w-[31.5%]"
+							role="button"
+							tabIndex={0}
+							onClick={() => setSelected(s)}
+							onKeyDown={(e) => {
+								if (e.key === "Enter" || e.key === " ") setSelected(s);
+							}}
+							className="group flex w-[82%] shrink-0 cursor-pointer snap-start flex-col overflow-hidden transition-shadow hover:shadow-xl sm:w-[46%] lg:w-[31.5%]"
 						>
 							<div className="relative h-2 bg-gradient-to-r from-brand-blue-600 via-brand-blue-400 to-brand-gold-400" />
 							<CardHeader>
@@ -273,17 +290,12 @@ function PackageSlider({ slides }: { slides: PackageSlide[] }) {
 									<span className="flex size-10 items-center justify-center rounded-lg bg-gradient-to-br from-brand-blue-50 to-brand-blue-100 text-brand-blue-600 transition-colors group-hover:from-brand-blue-600 group-hover:to-brand-blue-700 group-hover:text-white">
 										<Icon className="size-5" />
 									</span>
-									<div className="text-right">
-										<p className="text-lg font-bold tabular-nums text-brand-blue-700">
-											{fmtIDR(s.pkg.price)}
+									{s.pkg.studentCount > 0 ? (
+										<p className="flex items-center gap-1 text-xs text-muted-foreground">
+											<Users className="size-3" />
+											{s.pkg.studentCount} siswa
 										</p>
-										{s.pkg.studentCount > 0 ? (
-											<p className="flex items-center justify-end gap-1 text-xs text-muted-foreground">
-												<Users className="size-3" />
-												{s.pkg.studentCount} siswa
-											</p>
-										) : null}
-									</div>
+									) : null}
 								</div>
 								<CardTitle className="text-base leading-snug">
 									{s.pkg.name}
@@ -298,7 +310,7 @@ function PackageSlider({ slides }: { slides: PackageSlide[] }) {
 										{s.pkg.description}
 									</p>
 								) : null}
-								<div className="mt-auto flex flex-wrap gap-2">
+								<div className="mt-auto flex flex-wrap items-center gap-2">
 									<Badge variant="secondary" className="gap-1.5">
 										<BookOpenCheck className="size-3.5" />
 										{s.pkg.totalSessions} sesi
@@ -310,6 +322,9 @@ function PackageSlider({ slides }: { slides: PackageSlide[] }) {
 										</Badge>
 									) : null}
 								</div>
+								<p className="text-xs font-medium text-brand-blue-600 transition-colors group-hover:text-brand-blue-700">
+									Lihat detail &amp; harga →
+								</p>
 							</CardContent>
 						</Card>
 					);
@@ -347,6 +362,70 @@ function PackageSlider({ slides }: { slides: PackageSlide[] }) {
 					</Button>
 				</div>
 			</div>
+			<Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+				<DialogContent>
+					{selected ? (
+						<>
+							<DialogHeader>
+								<DialogTitle>{selected.pkg.name}</DialogTitle>
+								<DialogDescription>
+									{selected.programName} · {selected.levelName}
+								</DialogDescription>
+							</DialogHeader>
+							<div className="flex flex-col gap-3">
+								{selected.pkg.description ? (
+									<p className="text-sm text-muted-foreground">
+										{selected.pkg.description}
+									</p>
+								) : null}
+								<div className="flex flex-wrap gap-2">
+									<Badge variant="secondary" className="gap-1.5">
+										<BookOpenCheck className="size-3.5" />
+										{selected.pkg.totalSessions} sesi
+									</Badge>
+									{selected.pkg.durationWeeks ? (
+										<Badge variant="secondary" className="gap-1.5">
+											<Clock className="size-3.5" />
+											{selected.pkg.durationWeeks} minggu
+										</Badge>
+									) : null}
+									{selected.pkg.studentCount > 0 ? (
+										<Badge variant="secondary" className="gap-1.5">
+											<Users className="size-3.5" />
+											{selected.pkg.studentCount} siswa
+										</Badge>
+									) : null}
+								</div>
+								<div className="rounded-xl border border-brand-gold-300/50 bg-brand-gold-50 px-4 py-3">
+									<p className="text-xs text-muted-foreground">Harga paket</p>
+									<p className="text-2xl font-bold tabular-nums text-brand-blue-700">
+										{fmtIDR(selected.pkg.price)}
+									</p>
+								</div>
+								<div className="flex flex-wrap gap-2">
+									<Button
+										render={<Link href="/daftar" />}
+										className="gap-2 bg-brand-gold-400 font-semibold text-brand-blue-900 hover:bg-brand-gold-300"
+									>
+										Daftar Sekarang
+										<ArrowRight className="size-4" />
+									</Button>
+									<Button
+										variant="outline"
+										render={
+											<Link
+												href={`/program/${programSlug(selected.programCode)}`}
+											/>
+										}
+									>
+										Detail Program
+									</Button>
+								</div>
+							</div>
+						</>
+					) : null}
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }
@@ -391,6 +470,7 @@ export default function LandingPage() {
 			l.packages.map((pkg) => ({
 				key: pkg.id,
 				programName: p.name,
+				programCode: p.code,
 				levelName: l.name,
 				pkg,
 			})),

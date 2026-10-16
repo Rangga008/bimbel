@@ -145,19 +145,33 @@ export class PublicController {
     const company = (companyRow?.value ?? {}) as Record<string, unknown>;
     const branding = (brandingRow?.value ?? {}) as Record<string, unknown>;
     const finance = (financeRow?.value ?? {}) as Record<string, unknown>;
-    // Nomor angsuran: urutan invoice pendaftaran yang sama (fallback: paket).
+    // Nomor angsuran: urutan invoice pendaftaran yang sama (fallback: paket),
+    // diurutkan per bulan jatuh tempo (dueDate); fallback issuedAt/createdAt.
     let installmentNo: number | null = null;
     const inv = receipt.invoice;
     if (inv) {
+      const pivot = inv.dueDate ?? inv.issuedAt ?? inv.createdAt;
       const earlier = await this.prisma.invoice.count({
         where: {
           studentId: inv.studentId,
+          id: { not: inv.id },
           ...(inv.enrollmentId
             ? { enrollmentId: inv.enrollmentId }
             : { packageId: inv.packageId ?? undefined }),
           OR: [
-            { issuedAt: { lt: inv.issuedAt ?? inv.createdAt } },
+            { dueDate: { lt: pivot } },
             {
+              AND: [
+                { dueDate: pivot },
+                { createdAt: { lt: inv.createdAt } },
+              ],
+            },
+            {
+              dueDate: null,
+              issuedAt: { lt: inv.issuedAt ?? inv.createdAt },
+            },
+            {
+              dueDate: null,
               issuedAt: null,
               createdAt: { lt: inv.createdAt },
             },

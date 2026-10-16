@@ -57,11 +57,12 @@ export class PaymentsController {
     @Query('status') status?: string,
     @Query('channel') channel?: string,
     @Query('studentId') studentId?: string,
+    @Query('groupId') groupId?: string,
     @Query('search') search?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    return this.payments.list({ status, channel, studentId, search, from, to });
+    return this.payments.list({ status, channel, studentId, groupId, search, from, to });
   }
 
   @Get('payments/pending-count')
@@ -185,10 +186,11 @@ export class PaymentsController {
   @RequirePermissions(PERMISSION_CODES.PAYMENT_VIEW)
   receipts(
     @Query('studentId') studentId?: string,
+    @Query('groupId') groupId?: string,
     @Query('invoiceId') invoiceId?: string,
     @Query('search') search?: string,
   ) {
-    return this.payments.listReceipts({ studentId, invoiceId, search });
+    return this.payments.listReceipts({ studentId, groupId, invoiceId, search });
   }
 
   @Get('receipts/:id')
