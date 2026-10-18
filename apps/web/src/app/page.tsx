@@ -491,6 +491,14 @@ export default function LandingPage() {
 		<div className="min-h-screen bg-background">
 			<SiteHeader />
 
+			{/* ---- Slider foto siswa — banner di atas judul hero (di-set di
+			    Pengaturan > Tampilan Landing) ---- */}
+			{heroImages.length > 0 ? (
+				<section aria-label="Galeri siswa" className="mx-auto max-w-6xl px-4 pt-6 sm:px-6">
+					<HeroPhotoSlider images={heroImages} />
+				</section>
+			) : null}
+
 			{/* ---- Hero ---- */}
 			<section id="beranda" className="relative overflow-hidden bg-brand-blue-900 text-white">
 				{/* Dekorasi gradient & pola */}
@@ -619,14 +627,6 @@ export default function LandingPage() {
 					className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-background to-transparent"
 				/>
 			</section>
-
-			{/* ---- Galeri foto siswa (slider terpisah dari hero, di-set di
-			    Pengaturan > Tampilan Landing) ---- */}
-			{heroImages.length > 0 ? (
-				<section aria-label="Galeri siswa" className="mx-auto max-w-6xl px-4 pt-12 sm:px-6">
-					<HeroPhotoSlider images={heroImages} />
-				</section>
-			) : null}
 
 			{/* ---- Tentang ---- */}
 			<section id="tentang" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-16 sm:px-6 md:py-20">

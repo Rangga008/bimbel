@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Printer } from "lucide-react";
 import { toast } from "sonner";
@@ -69,6 +69,7 @@ export function LearningReportPage({
 	const [excluded, setExcluded] = useState<Set<string>>(new Set());
 	const [busy, setBusy] = useState(false);
 	const [reportHtml, setReportHtml] = useState<string | null>(null);
+	const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
 	const catsQ = useQuery({
 		queryKey: ["content-categories"],
@@ -140,7 +141,11 @@ export function LearningReportPage({
 		setBusy(true);
 		try {
 			const blob = await apiFetchBlob(`${endpoint}?${params}`);
-			setReportHtml(await blob.text());
+			// Buang <script> auto-print dari dokumen — preview tidak boleh
+			// langsung memunculkan dialog print; cetak lewat tombol.
+			setReportHtml(
+				(await blob.text()).replace(/<script[\s\S]*?<\/script>/gi, ""),
+			);
 		} catch (e) {
 			toast.error(e instanceof ApiError ? e.message : "Gagal memuat laporan.");
 		} finally {
@@ -301,18 +306,15 @@ export function LearningReportPage({
 						<Button
 							variant="outline"
 							onClick={() => {
-								// Cetak via jendela terpisah — <script> auto-print di HTML
-								// laporan tidak dieksekusi lewat innerHTML preview.
-								const win = window.open("", "_blank", "width=900,height=700");
+								// Cetak dari iframe preview — dokumen yang sama
+								// persis, jadi hasil PDF = tampilan di layar.
+								const win = iframeRef.current?.contentWindow;
 								if (!win) {
-									toast.error("Popup diblokir browser — izinkan popup untuk mencetak.");
+									toast.error("Preview belum siap — coba lagi.");
 									return;
 								}
-								win.document.open();
-								win.document.write(reportHtml);
-								win.document.close();
 								win.focus();
-								setTimeout(() => win.print(), 400);
+								win.print();
 							}}
 						>
 							<Printer className="mr-1.5 size-4" />
@@ -322,9 +324,15 @@ export function LearningReportPage({
 				</div>
 
 				{reportHtml ? (
-					<div
-						className="mt-4 overflow-x-auto rounded-md border bg-white"
-						dangerouslySetInnerHTML={{ __html: reportHtml }}
+					// Preview lewat iframe — CSS global laporan (*, body, table)
+					// terisolasi di dokumen iframe, tidak menimpa halaman
+					// aplikasi (sebelumnya innerHTML → style bocor, layar
+					// "mengecil"). Print dari iframe = persis tampilannya.
+					<iframe
+						ref={iframeRef}
+						title="Preview laporan hasil belajar"
+						srcDoc={reportHtml}
+						className="mt-4 h-[80vh] w-full rounded-md border bg-white"
 					/>
 				) : null}
 			</CardContent>

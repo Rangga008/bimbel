@@ -6,6 +6,7 @@ export type ReportKind =
   | 'invoice'
   | 'payment'
   | 'payment-recap'
+  | 'program-recap'
   | 'rab'
   | 'revenue'
   | 'ar'
@@ -100,6 +101,7 @@ export const REPORT_KIND_META: Record<ReportKind, { title: string; domain: strin
   invoice: { title: 'Laporan Invoice', domain: 'Keuangan' },
   payment: { title: 'Laporan Pembayaran', domain: 'Keuangan' },
   'payment-recap': { title: 'Rekap Pembayaran per Jenjang', domain: 'Keuangan' },
+  'program-recap': { title: 'Rekap Program per Kelas', domain: 'Keuangan' },
   rab: { title: 'Laporan RAB vs Actual', domain: 'Keuangan' },
   revenue: { title: 'Laporan Revenue', domain: 'Keuangan' },
   ar: { title: 'Laporan Piutang (AR)', domain: 'Keuangan' },

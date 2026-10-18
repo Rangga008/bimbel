@@ -22,7 +22,6 @@ import { SiteHeader } from "@/components/public/site-header";
 import { SiteFooter } from "@/components/public/site-footer";
 import {
 	DEFAULT_REGISTRATION_URL,
-	fmtIDR,
 	programSlug,
 	useLanding,
 } from "@/lib/landing";
@@ -101,10 +100,11 @@ export default function ProgramCatalogPage() {
 									n + l.packages.reduce((m, pk) => m + (pk.studentCount ?? 0), 0),
 								0,
 							);
-							const prices = p.levels
-								.map((l) => Number(l.promoPrice ?? l.price ?? 0))
-								.filter((v) => v > 0);
-							const minPrice = prices.length ? Math.min(...prices) : null;
+							const sessionTotal = p.levels.reduce(
+								(n, l) =>
+									n + l.packages.reduce((m, pk) => m + (pk.totalSessions ?? 0), 0),
+								0,
+							);
 							return (
 								<Link
 									key={p.id}
@@ -128,6 +128,12 @@ export default function ProgramCatalogPage() {
 											<div className="flex flex-wrap gap-2">
 												<Badge variant="secondary">{p.levels.length} jenjang</Badge>
 												<Badge variant="secondary">{pkgCount} paket</Badge>
+												{sessionTotal > 0 ? (
+													<Badge variant="secondary" className="gap-1.5">
+														<BookOpenCheck className="size-3.5" />
+														{sessionTotal} sesi
+													</Badge>
+												) : null}
 												{studentTotal > 0 ? (
 													<Badge variant="secondary" className="gap-1.5">
 														<Users className="size-3.5" />
@@ -135,14 +141,11 @@ export default function ProgramCatalogPage() {
 													</Badge>
 												) : null}
 											</div>
-											{minPrice ? (
-												<p className="text-sm">
-													mulai{" "}
-													<span className="font-semibold text-brand-blue-700">
-														{fmtIDR(minPrice)}
-													</span>
-												</p>
-											) : null}
+											{/* Harga sengaja tidak ditampilkan — klik kartu untuk
+											    membuka detail jenjang & harga. */}
+											<p className="text-sm font-medium text-brand-blue-700">
+												Lihat jenjang &amp; harga →
+											</p>
 										</CardContent>
 									</Card>
 								</Link>

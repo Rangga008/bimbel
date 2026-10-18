@@ -56,6 +56,8 @@ export class ReportsService {
         return this.buildPayment(filters);
       case 'payment-recap':
         return this.buildPaymentRecap(filters);
+      case 'program-recap':
+        return this.buildProgramRecap(filters);
       case 'rab':
         return this.buildRab(filters);
       case 'revenue':
@@ -483,7 +485,18 @@ ${summary}
       where,
       include: {
         student: {
-          select: { nis: true, user: { select: { name: true } } },
+          select: {
+            nis: true,
+            schoolOrigin: true,
+            user: { select: { name: true, phone: true } },
+            // Fallback kontak: HP ortu bila HP siswa kosong.
+            parentStudents: {
+              take: 1,
+              select: {
+                parent: { select: { user: { select: { phone: true } } } },
+              },
+            },
+          },
         },
         program: { select: { name: true, code: true } },
         level: {
@@ -527,7 +540,8 @@ ${summary}
       'FEB', 'MAR', 'APR', 'MEI', 'JUN', 'JUL',
     ];
     const headers = [
-      'NO', 'ID', 'Kelas/Prog', 'Nama', 'Harga', 'Pemb Ke', 'Sisa',
+      'NO', 'ID', 'Kelas/Prog', 'Nama', 'No HP', 'Sekolah',
+      'Harga', 'Pemb Ke', 'Sisa',
       ...MONTHS, 'Total Masuk',
     ];
 
@@ -570,11 +584,17 @@ ${summary}
       const kelasProg = e.level?.gradeLevel
         ? `${e.level.gradeLevel.name}/${e.program.code || e.program.name}`
         : `${e.level?.name ?? '-'}/${e.program.code || e.program.name}`;
+      const phone =
+        e.student.user.phone ||
+        e.student.parentStudents[0]?.parent.user.phone ||
+        '-';
       return [
         String(i + 1),
         e.student.nis || '-',
         kelasProg,
         e.student.user.name,
+        phone,
+        e.student.schoolOrigin || '-',
         numCell(total),
         String(paidCount),
         numCell(Math.max(0, total - paid)),
@@ -594,6 +614,237 @@ ${summary}
         `Total terbayar: ${reportRupiah(paidAll)}`,
         `Total sisa: ${reportRupiah(Math.max(0, billed - paidAll))}`,
         `Kolektibilitas: ${safePercent(paidAll, billed)}%`,
+      ],
+    );
+  }
+
+  /**
+   * Rekap per program ala sheet Excel operasional:
+   * PROGRAM | KELAS | JML SISWA | BIAYA DAFTAR | BIAYA LES | TOTAL |
+   * JUL..JUN | TOTAL MASUK — dikelompokkan per program dengan baris
+   * subtotal per program. Di bawahnya blok ringkasan AR per jenjang:
+   * total biaya, uang masuk, outstanding, jumlah siswa, rata-rata bayaran.
+   * Uang masuk per bulan dihitung dari payment.paidAt (alokasi VERIFIED).
+   */
+  private async buildProgramRecap(filters: ReportFilters): Promise<ReportDoc> {
+    const where: Record<string, unknown> = {};
+    if (filters.studentId) where.studentId = filters.studentId;
+    if (filters.programId) where.programId = filters.programId;
+    if (filters.levelId) where.levelId = filters.levelId;
+    if (filters.groupId) where.groupId = filters.groupId;
+    if (filters.search) {
+      where.student = { user: { name: { contains: filters.search, mode: 'insensitive' } } };
+    }
+
+    const invSelect = {
+      id: true,
+      totalAmount: true,
+      amountPaid: true,
+      status: true,
+      items: { select: { description: true, amount: true } },
+      allocations: {
+        select: {
+          amount: true,
+          payment: { select: { paidAt: true, status: true } },
+        },
+      },
+    } as const;
+
+    const enrollments = await this.prisma.enrollment.findMany({
+      where,
+      include: {
+        program: { select: { name: true, code: true } },
+        level: {
+          select: {
+            name: true,
+            sortOrder: true,
+            gradeLevel: { select: { sortOrder: true } },
+          },
+        },
+        invoice: { select: invSelect },
+        invoices: { select: invSelect },
+      },
+      take: 1000,
+    });
+
+    // Tahun ajaran dimulai Juli (seperti sheet referensi): JUL..JUN.
+    const MONTHS = [
+      'JUL', 'AGU', 'SEP', 'OKT', 'NOV', 'DES',
+      'JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN',
+    ];
+    const monthIdx = (d: Date) => (((d.getMonth() - 6) % 12) + 12) % 12;
+    const REGFEE_RE = /daftar|pendaftaran/i;
+
+    // Agregat per program → level.
+    type LevelAgg = {
+      name: string;
+      sortOrder: number;
+      students: number;
+      regFee: number;
+      billed: number;
+      paid: number;
+      months: number[];
+    };
+    const programs = new Map<string, { name: string; levels: Map<string, LevelAgg> }>();
+
+    for (const e of enrollments) {
+      const progName = e.program.name;
+      const levelName = e.level?.name ?? 'Tanpa Jenjang';
+      const sortOrder =
+        (e.level?.gradeLevel?.sortOrder ?? 0) * 100 + (e.level?.sortOrder ?? 0);
+      let prog = programs.get(e.programId);
+      if (!prog) {
+        prog = { name: progName, levels: new Map() };
+        programs.set(e.programId, prog);
+      }
+      let lvl = prog.levels.get(levelName);
+      if (!lvl) {
+        lvl = { name: levelName, sortOrder, students: 0, regFee: 0, billed: 0, paid: 0, months: new Array(12).fill(0) };
+        prog.levels.set(levelName, lvl);
+      }
+      lvl.students += 1;
+
+      // Gabung invoice primer + cicilan, dedupe by id.
+      const invs = [...e.invoices];
+      if (e.invoice && !invs.some((v) => v.id === e.invoice!.id)) {
+        invs.push(e.invoice);
+      }
+      for (const inv of invs) {
+        if (inv.status === 'VOID') continue;
+        const billed = reportMoney(inv.totalAmount);
+        lvl.billed += billed;
+        lvl.regFee += inv.items
+          .filter((it) => REGFEE_RE.test(it.description))
+          .reduce((s, it) => s + reportMoney(it.amount), 0);
+        for (const al of inv.allocations) {
+          if (al.payment.status !== 'VERIFIED' || !al.payment.paidAt) continue;
+          const amt = reportMoney(al.amount);
+          lvl.paid += amt;
+          lvl.months[monthIdx(new Date(al.payment.paidAt))] += amt;
+        }
+      }
+    }
+
+    const headers = [
+      'PROGRAM', 'KELAS', 'Jml Siswa', 'Biaya Daftar', 'Biaya Les',
+      'TOTAL', ...MONTHS, 'Total Masuk',
+    ];
+    const COLS = headers.length;
+    const blank = () => Array.from({ length: COLS }, () => '');
+
+    const rows: string[][] = [];
+    const grand = { students: 0, regFee: 0, les: 0, billed: 0, paid: 0, months: new Array<number>(12).fill(0) };
+
+    for (const prog of [...programs.values()].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    )) {
+      const levels = [...prog.levels.values()].sort(
+        (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
+      );
+      const sub = { students: 0, regFee: 0, les: 0, billed: 0, paid: 0, months: new Array<number>(12).fill(0) };
+      levels.forEach((lvl, i) => {
+        const les = lvl.billed - lvl.regFee;
+        rows.push([
+          i === 0 ? prog.name : '',
+          lvl.name,
+          String(lvl.students),
+          numCell(lvl.regFee),
+          numCell(les),
+          numCell(lvl.billed),
+          ...lvl.months.map((m) => (m > 0.009 ? numCell(m) : '-')),
+          numCell(lvl.paid),
+        ]);
+        sub.students += lvl.students;
+        sub.regFee += lvl.regFee;
+        sub.les += les;
+        sub.billed += lvl.billed;
+        sub.paid += lvl.paid;
+        lvl.months.forEach((m, j) => (sub.months[j] += m));
+      });
+      rows.push([
+        `TOTAL ${prog.name}`,
+        '',
+        String(sub.students),
+        numCell(sub.regFee),
+        numCell(sub.les),
+        numCell(sub.billed),
+        ...sub.months.map((m) => (m > 0.009 ? numCell(m) : '-')),
+        numCell(sub.paid),
+      ]);
+      grand.students += sub.students;
+      grand.regFee += sub.regFee;
+      grand.les += sub.les;
+      grand.billed += sub.billed;
+      grand.paid += sub.paid;
+      sub.months.forEach((m, j) => (grand.months[j] += m));
+    }
+    rows.push([
+      'TOTAL SEMUA PROGRAM',
+      '',
+      String(grand.students),
+      numCell(grand.regFee),
+      numCell(grand.les),
+      numCell(grand.billed),
+      ...grand.months.map((m) => (m > 0.009 ? numCell(m) : '-')),
+      numCell(grand.paid),
+    ]);
+
+    // ---- Blok 2: ringkasan AR per jenjang (disusun di bawah tabel utama,
+    // seperti dua tabel bertumpuk di sheet referensi). ----
+    rows.push(blank());
+    rows.push([
+      'PROGRAM/JENJANG', 'TOTAL BIAYA', 'AR PAYMENT (UANG MASUK)',
+      '% MASUK', 'AR OUTSTANDING', '% SISA', 'JUMLAH SISWA',
+      'TARGET SISWA', 'KURANG SISWA', 'RATA-RATA/TAHUN', 'RATA-RATA/BULAN',
+    ]);
+    for (const prog of [...programs.values()].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    )) {
+      for (const lvl of [...prog.levels.values()].sort(
+        (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
+      )) {
+        const outstanding = Math.max(0, lvl.billed - lvl.paid);
+        rows.push([
+          `${prog.name} · ${lvl.name}`,
+          numCell(lvl.billed),
+          numCell(lvl.paid),
+          `${safePercent(lvl.paid, lvl.billed)}%`,
+          numCell(outstanding),
+          `${safePercent(outstanding, lvl.billed)}%`,
+          String(lvl.students),
+          '-',
+          '-',
+          numCell(Math.round(safeAverage(lvl.billed, lvl.students))),
+          numCell(Math.round(safeAverage(lvl.billed, lvl.students) / 12)),
+        ]);
+      }
+    }
+    const grandOutstanding = Math.max(0, grand.billed - grand.paid);
+    rows.push([
+      'TOTAL',
+      numCell(grand.billed),
+      numCell(grand.paid),
+      `${safePercent(grand.paid, grand.billed)}%`,
+      numCell(grandOutstanding),
+      `${safePercent(grandOutstanding, grand.billed)}%`,
+      String(grand.students),
+      '-',
+      '-',
+      numCell(Math.round(safeAverage(grand.billed, grand.students))),
+      numCell(Math.round(safeAverage(grand.billed, grand.students) / 12)),
+    ]);
+
+    return this.baseDoc(
+      'program-recap',
+      filters,
+      headers,
+      rows,
+      [
+        `Jumlah program: ${programs.size}`,
+        `Jumlah siswa (pendaftaran): ${enrollments.length}`,
+        `Total ditagihkan: ${reportRupiah(grand.billed)}`,
+        `Total uang masuk: ${reportRupiah(grand.paid)}`,
+        `Total outstanding: ${reportRupiah(grandOutstanding)}`,
       ],
     );
   }

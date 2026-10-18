@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileText } from "lucide-react";
+import { FileText, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,7 @@ export function LearningReportButton({ endpoint }: { endpoint: string }) {
 	const [basic, setBasic] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [reportHtml, setReportHtml] = useState<string | null>(null);
+	const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
 	const catsQ = useQuery({
 		queryKey: ["content-categories"],
@@ -56,7 +57,11 @@ export function LearningReportButton({ endpoint }: { endpoint: string }) {
 		setBusy(true);
 		try {
 			const blob = await apiFetchBlob(`${endpoint}?${params}`);
-			setReportHtml(await blob.text());
+			// Buang <script> auto-print — preview iframe tidak boleh
+			// langsung memunculkan dialog print.
+			setReportHtml(
+				(await blob.text()).replace(/<script[\s\S]*?<\/script>/gi, ""),
+			);
 		} catch (e) {
 			toast.error(
 				e instanceof ApiError ? e.message : "Gagal memuat laporan.",
@@ -82,13 +87,31 @@ export function LearningReportButton({ endpoint }: { endpoint: string }) {
 					</DialogHeader>
 					{reportHtml ? (
 						<div className="flex flex-col gap-3">
-							<div
-								className="overflow-x-auto rounded-md border bg-white p-4"
-								dangerouslySetInnerHTML={{ __html: reportHtml }}
+							{/* Preview di iframe — CSS global laporan terisolasi,
+							    dan print langsung dari dokumen yang sama. */}
+							<iframe
+								ref={iframeRef}
+								title="Preview laporan hasil belajar"
+								srcDoc={reportHtml}
+								className="h-[65vh] w-full rounded-md border bg-white"
 							/>
-							<Button variant="outline" size="sm" onClick={() => setReportHtml(null)}>
-								Kembali
-							</Button>
+							<div className="flex gap-2">
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={() => {
+										const win = iframeRef.current?.contentWindow;
+										if (!win) return;
+										win.focus();
+										win.print();
+									}}
+								>
+									<Printer className="mr-1.5 size-4" /> Cetak / Simpan PDF
+								</Button>
+								<Button variant="ghost" size="sm" onClick={() => setReportHtml(null)}>
+									Kembali
+								</Button>
+							</div>
 						</div>
 					) : (
 						<div className="grid gap-4 py-2">

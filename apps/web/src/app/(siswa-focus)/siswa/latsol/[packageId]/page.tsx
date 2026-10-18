@@ -9,9 +9,13 @@ export default function LatsolTakingPage() {
 	const packageId = typeof params.packageId === "string" ? params.packageId : "";
 
 	return (
-		<LatsolPlayer
-			packageId={packageId}
-			onBack={() => router.back()}
-		/>
+		// Container terpusat — layout fokus tidak punya padding, tanpa ini
+		// konten menempel ke tepi layar (halaman materi pakai pola sama).
+		<main className="mx-auto w-full max-w-5xl p-4 sm:p-6">
+			<LatsolPlayer
+				packageId={packageId}
+				onBack={() => router.back()}
+			/>
+		</main>
 	);
 }

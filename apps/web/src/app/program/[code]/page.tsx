@@ -257,71 +257,57 @@ export default function ProgramDetailPage({
 											</CardDescription>
 										) : null}
 									</CardHeader>
-									<CardContent className="mt-auto">
+									<CardContent className="mt-auto flex flex-col gap-4">
 										<LevelPriceLines level={l} />
+										{/* Paket di jenjang ini — ditampilkan di dalam kartu
+										    jenjang (bukan section terpisah) supaya tidak
+										    terlihat dobel di bawah. */}
+										{l.packages.length > 0 ? (
+											<div className="flex flex-col gap-2 border-t pt-3">
+												{l.packages.map((pkg) => (
+													<div
+														key={pkg.id}
+														className="flex flex-col gap-1.5 rounded-lg border bg-muted/40 p-3"
+													>
+														<div className="flex items-start justify-between gap-2">
+															<p className="text-sm leading-snug font-medium">
+																{pkg.name}
+															</p>
+															<p className="shrink-0 text-sm font-bold tabular-nums text-brand-blue-700">
+																{fmtIDR(pkg.price)}
+															</p>
+														</div>
+														{pkg.description ? (
+															<p className="text-xs text-muted-foreground">
+																{pkg.description}
+															</p>
+														) : null}
+														<div className="flex flex-wrap gap-1.5">
+															<Badge variant="secondary" className="gap-1 text-[11px]">
+																<BookOpenCheck className="size-3" />
+																{pkg.totalSessions} sesi
+															</Badge>
+															{pkg.durationWeeks ? (
+																<Badge variant="secondary" className="gap-1 text-[11px]">
+																	<Clock className="size-3" />
+																	{pkg.durationWeeks} minggu
+																</Badge>
+															) : null}
+															{pkg.studentCount > 0 ? (
+																<Badge variant="secondary" className="gap-1 text-[11px]">
+																	<Users className="size-3" />
+																	{pkg.studentCount} siswa
+																</Badge>
+															) : null}
+														</div>
+													</div>
+												))}
+											</div>
+										) : null}
 									</CardContent>
 								</Card>
 							))}
 						</div>
-
-						{/* Paket program */}
-						{program.levels.some((l) => l.packages.length > 0) ? (
-							<div className="mt-14">
-								<div className="mb-6">
-									<h2 className="text-xl font-bold tracking-tight sm:text-2xl">
-										Paket {program.name}
-									</h2>
-									<p className="mt-1 text-sm text-muted-foreground">
-										Paket belajar per jenjang dalam program ini.
-									</p>
-								</div>
-								<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-									{program.levels.flatMap((l) =>
-										l.packages.map((pkg) => (
-											<Card key={pkg.id} className="flex flex-col overflow-hidden transition-shadow hover:shadow-lg">
-												<div className="h-1.5 bg-gradient-to-r from-brand-blue-600 via-brand-blue-400 to-brand-gold-400" />
-												<CardHeader>
-													<div className="flex items-start justify-between gap-2">
-														<CardTitle className="text-base leading-snug">
-															{pkg.name}
-														</CardTitle>
-														<p className="shrink-0 text-right text-base font-bold tabular-nums text-brand-blue-700">
-															{fmtIDR(pkg.price)}
-														</p>
-													</div>
-													<CardDescription>{l.name}</CardDescription>
-												</CardHeader>
-												<CardContent className="mt-auto flex flex-col gap-3">
-													{pkg.description ? (
-														<p className="text-sm text-muted-foreground">
-															{pkg.description}
-														</p>
-													) : null}
-													<div className="flex flex-wrap gap-2">
-														<Badge variant="secondary" className="gap-1.5">
-															<BookOpenCheck className="size-3.5" />
-															{pkg.totalSessions} sesi
-														</Badge>
-														{pkg.durationWeeks ? (
-															<Badge variant="secondary" className="gap-1.5">
-																<Clock className="size-3.5" />
-																{pkg.durationWeeks} minggu
-															</Badge>
-														) : null}
-														{pkg.studentCount > 0 ? (
-															<Badge variant="secondary" className="gap-1.5">
-																<Users className="size-3.5" />
-																{pkg.studentCount} siswa
-															</Badge>
-														) : null}
-													</div>
-												</CardContent>
-											</Card>
-										)),
-									)}
-								</div>
-							</div>
-						) : null}
 
 						{/* CTA */}
 						<div className="mt-12 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-brand-gold-300/50 bg-brand-gold-50 p-5">
