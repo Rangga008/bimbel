@@ -4,10 +4,10 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Pencil } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/shared/user-avatar';
-import { Card, CardContent } from '@/components/ui/card';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { ParentItem, StudentItem } from '@/lib/phase1a-types';
 import {
@@ -74,66 +74,96 @@ export function ParentLinkManager({
     },
   });
 
+  const th = 'px-3 py-2 text-left font-medium whitespace-nowrap';
+  const td = 'px-3 py-2 align-top';
+
   return (
     <>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {parents.map((parent) => (
-          <Card key={parent.id}>
-            <CardContent className="flex flex-col gap-2 py-4">
-              <div className="flex items-center gap-2.5">
-                <UserAvatar name={parent.user.name} avatarUrl={parent.user.avatarUrl} className="size-9" />
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{parent.user.name}</p>
-                  <p className="truncate text-xs text-muted-foreground">{parent.user.email}</p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {parent.parentStudents.map((l) => (
-                  <span key={l.student.id} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
-                    {l.student.user.name}
-                    <button
-                      type="button"
-                      className="text-muted-foreground hover:text-destructive"
-                      title="Lepas relasi"
-                      onClick={() =>
-                        setUnlinkTarget({
-                          parentId: parent.id,
-                          studentId: l.student.id,
-                          label: `${l.student.user.name} ↔ ${parent.user.name}`,
-                        })
-                      }
-                    >
-                      ✕
-                    </button>
+      <div className="overflow-x-auto rounded-md border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-muted/50">
+              <th className={th}>Orang Tua</th>
+              <th className={th}>No. HP</th>
+              <th className={th}>Anak</th>
+              <th className={th}>Status</th>
+              <th className={th}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {parents.map((parent) => (
+              <tr key={parent.id} className="border-b last:border-0">
+                <td className={td}>
+                  <span className="flex items-center gap-2.5">
+                    <UserAvatar name={parent.user.name} avatarUrl={parent.user.avatarUrl} className="size-8" />
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">{parent.user.name}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{parent.user.email}</span>
+                    </span>
                   </span>
-                ))}
-                {parent.parentStudents.length === 0 ? (
-                  <span className="text-xs text-muted-foreground">Belum ada anak terhubung.</span>
-                ) : null}
-              </div>
-              <div className="flex gap-2 pt-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setLinkOpen(parent.id);
-                    setLinkForm({});
-                  }}
-                >
-                  Hubungkan Anak
-                </Button>
-                {onEdit ? (
-                  <Button variant="ghost" size="sm" onClick={() => onEdit(parent)}>
-                    Edit
-                  </Button>
-                ) : null}
-                <Link href={`${basePath}/orang-tua/${parent.id}`} className="ml-auto">
-                  <Button variant="ghost" size="sm" className="px-0 text-primary">Kelola <ChevronRight /></Button>
-                </Link>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+                </td>
+                <td className={`${td} whitespace-nowrap text-muted-foreground`}>
+                  {parent.user.phone ?? '—'}
+                </td>
+                <td className={td}>
+                  <span className="flex flex-wrap gap-1.5">
+                    {parent.parentStudents.map((l) => (
+                      <span key={l.student.id} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
+                        <Link href={`${basePath}/siswa/${l.student.id}`} className="hover:underline">
+                          {l.student.user.name}
+                        </Link>
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-destructive"
+                          title="Lepas relasi"
+                          onClick={() =>
+                            setUnlinkTarget({
+                              parentId: parent.id,
+                              studentId: l.student.id,
+                              label: `${l.student.user.name} ↔ ${parent.user.name}`,
+                            })
+                          }
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                    {parent.parentStudents.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">Belum ada anak terhubung.</span>
+                    ) : null}
+                  </span>
+                </td>
+                <td className={`${td} whitespace-nowrap`}>
+                  <Badge variant={parent.isActive ? 'success' : 'outline'}>
+                    {parent.isActive ? 'Aktif' : 'Nonaktif'}
+                  </Badge>
+                </td>
+                <td className={`${td} whitespace-nowrap text-right`}>
+                  <span className="inline-flex items-center gap-1">
+                    <Link href={`${basePath}/orang-tua/${parent.id}`}>
+                      <Button variant="ghost" size="sm" className="text-primary">Kelola <ChevronRight /></Button>
+                    </Link>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setLinkOpen(parent.id);
+                        setLinkForm({});
+                      }}
+                    >
+                      Hubungkan Anak
+                    </Button>
+                    {onEdit ? (
+                      <Button variant="ghost" size="sm" onClick={() => onEdit(parent)}>
+                        <Pencil className="size-3.5" /> Edit
+                      </Button>
+                    ) : null}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       <Phase1aFormDialog

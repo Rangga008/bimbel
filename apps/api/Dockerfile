@@ -17,12 +17,17 @@ FROM node:22-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Build offline: binaries.prisma.sh tidak selalu terjangkau — pakai schema-engine
+# lokal yang disalin dari image sebelumnya (lihat prisma-engines/).
+ENV PRISMA_SCHEMA_ENGINE_BINARY=/app/prisma-engines/schema-engine-linux-musl-openssl-3.0.x
 RUN npx prisma generate
 RUN npm run build
 
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+ENV PRISMA_SCHEMA_ENGINE_BINARY=/app/prisma-engines/schema-engine-linux-musl-openssl-3.0.x
+COPY --from=build /app/prisma-engines ./prisma-engines
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma

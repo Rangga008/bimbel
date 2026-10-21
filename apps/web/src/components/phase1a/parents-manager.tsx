@@ -3,12 +3,16 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Upload } from 'lucide-react';
+import { Search, Upload, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { ImportDialog } from '@/components/shared/import-dialog';
 import { Card, CardContent } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonCards } from '@/components/shared/skeletons';
+import { EmptyState } from '@/components/shared/empty-state';
+import { ListPager } from '@/components/shared/list-pager';
 import { apiFetch, ApiError } from '@/lib/api-client';
+import { useDebouncedValue } from '@/lib/use-debounced-value';
 import type { ParentItem, StudentItem } from '@/lib/phase1a-types';
 import {
   Phase1aFormDialog,
@@ -48,11 +52,21 @@ export function ParentsManager({ canManage, basePath }: { canManage: boolean; ba
   const [lastTempPassword, setLastTempPassword] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<ParentItem | null>(null);
   const [editForm, setEditForm] = useState<Record<string, string>>({});
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search);
 
   const parentsQuery = useQuery({
-    queryKey: ['parents'],
-    queryFn: () => apiFetch<ParentItem[]>('/parents'),
+    queryKey: ['parents', debouncedSearch],
+    queryFn: () =>
+      apiFetch<ParentItem[]>(
+        `/parents${debouncedSearch ? `?search=${encodeURIComponent(debouncedSearch)}` : ''}`,
+      ),
   });
+
+  const PAGE_SIZE = 12;
+  const [visible, setVisible] = useState(PAGE_SIZE);
+  const parents = parentsQuery.data ?? [];
+  const shownParents = parents.slice(0, visible);
 
   const studentsQuery = useQuery({
     queryKey: ['students'],
@@ -139,12 +153,20 @@ export function ParentsManager({ canManage, basePath }: { canManage: boolean; ba
         </Card>
       ) : null}
 
-      {parentsQuery.isLoading ? (
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-20 w-full" />
-        </div>
-      ) : null}
+      <div className="relative max-w-md">
+        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Cari nama / email / no HP orang tua..."
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setVisible(PAGE_SIZE);
+          }}
+          className="pl-9"
+        />
+      </div>
+
+      {parentsQuery.isLoading ? <SkeletonCards /> : null}
 
       {parentsQuery.isError ? (
         <Card>
@@ -154,17 +176,25 @@ export function ParentsManager({ canManage, basePath }: { canManage: boolean; ba
         </Card>
       ) : null}
 
-      {parentsQuery.data?.length === 0 ? (
+      {parents.length === 0 && !parentsQuery.isLoading && !parentsQuery.isError ? (
         <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Belum ada orang tua.
+          <CardContent>
+            <EmptyState
+              icon={Users}
+              title={search ? 'Orang tua tidak ditemukan' : 'Belum ada orang tua'}
+              description={
+                search
+                  ? `Tidak ada orang tua yang cocok dengan "${search}".`
+                  : 'Tambahkan orang tua pertama untuk mulai mengelola data.'
+              }
+            />
           </CardContent>
         </Card>
       ) : null}
 
-      {parentsQuery.data && parentsQuery.data.length > 0 ? (
+      {shownParents.length > 0 ? (
         <ParentLinkManager
-          parents={parentsQuery.data}
+          parents={shownParents}
           students={studentsQuery.data ?? []}
           studentsLoading={studentsQuery.isLoading}
           basePath={basePath}
@@ -183,6 +213,15 @@ export function ParentsManager({ canManage, basePath }: { canManage: boolean; ba
           }
         />
       ) : null}
+
+      <ListPager
+        mode="loadMore"
+        page={0}
+        pageCount={Math.ceil(parents.length / PAGE_SIZE)}
+        total={parents.length}
+        shown={shownParents.length}
+        onPageChange={(p) => setVisible((p + 1) * PAGE_SIZE)}
+      />
 
       <Phase1aFormDialog
         open={createOpen}

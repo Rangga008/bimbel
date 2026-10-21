@@ -453,13 +453,6 @@ export const ROLE_NAV: Record<RoleKey, NavItem[]> = {
 			group: "Transaksi",
 		},
 		{
-			slug: "pustaka",
-			label: "Pustaka Media",
-			icon: Images,
-			placement: "lainnya",
-			group: "Sistem",
-		},
-		{
 			slug: "rab",
 			label: "RAB",
 			icon: ChartColumn,
@@ -484,6 +477,13 @@ export const ROLE_NAV: Record<RoleKey, NavItem[]> = {
 			slug: "laporan",
 			label: "Laporan",
 			icon: ChartPie,
+			placement: "lainnya",
+			group: "Laporan",
+		},
+		{
+			slug: "pustaka",
+			label: "Pustaka Media",
+			icon: Images,
 			placement: "lainnya",
 			group: "Sistem",
 		},

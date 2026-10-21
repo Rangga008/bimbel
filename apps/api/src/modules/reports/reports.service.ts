@@ -58,6 +58,8 @@ export class ReportsService {
         return this.buildPaymentRecap(filters);
       case 'program-recap':
         return this.buildProgramRecap(filters);
+      case 'neraca':
+        return this.buildNeraca(filters);
       case 'rab':
         return this.buildRab(filters);
       case 'revenue':
@@ -845,6 +847,180 @@ ${summary}
         `Total ditagihkan: ${reportRupiah(grand.billed)}`,
         `Total uang masuk: ${reportRupiah(grand.paid)}`,
         `Total outstanding: ${reportRupiah(grandOutstanding)}`,
+      ],
+    );
+  }
+
+  /**
+   * Neraca ala sheet "RANGKUMAN PEMASUKAN DAN PENGELUARAN":
+   * baris pertama SELISIH (untung/rugi), lalu blok PEMASUKAN per program
+   * (dari alokasi payment VERIFIED berdasar paidAt), blok PENGELUARAN per
+   * kategori RAB (expense.occurredAt), masing-masing dengan kolom
+   * % | JUMLAH | RATA-RATA/BULAN | JUL..JUN.
+   * Rata-rata = total / jumlah bulan berisi (anti #DIV/0!).
+   */
+  private async buildNeraca(filters: ReportFilters): Promise<ReportDoc> {
+    const payments = await this.prisma.payment.findMany({
+      where: { status: 'VERIFIED', paidAt: { not: null } },
+      select: {
+        paidAt: true,
+        allocations: {
+          select: {
+            amount: true,
+            invoice: {
+              select: {
+                enrollmentLink: {
+                  select: { program: { select: { name: true } } },
+                },
+                enrollment: {
+                  select: { program: { select: { name: true } } },
+                },
+                package: {
+                  select: {
+                    level: {
+                      select: { program: { select: { name: true } } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const expenses = await this.prisma.expense.findMany({
+      select: { category: true, amount: true, occurredAt: true },
+    });
+
+    // Tahun ajaran dimulai Juli — konsisten dengan program-recap.
+    const MONTHS = [
+      'JUL', 'AGU', 'SEP', 'OKT', 'NOV', 'DES',
+      'JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN',
+    ];
+    const monthIdx = (d: Date) => (((d.getMonth() - 6) % 12) + 12) % 12;
+    const months = () => new Array<number>(12).fill(0);
+
+    type Bucket = { total: number; months: number[] };
+    const income = new Map<string, Bucket>();
+    const incomeTotal: Bucket = { total: 0, months: months() };
+    for (const p of payments) {
+      const idx = monthIdx(new Date(p.paidAt!));
+      for (const al of p.allocations) {
+        const prog =
+          al.invoice.enrollmentLink?.program?.name ??
+          al.invoice.enrollment?.program?.name ??
+          al.invoice.package?.level?.program?.name ??
+          'LAIN-LAIN';
+        const amt = reportMoney(al.amount);
+        const b = income.get(prog) ?? { total: 0, months: months() };
+        b.total += amt;
+        b.months[idx] += amt;
+        income.set(prog, b);
+        incomeTotal.total += amt;
+        incomeTotal.months[idx] += amt;
+      }
+    }
+
+    // Urutan kategori mengikuti enum BudgetCategory (seperti sheet referensi).
+    const CATEGORY_LABELS: Record<string, string> = {
+      PENGADAAN_RUANG_BELAJAR: 'Pengadaan Ruang Belajar',
+      PERSIAPAN_TAHUN_AJARAN: 'Persiapan Tahun Ajaran',
+      OVERHEAD_RUMAH_TANGGA: 'Over Head dan Rumah Tangga',
+      LOGISTIK_PERAWATAN: 'Logistik dan Perawatan',
+      AKADEMIK: 'Akademik',
+      MARKETING: 'Marketing',
+      KESEHATAN_TUNJANGAN: 'Kesehatan dan Tunjangan',
+      HONOR_PEGAWAI: 'Honor Pegawai',
+      LAIN_LAIN: 'Lain-Lain',
+    };
+    const expense = new Map<string, Bucket>(
+      Object.keys(CATEGORY_LABELS).map((c) => [c, { total: 0, months: months() }]),
+    );
+    const expenseTotal: Bucket = { total: 0, months: months() };
+    for (const e of expenses) {
+      const idx = monthIdx(new Date(e.occurredAt));
+      const b = expense.get(e.category) ?? { total: 0, months: months() };
+      b.total += reportMoney(e.amount);
+      b.months[idx] += reportMoney(e.amount);
+      expense.set(e.category, b);
+      expenseTotal.total += reportMoney(e.amount);
+      expenseTotal.months[idx] += reportMoney(e.amount);
+    }
+
+    const headers = [
+      'KETERANGAN', '%', 'JUMLAH', 'RATA-RATA PER-BULAN', ...MONTHS,
+    ];
+    const COLS = headers.length;
+    const blank = () => Array.from({ length: COLS }, () => '');
+    const avgOf = (b: Bucket) =>
+      safeAverage(b.total, b.months.filter((m) => Math.abs(m) > 0.009).length);
+    const monthCells = (arr: number[]) =>
+      arr.map((m) => (Math.abs(m) > 0.009 ? numCell(m) : '-'));
+
+    const selisih: Bucket = {
+      total: incomeTotal.total - expenseTotal.total,
+      months: incomeTotal.months.map((m, i) => m - expenseTotal.months[i]),
+    };
+
+    const rows: string[][] = [
+      [
+        'SELISIH (UNTUNG/RUGI) NOMINAL',
+        '-',
+        numCell(selisih.total),
+        numCell(Math.round(avgOf(selisih))),
+        ...monthCells(selisih.months),
+      ],
+      blank(),
+      ['PEMASUKAN', ...Array.from({ length: COLS - 1 }, () => '')],
+    ];
+
+    for (const [name, b] of [...income.entries()].sort(
+      (a, b2) => b2[1].total - a[1].total,
+    )) {
+      rows.push([
+        name,
+        `${safePercent(b.total, incomeTotal.total)}%`,
+        numCell(b.total),
+        numCell(Math.round(avgOf(b))),
+        ...monthCells(b.months),
+      ]);
+    }
+    rows.push([
+      'TOTAL PEMASUKAN',
+      '100%',
+      numCell(incomeTotal.total),
+      numCell(Math.round(avgOf(incomeTotal))),
+      ...monthCells(incomeTotal.months),
+    ]);
+    rows.push(blank());
+    rows.push(['PENGELUARAN', ...Array.from({ length: COLS - 1 }, () => '')]);
+    for (const [cat, b] of expense) {
+      rows.push([
+        CATEGORY_LABELS[cat] ?? cat,
+        `${safePercent(b.total, expenseTotal.total)}%`,
+        numCell(b.total),
+        numCell(Math.round(avgOf(b))),
+        ...monthCells(b.months),
+      ]);
+    }
+    rows.push([
+      'TOTAL PENGELUARAN',
+      '100%',
+      numCell(expenseTotal.total),
+      numCell(Math.round(avgOf(expenseTotal))),
+      ...monthCells(expenseTotal.months),
+    ]);
+
+    return this.baseDoc(
+      'neraca',
+      filters,
+      headers,
+      rows,
+      [
+        `Total pemasukan: ${reportRupiah(incomeTotal.total)}`,
+        `Total pengeluaran: ${reportRupiah(expenseTotal.total)}`,
+        `Selisih (untung/rugi): ${reportRupiah(selisih.total)}`,
+        `Program pemasukan: ${income.size} · Kategori pengeluaran: ${expense.size}`,
       ],
     );
   }
