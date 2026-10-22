@@ -24,11 +24,13 @@ export class CreateMaterialDto {
   category?: string;
 
   @IsOptional()
-  @IsUUID('4', { message: 'examId tidak valid.' })
+  @IsString()
+  // String biasa (bukan IsUUID) — data lama/seed memakai id non-UUID ('seed-...').
+  // Eksistensi tetap dicek service lewat assertLinkedRefs().
   examId?: string | null;
 
   @IsOptional()
-  @IsUUID('4', { message: 'latsolPackageId tidak valid.' })
+  @IsString()
   latsolPackageId?: string | null;
 
   @IsString()
@@ -89,11 +91,11 @@ export class UpdateMaterialDto {
   category?: string;
 
   @IsOptional()
-  @IsUUID('4', { message: 'examId tidak valid.' })
+  @IsString()
   examId?: string | null;
 
   @IsOptional()
-  @IsUUID('4', { message: 'latsolPackageId tidak valid.' })
+  @IsString()
   latsolPackageId?: string | null;
 
   @IsOptional()

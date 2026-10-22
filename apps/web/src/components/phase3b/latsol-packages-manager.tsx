@@ -37,10 +37,13 @@ export function LatsolPackagesManager({
   canManage,
   basePath = '/latsol',
   onPlay,
+  focusId,
 }: {
   canManage: boolean;
   basePath?: string;
   onPlay?: (packageId: string) => void;
+  /** Paket yang disorot + discroll (deep-link ?focus= dari materi). */
+  focusId?: string | null;
 }) {
   const qc = useQueryClient();
   const router = useRouter();
@@ -183,7 +186,7 @@ export function LatsolPackagesManager({
       ) : null}
       <div className="grid gap-3 md:grid-cols-2">
         {filtered.map((pkg) => (
-          <Card key={pkg.id}>
+          <Card key={pkg.id} id={`latsol-${pkg.id}`} className={pkg.id === focusId ? 'ring-2 ring-primary' : undefined}>
             <CardContent className="flex gap-3 py-4">
               <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand-gold-100 text-brand-gold-700">
                 <NotebookPen className="size-5" />

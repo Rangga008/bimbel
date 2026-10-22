@@ -9,6 +9,7 @@ import type { QuestionType } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TutorScopeService } from '../../common/tutor-scope/tutor-scope.service';
 import { ContentCategoriesService } from '../content-categories/content-categories.service';
+import { MediaService } from '../media/media.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { QuestionsService } from './questions.service';
 import type { CreateQuestionDto } from './dto/question.dto';
@@ -23,6 +24,11 @@ interface ParsedRow {
   points?: number;
   difficulty?: string;
   explanation?: string;
+  /** relId gambar (word/_rels) per field — diupload saat commit. */
+  contentImages: string[];
+  optionImages: Record<number, string[]>;
+  explanationImages: string[];
+  warnings: string[];
 }
 
 export interface ImportRowResult {
@@ -31,6 +37,7 @@ export interface ImportRowResult {
   type?: string;
   ok: boolean;
   errors: string[];
+  images?: number;
 }
 
 export interface ImportResult {
@@ -69,7 +76,10 @@ const DOCX_TEMPLATE_LINES = [
   'TEMPLATE IMPORT SOAL — BIMBEL GFS',
   '',
   'PETUNJUK:',
-  '- Setiap soal diawali baris "SOAL <nomor>".',
+  '- Dua format didukung: (1) blok teks "SOAL <nomor>" seperti contoh di bawah,',
+  '  atau (2) TABEL — baris pertama header: No | Tipe | Soal | Opsi A..E | Kunci | Poin | Kesulitan | Pembahasan.',
+  '  Boleh juga satu tabel kecil per soal: kolom 1 = label (No/Tipe/Soal/A/B/Kunci…), kolom 2 = isi.',
+  '- GAMBAR: tempel gambar langsung di sel/baris soal, opsi, atau pembahasan — otomatis terupload.',
   '- Baris "Tipe:" berisi: PG (pilihan ganda), PGK (ganda kompleks), BS (benar/salah), ISIAN, atau ESSAY.',
   '- Opsi jawaban ditulis per baris diawali huruf + titik: "A. ...", "B. ..." (maks E).',
   '- Baris "Kunci:" berisi huruf jawaban benar (mis. B, atau A,C untuk PGK), teks isian, atau Benar/Salah.',
@@ -150,6 +160,7 @@ export class QuestionsImportService {
     private readonly questions: QuestionsService,
     private readonly tutorScope: TutorScopeService,
     private readonly contentCategories: ContentCategoriesService,
+    private readonly media: MediaService,
   ) {}
 
   // ---------- TEMPLATE ----------
@@ -191,26 +202,87 @@ export class QuestionsImportService {
   }
 
   async templateDocx(): Promise<Buffer> {
-    const paragraphs = DOCX_TEMPLATE_LINES.map(
-      (line) =>
-        `<w:p><w:r><w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r></w:p>`,
-    ).join('');
+    const para = (line: string, bold = false) =>
+      `<w:p><w:r>${bold ? '<w:rPr><w:b/></w:rPr>' : ''}<w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r></w:p>`;
+    const textLines = DOCX_TEMPLATE_LINES.map((l) => para(l)).join('');
+    const borders =
+      '<w:tblBorders>' +
+      ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']
+        .map((b) => `<w:${b} w:val="single" w:sz="4" w:color="auto"/>`)
+        .join('') +
+      '</w:tblBorders>';
+    const cell = (t: string, w: number, bold = false) =>
+      `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/></w:tcPr>` +
+      `<w:p><w:pPr><w:spacing w:before="40" w:after="40"/></w:pPr><w:r>${bold ? '<w:rPr><w:b/></w:rPr>' : ''}<w:t xml:space="preserve">${escapeXml(t)}</w:t></w:r></w:p></w:tc>`;
+    const gridRow = (cells: string[], widths: number[], header = false) =>
+      `<w:tr>${cells.map((t, i) => cell(t, widths[i] ?? 1200, header)).join('')}</w:tr>`;
+    const grid = (widths: number[]) =>
+      `<w:tblGrid>${widths.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
+
+    // Tabel grid (format seperti Excel) — header tebal.
+    const w1 = [700, 900, 3400, 1300, 1300, 1300, 1300, 1100, 800, 1100];
+    const gridTable =
+      `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>${borders}</w:tblPr>${grid(w1)}` +
+      gridRow(['No', 'Tipe', 'Soal', 'Opsi A', 'Opsi B', 'Opsi C', 'Opsi D', 'Kunci', 'Poin', 'Kesulitan'], w1, true) +
+      gridRow(['1', 'PG', 'Berapa hasil 5 x 6? (gambar boleh ditempel di sel ini)', '25', '30', '35', '40', 'B', '2', 'EASY'], w1) +
+      gridRow(['2', 'BS', 'Bumi berbentuk bulat.', '', '', '', '', 'Benar', '1', 'EASY'], w1) +
+      '</w:tbl>';
+
+    // Tabel per-soal (kolom 1 label, kolom 2 isi).
+    const w2 = [1800, 7000];
+    const blockTable =
+      `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>${borders}</w:tblPr>${grid(w2)}` +
+      gridRow(['No', '3'], w2, true) +
+      gridRow(['Tipe', 'PG'], w2) +
+      gridRow(['Soal', 'Hasil dari 12 x 11? (gambar juga boleh ditempel di sini)'], w2) +
+      gridRow(['A', '121'], w2) +
+      gridRow(['B', '132'], w2) +
+      gridRow(['C', '144'], w2) +
+      gridRow(['D', '156'], w2) +
+      gridRow(['Kunci', 'B'], w2) +
+      gridRow(['Poin', '2'], w2) +
+      '</w:tbl>';
+
+    const heading1 = para('CONTOH FORMAT TABEL (grid seperti Excel):', true);
+    const note1 = para('Gambar bisa ditempel langsung di sel Soal/Opsi/Pembahasan — otomatis terupload.');
+    const heading2 = para('ATAU FORMAT PER-TABEL (1 tabel = 1 soal):', true);
     const document = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paragraphs}<w:sectPr/></w:body></w:document>`;
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${heading1}${gridTable}${note1}${heading2}${blockTable}${textLines}<w:sectPr/></w:body></w:document>`;
     const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`;
     const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`;
+    // Beberapa versi Word menandai .docx corrupt bila rels document.xml tidak ada.
+    const docRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`;
     const zip = new JSZip();
     zip.file('[Content_Types].xml', contentTypes);
     zip.file('_rels/.rels', rels);
     zip.file('word/document.xml', document);
+    zip.file('word/_rels/document.xml.rels', docRels);
     return zip.generateAsync({ type: 'nodebuffer' });
   }
 
   // ---------- PARSE ----------
 
-  private async parseDocx(buffer: Buffer): Promise<ParsedRow[]> {
+  /** Gambar hasil ekstrak docx: relId → buffer + nama file + mime. */
+  private imageIndex = new Map<
+    string,
+    { name: string; mime: string; buffer: Buffer }
+  >();
+
+  private static readonly IMG_EXT_MIME: Record<string, string> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    svg: 'image/svg+xml',
+  };
+
+  private async parseDocx(
+    buffer: Buffer,
+  ): Promise<{ rows: ParsedRow[]; images: Map<string, { name: string; mime: string; buffer: Buffer }> }> {
     let zip: JSZip;
     try {
       zip = await JSZip.loadAsync(buffer);
@@ -222,23 +294,275 @@ export class QuestionsImportService {
     const doc = zip.file('word/document.xml');
     if (!doc)
       throw new BadRequestException('File .docx tidak berisi word/document.xml.');
-    const xml = await doc.async('string');
-    const paragraphs: string[] = [];
-    const pRe = /<w:p[\s>][\s\S]*?<\/w:p>/g;
-    let m: RegExpExecArray | null;
-    while ((m = pRe.exec(xml))) {
-      const texts: string[] = [];
-      const tRe = /<w:t[^>]*>([\s\S]*?)<\/w:t>/g;
-      let tm: RegExpExecArray | null;
-      while ((tm = tRe.exec(m[0]))) texts.push(tm[1]);
-      const line = unescapeXml(texts.join('')).trim();
-      if (line) paragraphs.push(line);
+
+    // Peta relasi: rId → target file (word/media/image1.png dst).
+    const relTargets = new Map<string, string>();
+    const relsFile = zip.file('word/_rels/document.xml.rels');
+    if (relsFile) {
+      const relsXml = await relsFile.async('string');
+      const relRe =
+        /<Relationship[^>]*Id="(rId\d+)"[^>]*Target="([^"]+)"[^>]*\/?\s*>/g;
+      let rm: RegExpExecArray | null;
+      while ((rm = relRe.exec(relsXml))) relTargets.set(rm[1], rm[2]);
     }
-    return this.parseLines(paragraphs);
+
+    const xml = await doc.async('string');
+    const usedRelIds = new Set<string>();
+    const rows: ParsedRow[] = [];
+    let pendingLines: string[] = [];
+    let seqNo = 0;
+
+    const flushLines = () => {
+      if (!pendingLines.length) return;
+      rows.push(...this.parseLines(pendingLines, seqNo));
+      seqNo = rows.length;
+      pendingLines = [];
+    };
+
+    // Walk elemen body berurutan: paragraf teks ATAU tabel.
+    const elRe = /<w:tbl[\s>][\s\S]*?<\/w:tbl>|<w:p[\s>][\s\S]*?<\/w:p>/g;
+    let m: RegExpExecArray | null;
+    while ((m = elRe.exec(xml))) {
+      const frag = m[0];
+      if (frag.startsWith('<w:tbl')) {
+        flushLines();
+        rows.push(...this.parseTable(frag, usedRelIds, rows.length));
+        seqNo = rows.length;
+      } else {
+        const line = this.extractText(frag, usedRelIds);
+        if (line) pendingLines.push(line);
+      }
+    }
+    flushLines();
+
+    // Ambil buffer gambar yang benar-benar direferensikan.
+    const images = new Map<string, { name: string; mime: string; buffer: Buffer }>();
+    for (const relId of usedRelIds) {
+      const target = relTargets.get(relId);
+      if (!target) continue;
+      const path = target.startsWith('word/') ? target : `word/${target}`;
+      const file = zip.file(path) ?? zip.file(`word/media/${path.split('/').pop()}`);
+      if (!file) continue;
+      const name = path.split('/').pop() ?? `img-${relId}`;
+      const ext = name.split('.').pop()?.toLowerCase() ?? '';
+      const mime = QuestionsImportService.IMG_EXT_MIME[ext];
+      if (!mime) continue; // format non-gambar (emf/wmf) — ditandai di warnings
+      images.set(relId, {
+        name,
+        mime,
+        buffer: await file.async('nodebuffer'),
+      });
+    }
+    this.imageIndex = images;
+    return { rows, images };
+  }
+
+  /** Ekstrak teks + token [IMG:rId] dari fragmen XML (paragraf/sel). */
+  private extractText(frag: string, usedRelIds: Set<string>): string {
+    let out = '';
+    const re =
+      /<w:t[^>]*>([\s\S]*?)<\/w:t>|<a:blip[^>]*r:(?:embed|link)="(rId\d+)"[^>]*\/?>|<v:imagedata[^>]*r:id="(rId\d+)"[^>]*\/?>/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(frag))) {
+      if (m[1] !== undefined) out += unescapeXml(m[1]);
+      else {
+        const relId = m[2] ?? m[3];
+        if (relId) {
+          out += ` [IMG:${relId}] `;
+          usedRelIds.add(relId);
+        }
+      }
+    }
+    return out.replace(/\s{2,}/g, ' ').trim();
+  }
+
+  /** Parser isi <w:tbl>: mode grid (header No|Tipe|Soal|Opsi…|Kunci|…) atau
+   *  mode per-tabel (kolom 1 = label field, kolom 2 = nilai). */
+  private parseTable(
+    tblXml: string,
+    usedRelIds: Set<string>,
+    baseNo: number,
+  ): ParsedRow[] {
+    const trRe = /<w:tr[\s>][\s\S]*?<\/w:tr>/g;
+    const tableRows: string[][] = [];
+    let tm: RegExpExecArray | null;
+    while ((tm = trRe.exec(tblXml))) {
+      const tcRe = /<w:tc[\s>][\s\S]*?<\/w:tc>/g;
+      const cells: string[] = [];
+      let cm: RegExpExecArray | null;
+      while ((cm = tcRe.exec(tm[0]))) {
+        // Gabung paragraf dalam sel dengan newline.
+        const pRe = /<w:p[\s>][\s\S]*?<\/w:p>/g;
+        const parts: string[] = [];
+        let pm: RegExpExecArray | null;
+        while ((pm = pRe.exec(cm[0]))) {
+          const t = this.extractText(pm[0], usedRelIds);
+          if (t) parts.push(t);
+        }
+        cells.push(parts.join('\n'));
+      }
+      if (cells.some((c) => c.trim())) tableRows.push(cells);
+    }
+    if (!tableRows.length) return [];
+
+    // Deteksi header: minimal 2 sel cocok keyword kolom.
+    const HEAD_KEYS = new Set([
+      'no', 'nomor', 'tipe', 'type', 'soal', 'pertanyaan', 'isi soal',
+      'kunci', 'jawaban', 'poin', 'kesulitan', 'pembahasan', 'solusi', 'gambar',
+    ]);
+    const isHeader = (c: string) =>
+      HEAD_KEYS.has(c.toLowerCase().trim()) || /^opsi\s*[a-e]$/i.test(c.trim());
+    const headerHits = tableRows[0].filter(isHeader).length;
+    return headerHits >= 2
+      ? this.parseTableGrid(tableRows, baseNo)
+      : this.parseTableBlock(tableRows, baseNo);
+  }
+
+  /** Tabel grid — baris 1 header seperti template Excel. */
+  private parseTableGrid(tableRows: string[][], baseNo: number): ParsedRow[] {
+    const colOf = (c: string): { key?: string; optIdx?: number } => {
+      const h = c.toLowerCase().trim();
+      const optM = h.match(/^opsi\s*([a-e])$/) ?? h.match(/^([a-e])$/);
+      if (optM) return { optIdx: OPTION_LETTERS.indexOf(optM[1].toUpperCase()) };
+      if (/^(no|nomor)$/.test(h)) return { key: 'no' };
+      if (/^(tipe|type)$/.test(h)) return { key: 'type' };
+      if (/^(soal|pertanyaan|isi soal)$/.test(h)) return { key: 'content' };
+      if (/^(kunci|jawaban)$/.test(h)) return { key: 'kunci' };
+      if (/^poin/.test(h)) return { key: 'points' };
+      if (/^(kesulitan|difficulty)/.test(h)) return { key: 'difficulty' };
+      if (/^(pembahasan|solusi)/.test(h)) return { key: 'explanation' };
+      if (/^(gambar|image|foto)$/.test(h)) return { key: 'image' };
+      return {};
+    };
+    const cols = tableRows[0].map(colOf);
+    const rows: ParsedRow[] = [];
+    for (const cells of tableRows.slice(1)) {
+      const row = this.newParsedRow(baseNo + rows.length + 1);
+      cells.forEach((cell, i) => {
+        const c = cols[i];
+        if (!c) return;
+        if (c.optIdx !== undefined && c.optIdx >= 0) {
+          row.options[c.optIdx] = this.stripImgTokens(cell, this.optImages(row, c.optIdx));
+        } else if (c.key === 'no') row.no = Number(cell) || row.no;
+        else if (c.key === 'type') row.type = cell.trim() || undefined;
+        else if (c.key === 'content')
+          row.content = this.stripImgTokens(cell, row.contentImages);
+        else if (c.key === 'kunci') row.kunci = cell.trim();
+        else if (c.key === 'points') row.points = Number(cell) || undefined;
+        else if (c.key === 'difficulty') row.difficulty = cell.trim() || undefined;
+        else if (c.key === 'explanation')
+          row.explanation = this.stripImgTokens(cell, row.explanationImages);
+        else if (c.key === 'image')
+          this.stripImgTokens(cell, row.contentImages);
+      });
+      if (row.content || row.kunci || row.options.some(Boolean)) {
+        this.compactOptions(row);
+        rows.push(row);
+      }
+    }
+    return rows;
+  }
+
+  /** Tabel blok — satu tabel = satu soal; kolom 1 label, kolom 2+ nilai. */
+  private parseTableBlock(tableRows: string[][], baseNo: number): ParsedRow[] {
+    const row = this.newParsedRow(baseNo + 1);
+    let hasField = false;
+    for (const cells of tableRows) {
+      const label = cells[0]?.trim() ?? '';
+      const val = cells.slice(1).join('\n').trim();
+      const k = label.toLowerCase();
+      if (/^(soal|pertanyaan|isi soal)$/.test(k)) {
+        row.content = this.stripImgTokens(val, row.contentImages);
+        hasField = true;
+      } else if (/^(no|nomor)$/.test(k) || /^soal\s*\d+$/.test(k)) {
+        const n = Number(val.replace(/\D/g, '')) || Number(label.replace(/\D/g, ''));
+        if (n) row.no = n;
+        hasField = true;
+      } else if (/^(tipe|type)$/.test(k)) {
+        row.type = val || undefined;
+        hasField = true;
+      } else if (/^(opsi\s*)?([a-e])\.?$/i.test(k)) {
+        const idx = OPTION_LETTERS.indexOf(k.replace(/^opsi\s*/i, '').replace(/\.$/, '').toUpperCase());
+        if (idx >= 0) {
+          row.options[idx] = this.stripImgTokens(val, this.optImages(row, idx));
+          hasField = true;
+        }
+      } else if (/^(kunci|jawaban)$/.test(k)) {
+        row.kunci = val;
+        hasField = true;
+      } else if (/^poin/.test(k)) {
+        row.points = Number(val) || undefined;
+        hasField = true;
+      } else if (/^(kesulitan|difficulty)/.test(k)) {
+        row.difficulty = val || undefined;
+        hasField = true;
+      } else if (/^(pembahasan|solusi)/.test(k)) {
+        row.explanation = this.stripImgTokens(val, row.explanationImages);
+        hasField = true;
+      } else if (/^(gambar|image|foto)$/.test(k)) {
+        this.stripImgTokens(val, row.contentImages);
+        hasField = true;
+      } else if (label && val) {
+        // Baris tanpa label jelas → gabungkan ke isi soal.
+        row.content = `${row.content ? `${row.content}\n` : ''}${label}\n${this.stripImgTokens(val, row.contentImages)}`;
+      } else if (!label && val) {
+        row.content = `${row.content ? `${row.content}\n` : ''}${this.stripImgTokens(val, row.contentImages)}`;
+      }
+    }
+    return hasField || row.content ? [row] : [];
+  }
+
+  /** Buang slot opsi kosong dan rapikan indeks gambar opsi ke posisi padat. */
+  private compactOptions(r: ParsedRow) {
+    const sparse = r.options;
+    const denseOptions: string[] = [];
+    const denseImages: Record<number, string[]> = {};
+    for (let i = 0; i < sparse.length; i++) {
+      const v = sparse[i];
+      if (v === undefined || v === '' || v === null) {
+        // Slot huruf kosong — gambar di slot ini ikut terbuang.
+        continue;
+      }
+      const di = denseOptions.length;
+      denseOptions.push(v);
+      if (r.optionImages[i]?.length) denseImages[di] = r.optionImages[i];
+    }
+    r.options = denseOptions;
+    r.optionImages = denseImages;
+  }
+
+  private newParsedRow(no: number): ParsedRow {
+    return {
+      no,
+      content: '',
+      options: [],
+      kunci: '',
+      contentImages: [],
+      optionImages: {},
+      explanationImages: [],
+      warnings: [],
+    };
+  }
+
+  /** Array penampung relId gambar untuk opsi ke-idx (lazy init). */
+  private optImages(row: ParsedRow, idx: number): string[] {
+    return (row.optionImages[idx] ??= []);
+  }
+
+  /** Pisahkan token [IMG:rId] dari teks — relIds dikumpulkan per field. */
+  private stripImgTokens(
+    text: string,
+    target: string[],
+    _optIdx?: number,
+  ): string {
+    const re = /\[IMG:(rId\d+)\]/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) target.push(m[1]);
+    return text.replace(re, ' ').replace(/\s{2,}/g, ' ').trim();
   }
 
   /** Parser format teks: blok dimulai "SOAL n", field "Tipe:", "Kunci:", dst. */
-  private parseLines(lines: string[]): ParsedRow[] {
+  private parseLines(lines: string[], baseNo: number): ParsedRow[] {
     const rows: ParsedRow[] = [];
     let cur: ParsedRow | null = null;
     for (const raw of lines) {
@@ -246,12 +570,9 @@ export class QuestionsImportService {
       if (!line) continue;
       if (/^SOAL\s+\d+/i.test(line)) {
         if (cur) rows.push(cur);
-        cur = {
-          no: Number(line.match(/\d+/)?.[0] ?? rows.length + 1),
-          content: '',
-          options: [],
-          kunci: '',
-        };
+        cur = this.newParsedRow(
+          Number(line.match(/\d+/)?.[0] ?? baseNo + rows.length + 1),
+        );
         continue;
       }
       if (!cur) continue; // abaikan header/petunjuk sebelum SOAL pertama
@@ -263,22 +584,25 @@ export class QuestionsImportService {
         else if (key === 'KUNCI' || key === 'JAWABAN') cur.kunci = val;
         else if (key === 'POIN' || key === 'POINTS') cur.points = Number(val) || undefined;
         else if (key === 'KESULITAN') cur.difficulty = val;
-        else if (key === 'PEMBAHASAN') cur.explanation = val;
-        else if (key === 'SOAL') cur.content = val;
-        else cur.content = cur.content ? `${cur.content}\n${line}` : line;
+        else if (key === 'PEMBAHASAN')
+          cur.explanation = this.stripImgTokens(val, cur.explanationImages);
+        else if (key === 'SOAL') cur.content = this.stripImgTokens(val, cur.contentImages);
+        else cur.content = cur.content ? `${cur.content}\n${this.stripImgTokens(line, cur.contentImages)}` : this.stripImgTokens(line, cur.contentImages);
         continue;
       }
       const opt = line.match(/^([A-E])\s*[.)]\s*(.*)$/);
       if (opt) {
-        cur.options[OPTION_LETTERS.indexOf(opt[1])] = opt[2].trim();
+        const idx = OPTION_LETTERS.indexOf(opt[1]);
+        cur.options[idx] = this.stripImgTokens(opt[2].trim(), this.optImages(cur, idx));
         continue;
       }
       // Baris lanjutan isi soal.
-      cur.content = cur.content ? `${cur.content}\n${line}` : line;
+      const stripped = this.stripImgTokens(line, cur.contentImages);
+      cur.content = cur.content ? `${cur.content}\n${stripped}` : stripped;
     }
     if (cur) rows.push(cur);
-    // Rapikan opsi sparse → padat sesuai huruf yang dipakai.
-    for (const r of rows) r.options = r.options.filter((o) => o !== undefined && o !== '');
+    // Rapikan opsi sparse → padat; optionImages ikut di-remap ke indeks padat.
+    for (const r of rows) this.compactOptions(r);
     return rows;
   }
 
@@ -310,16 +634,15 @@ export class QuestionsImportService {
       const content = cell(3);
       const kunci = cell(9);
       if (!content && !kunci) return; // baris kosong
-      rows.push({
-        no,
-        type: cell(2) || undefined,
-        content,
-        options: [cell(4), cell(5), cell(6), cell(7), cell(8)].filter(Boolean),
-        kunci,
-        points: cell(10) ? Number(cell(10)) || undefined : undefined,
-        difficulty: cell(11) || undefined,
-        explanation: cell(12) || undefined,
-      });
+      const r = this.newParsedRow(no);
+      r.type = cell(2) || undefined;
+      r.content = content;
+      r.options = [cell(4), cell(5), cell(6), cell(7), cell(8)].filter(Boolean);
+      r.kunci = kunci;
+      r.points = cell(10) ? Number(cell(10)) || undefined : undefined;
+      r.difficulty = cell(11) || undefined;
+      r.explanation = cell(12) || undefined;
+      rows.push(r);
     });
     return rows;
   }
@@ -398,6 +721,58 @@ export class QuestionsImportService {
     return { dto: errors.length ? undefined : dto, errors };
   }
 
+  /**
+   * Upload gambar yang diekstrak dari docx (relId → buffer di imageIndex)
+   * ke pustaka media, lalu tempel URL-nya ke dto soal/opsi/pembahasan.
+   * Gambar berlebih (>1 per field) ditandai sebagai warning.
+   */
+  private async attachImages(
+    row: ParsedRow,
+    dto: CreateQuestionDto,
+    actorId: string,
+    results: ImportRowResult[],
+  ) {
+    const notes: string[] = [];
+    const upload = async (relId: string) => {
+      const img = this.imageIndex.get(relId);
+      if (!img) {
+        notes.push('Ada gambar berformat tidak didukung (emf/wmf/tiff) — dilewati.');
+        return null;
+      }
+      const asset = await this.media.saveBuffer(img.buffer, {
+        mime: img.mime,
+        originalName: `import-soal-${img.name}`,
+        uploadedById: actorId,
+        category: 'ACADEMIC',
+      });
+      return asset.url;
+    };
+
+    if (row.contentImages.length) {
+      dto.imageUrl = (await upload(row.contentImages[0])) ?? dto.imageUrl;
+      if (row.contentImages.length > 1)
+        notes.push(`Gambar ke-${row.contentImages.length} di soal dilewati — 1 gambar per soal.`);
+    }
+    if (row.explanationImages.length) {
+      dto.explanationImageUrl =
+        (await upload(row.explanationImages[0])) ?? dto.explanationImageUrl;
+      if (row.explanationImages.length > 1)
+        notes.push('Gambar ke-2+ di pembahasan dilewati — 1 gambar per pembahasan.');
+    }
+    for (const [idxStr, relIds] of Object.entries(row.optionImages)) {
+      const idx = Number(idxStr);
+      const opt = dto.options?.[idx];
+      if (!opt) continue;
+      opt.imageUrl = (await upload(relIds[0])) ?? opt.imageUrl;
+      if (relIds.length > 1)
+        notes.push(`Gambar ke-2+ di opsi ${OPTION_LETTERS[idx] ?? idx + 1} dilewati.`);
+    }
+    if (notes.length) {
+      const res = results.find((r) => r.no === row.no);
+      res?.errors.push(...notes);
+    }
+  }
+
   // ---------- IMPORT ----------
 
   async importFile(
@@ -452,40 +827,63 @@ export class QuestionsImportService {
     }
 
     const name = file.originalname.toLowerCase();
-    const rows = name.endsWith('.docx')
-      ? await this.parseDocx(file.buffer)
-      : name.endsWith('.xlsx') || name.endsWith('.xls')
-        ? await this.parseXlsx(file.buffer)
-        : (() => {
-            throw new BadRequestException(
-              'Format file harus .docx atau .xlsx — gunakan template yang disediakan.',
-            );
-          })();
+    let rows: ParsedRow[];
+    if (name.endsWith('.docx')) {
+      const parsed = await this.parseDocx(file.buffer);
+      rows = parsed.rows;
+    } else if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+      rows = await this.parseXlsx(file.buffer);
+    } else {
+      throw new BadRequestException(
+        'Format file harus .docx atau .xlsx — gunakan template yang disediakan.',
+      );
+    }
 
     if (!rows.length)
       throw new BadRequestException(
         'Tidak ada soal yang terbaca dari file — cek format template.',
       );
 
+    const imgCount = (r: ParsedRow) =>
+      r.contentImages.length +
+      r.explanationImages.length +
+      Object.values(r.optionImages).reduce((s, a) => s + a.length, 0);
+
     const results: ImportRowResult[] = [];
     const valid: { row: ParsedRow; dto: CreateQuestionDto }[] = [];
     for (const row of rows) {
       const { dto, errors } = this.toDto(row);
+      const warnings = [...row.warnings];
       if (dto) {
         dto.programId = refs.programId;
         dto.levelId = refs.levelId;
         dto.subjectId = refs.subjectId;
         dto.category = refs.category;
         valid.push({ row, dto });
-        results.push({ no: row.no, content: dto.content, type: dto.type, ok: true, errors: [] });
+        results.push({
+          no: row.no,
+          content: dto.content,
+          type: dto.type,
+          ok: true,
+          errors: warnings,
+          images: imgCount(row) || undefined,
+        });
       } else {
-        results.push({ no: row.no, content: row.content.slice(0, 120), ok: false, errors });
+        results.push({
+          no: row.no,
+          content: row.content.slice(0, 120),
+          ok: false,
+          errors: [...errors, ...warnings],
+          images: imgCount(row) || undefined,
+        });
       }
     }
 
     let created = 0;
     if (!refs.dryRun) {
-      for (const { dto } of valid) {
+      for (const { row, dto } of valid) {
+        // Upload gambar hasil ekstrak docx ke pustaka media, lalu tempel URL-nya.
+        await this.attachImages(row, dto, actor.id, results);
         await this.questions.create(actor, dto);
         created++;
       }

@@ -102,9 +102,16 @@ export class MediaController {
   @Get(':id/file')
   async file(@Param('id') id: string, @Res() res: Response) {
     const file = await this.media.getFile(id);
-    // Aset publik ini di-embed <img> dari origin web (localhost:3001) —
-    // longgarkan CORP hanya untuk endpoint file media, bukan seluruh API.
+    // Aset publik ini di-embed <img>/<iframe> (PDF viewer) dari origin web —
+    // longgarkan CORP + frame-ancestors hanya untuk endpoint file media,
+    // bukan seluruh API. Origin web diambil dari CORS_ORIGIN yang sama.
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    const frameAncestors = (process.env.CORS_ORIGIN ?? 'http://localhost:3001')
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean)
+      .join(' ');
+    res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${frameAncestors}`);
     res.setHeader('Content-Type', file.contentType);
     res.setHeader('Content-Disposition', file.disposition);
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');

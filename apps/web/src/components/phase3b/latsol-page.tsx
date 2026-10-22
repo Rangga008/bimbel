@@ -36,6 +36,17 @@ export function LatsolPage({ canManage, basePath = '/latsol' }: { canManage: boo
     }
   }, [searchParams, siswaFocus, router]);
 
+  // Deep-link ?focus=<packageId> (mis. dari tombol latsol di halaman materi):
+  // scroll + sorot kartu paket — tidak langsung membuka player.
+  const focusId = searchParams.get('focus');
+  useEffect(() => {
+    if (!focusId) return;
+    const t = setTimeout(() => {
+      document.getElementById(`latsol-${focusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [focusId, view]);
+
   const handlePlayPackage = (packageId: string) => {
     if (siswaFocus) {
       const p = new URLSearchParams(searchParams.toString());
@@ -66,7 +77,7 @@ export function LatsolPage({ canManage, basePath = '/latsol' }: { canManage: boo
   return (
     <div className="flex flex-col gap-4">
       {canManage ? (
-        <LatsolPackagesManager canManage basePath={basePath} onPlay={handlePlayPackage} />
+        <LatsolPackagesManager canManage basePath={basePath} onPlay={handlePlayPackage} focusId={focusId} />
       ) : (
         <Tabs value={view === 'history' ? 'history' : 'list'} onValueChange={(v) => setView(v as 'list' | 'play' | 'history')} className="w-full">
           <TabsList>
@@ -75,7 +86,7 @@ export function LatsolPage({ canManage, basePath = '/latsol' }: { canManage: boo
           </TabsList>
 
           <TabsContent value="list" className="mt-4">
-            <LatsolPackagesManager canManage={false} basePath={basePath} onPlay={handlePlayPackage} />
+            <LatsolPackagesManager canManage={false} basePath={basePath} onPlay={handlePlayPackage} focusId={focusId} />
           </TabsContent>
 
           <TabsContent value="history" className="mt-4">

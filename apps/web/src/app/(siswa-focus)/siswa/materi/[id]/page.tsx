@@ -90,11 +90,24 @@ export default function MaterialViewPage() {
 										className="mx-auto max-h-[80vh] w-auto object-contain"
 									/>
 								) : isPdf(m.fileType) ? (
-									<iframe
-										src={resolveAssetUrl(m.fileUrl)}
-										title={m.title}
-										className="h-[80vh] w-full"
-									/>
+									<>
+										{/* PDF viewer native iframe hanya bisa discroll di
+										    desktop. Di HP: tombol buka di tab baru supaya
+										    PDF terbuka penuh dan bisa discroll. */}
+										<iframe
+											src={resolveAssetUrl(m.fileUrl)}
+											title={m.title}
+											className="hidden h-[80vh] w-full sm:block"
+										/>
+										<a
+											href={resolveAssetUrl(m.fileUrl)}
+											target="_blank"
+											rel="noopener noreferrer"
+											className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground sm:hidden"
+										>
+											Buka PDF
+										</a>
+									</>
 								) : (
 									<a
 										href={resolveAssetUrl(m.fileUrl)}

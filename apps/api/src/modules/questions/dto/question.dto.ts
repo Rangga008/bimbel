@@ -6,7 +6,8 @@ export class CreateQuestionOptionDto {
   /** id opsi existing — diisi saat update agar ID opsi tetap stabil
    *  (jawaban siswa menyimpan optionId). */
   @IsOptional()
-  @IsUUID('4', { message: 'id opsi tidak valid.' })
+  @IsString()
+  // String biasa — opsi pada data lama/seed memakai id non-UUID ('seed-...').
   id?: string;
 
   @IsOptional()

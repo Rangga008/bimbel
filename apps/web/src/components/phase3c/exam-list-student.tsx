@@ -102,6 +102,18 @@ export function ExamListStudent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, dataQ.data]);
 
+  // Deep-link ?focus=<examId> (mis. dari tombol ujian di halaman materi):
+  // scroll + sorot kartu ujian — tidak langsung membuka dialog mulai.
+  const focusId = searchParams.get('focus');
+  useEffect(() => {
+    if (!focusId || !dataQ.data) return;
+    const t = setTimeout(() => {
+      document.getElementById(`exam-${focusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId, dataQ.data]);
+
   const startM = useMutation({
     mutationFn: (examId: string) => apiFetch<{ id: string }>('/exam-attempts/start', { method: 'POST', body: { examId } }),
     onSuccess: (data) => {
@@ -241,7 +253,7 @@ export function ExamListStudent() {
           const attempt = myAttempts[exam.id];
 
           return (
-            <Card key={exam.id}>
+            <Card key={exam.id} id={`exam-${exam.id}`} className={exam.id === focusId ? 'ring-2 ring-primary' : undefined}>
               <CardHeader>
                 <div className="flex justify-between items-start">
                   <div className="space-y-1">

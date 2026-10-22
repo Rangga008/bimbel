@@ -262,11 +262,15 @@ export function MaterialsManager({ canManage, basePath = '/materi' }: { canManag
                         variant="outline"
                         size="sm"
                         onClick={() => {
+                          // Siswa → halaman start paket tsb (judul, jumlah soal,
+                          // riwayat, tombol Mulai) — bukan langsung player.
+                          // Admin/tutor → daftar latsol dengan paket disorot.
                           const isStudent = !canManage && portalBase === '/siswa';
-                          const href = isStudent
-                            ? `${portalBase}/latsol/${m.latsolPackage!.id}`
-                            : `${portalBase}/latsol?play=${m.latsolPackage!.id}`;
-                          router.push(href);
+                          router.push(
+                            isStudent
+                              ? `${portalBase}/latsol/${m.latsolPackage!.id}`
+                              : `${portalBase}/latsol?focus=${m.latsolPackage!.id}`,
+                          );
                         }}
                       >
                         <FileText /> {m.latsolPackage.title}
@@ -276,7 +280,16 @@ export function MaterialsManager({ canManage, basePath = '/materi' }: { canManag
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => router.push(`${portalBase}/ujian?exam=${m.exam!.id}`)}
+                        onClick={() => {
+                          // Siswa → halaman mulai ujian tsb; admin/tutor →
+                          // daftar ujian dengan kartu disorot.
+                          const isStudent = !canManage && portalBase === '/siswa';
+                          router.push(
+                            isStudent
+                              ? `${portalBase}/ujian/start/${m.exam!.id}`
+                              : `${portalBase}/ujian?focus=${m.exam!.id}`,
+                          );
+                        }}
                       >
                         <GraduationCap /> {m.exam.title}
                       </Button>

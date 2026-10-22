@@ -35,6 +35,7 @@ interface ImportRowResult {
   type?: string;
   ok: boolean;
   errors: string[];
+  images?: number;
 }
 
 interface ImportResult {
@@ -344,6 +345,7 @@ export function QuestionImportDialog({
                         {r.type
                           ? ` — ${QUESTION_TYPES.find((t) => t.value === r.type)?.label ?? r.type}`
                           : ''}
+                        {r.images ? ` · +${r.images} gambar` : ''}
                       </p>
                       <p className="truncate text-muted-foreground">
                         {r.content || '(kosong)'}
