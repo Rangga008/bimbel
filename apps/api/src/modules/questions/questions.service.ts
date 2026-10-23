@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { ContentCategoriesService } from '../content-categories/content-categories.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import type { QuestionType } from '@prisma/client';
@@ -45,8 +47,65 @@ export class QuestionsService {
     });
   }
 
+  /** Normalisasi teks untuk fingerprint dedup. */
+  private normText(s?: string | null): string {
+    return (s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+
   /**
-   * Konsistensi opsi vs tipe soal:
+   * Fingerprint identitas soal — konten + tipe + gambar + kunci + seluruh
+   * opsi (teks/gambar/status-benar, urutan tak berpengaruh). Dua soal dengan
+   * fingerprint sama di jenjang/mapel/kategori/program yang sama = duplikat.
+   */
+  fingerprintOf(q: {
+    type: QuestionType;
+    content: string;
+    imageUrl?: string | null;
+    answerKey?: string | null;
+    options?: { content?: string | null; imageUrl?: string | null; isCorrect?: boolean }[];
+  }): string {
+    const opts = (q.options ?? [])
+      .map(
+        (o) =>
+          `${this.normText(o.content)}|${this.normText(o.imageUrl)}|${o.isCorrect ? 1 : 0}`,
+      )
+      .sort();
+    return createHash('sha1')
+      .update(
+        [
+          q.type,
+          this.normText(q.content),
+          this.normText(q.imageUrl),
+          this.normText(q.answerKey),
+          ...opts,
+        ].join(''),
+      )
+      .digest('hex');
+  }
+
+  /**
+   * Fingerprint semua soal dalam satu scope taksonomi — dipakai untuk
+   * menandai baris import yang duplikat.
+   */
+  async existingFingerprints(scope: {
+    programId?: string | null;
+    levelId?: string | null;
+    subjectId?: string | null;
+    category?: string | null;
+  }): Promise<Set<string>> {
+    const existing = await this.prisma.question.findMany({
+      where: {
+        programId: scope.programId ?? null,
+        levelId: scope.levelId ?? null,
+        subjectId: scope.subjectId ?? null,
+        category: scope.category ?? null,
+      },
+      include: { options: true },
+    });
+    return new Set(existing.map((q) => this.fingerprintOf(q)));
+  }
+
+  /** Konsistensi opsi vs tipe soal:
    * - Pilihan tunggal (SINGLE_CHOICE/TRUE_FALSE): maks 1 jawaban benar —
    *   >1 berarti soal seharusnya bertipe pilihan ganda majemuk.
    * - ESSAY/SHORT_ANSWER tidak memakai opsi (diabaikan).
@@ -207,6 +266,27 @@ export class QuestionsService {
     }
     this.assertOptionConsistency(dto.type, optionsToCreate);
     await this.contentCategories.assertUsable(dto.category);
+
+    // Tolak soal duplikat — konten+tipe+opsi identik dalam jenjang/mapel/
+    // kategori/program yang sama (mis. import file yang sama dua kali).
+    const fingerprints = await this.existingFingerprints({
+      programId: dto.programId,
+      levelId: dto.levelId,
+      subjectId,
+      category: dto.category,
+    });
+    const fp = this.fingerprintOf({
+      type: dto.type,
+      content: dto.content,
+      imageUrl: dto.imageUrl,
+      answerKey: dto.answerKey,
+      options: optionsToCreate,
+    });
+    if (fingerprints.has(fp)) {
+      throw new ConflictException(
+        'Soal ini identik dengan soal yang sudah ada di jenjang/mapel/kategori ini — tidak dibuat ulang.',
+      );
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const question = await tx.question.create({

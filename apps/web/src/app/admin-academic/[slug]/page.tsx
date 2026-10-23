@@ -51,10 +51,10 @@ export default async function AdminAcademicMenuPage({
 	if (slug === "master-data") return <MasterDataManager canManage />;
 	if (slug === "absensi")
 		return (
-			<div className="flex flex-col gap-8">
+			<div className="flex flex-col gap-6">
 				<AttendanceMarker sessionsEndpoint="/sessions" />
-				<AttendanceRecapBox />
 				<AttendanceCorrectBox />
+				<AttendanceRecapBox />
 			</div>
 		);
 	if (slug === "materi") return <MaterialsManager canManage basePath="/admin-academic/materi" />;

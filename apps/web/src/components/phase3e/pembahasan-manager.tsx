@@ -2,16 +2,21 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Maximize2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError, resolveAssetUrl } from '@/lib/api-client';
 import { MathContent } from '@/components/shared/math-content';
-import { categoryLabel } from '@/lib/content-taxonomy';
-import { useContentCategories } from '@/components/shared/content-drilldown';
+import { applyDrill, categoryLabel, drillDone } from '@/lib/content-taxonomy';
+import {
+  ContentDrilldown,
+  DrillBreadcrumb,
+  useContentCategories,
+  useContentLevels,
+  useDrillState,
+} from '@/components/shared/content-drilldown';
 
 interface Exam {
   id: string;
@@ -106,11 +111,14 @@ function QuestionAnswerKey({ question }: { question: Question }) {
   );
 }
 
-/** Fase 3e — Tutor memilih subset soal dari 1 exam untuk sesi pembahasan bersama. */
+/** Fase 3e — Pembahasan ujian: drill jenjang/mapel/tipe → pilih ujian →
+ *  semua soal + kunci + pembahasan tampil; ada mode presentasi per soal. */
 export function PembahasanManager() {
   const catsQ = useContentCategories();
+  const levelsQ = useContentLevels();
+  const levels = levelsQ.data ?? [];
+  const [drill, setDrill] = useDrillState();
   const [selectedExam, setSelectedExam] = useState<Exam | null>(null);
-  const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
   const [sessionActive, setSessionActive] = useState(false);
   const [sessionIndex, setSessionIndex] = useState(0);
 
@@ -126,30 +134,13 @@ export function PembahasanManager() {
   });
 
   const examQuestions = questionsQ.data?.items ?? [];
+  const sessionItems = examQuestions;
 
   const handleExamSelect = (exam: Exam) => {
     setSelectedExam(exam);
-    setSelectedQuestionIds(new Set());
     setSessionActive(false);
     setSessionIndex(0);
   };
-
-  const handleQuestionToggle = (questionId: string) => {
-    const newSelected = new Set(selectedQuestionIds);
-    if (newSelected.has(questionId)) newSelected.delete(questionId);
-    else newSelected.add(questionId);
-    setSelectedQuestionIds(newSelected);
-  };
-
-  const handleSelectAll = () => {
-    if (selectedQuestionIds.size === examQuestions.length) {
-      setSelectedQuestionIds(new Set());
-    } else {
-      setSelectedQuestionIds(new Set(examQuestions.map((item) => item.questionId)));
-    }
-  };
-
-  const sessionItems = examQuestions.filter((item) => selectedQuestionIds.has(item.questionId));
 
   if (examsQ.isLoading) {
     return <Skeleton className="h-24 w-full" />;
@@ -158,70 +149,118 @@ export function PembahasanManager() {
     return <p className="text-sm text-destructive">{err(examsQ.error, 'Gagal memuat daftar ujian.')}</p>;
   }
 
-  const exams = examsQ.data ?? [];
+  const allExams = examsQ.data ?? [];
+  const exams = applyDrill(allExams, drill, levels);
 
-  // Mode sesi: tampilkan hanya soal terpilih, 1 per halaman, untuk dibahas bersama di depan kelas.
+  // Mode presentasi: overlay fullscreen (fixed, menutupi seluruh layar) +
+  // Fullscreen API supaya benar-benar layar penuh untuk dibahas di depan kelas.
   if (sessionActive && sessionItems.length > 0) {
     const current = sessionItems[sessionIndex];
+    const exitSession = () => {
+      setSessionActive(false);
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    };
     return (
-      <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h1 className="text-2xl font-bold">Sesi Pembahasan — {selectedExam?.title}</h1>
-            <p className="text-sm text-muted-foreground">
-              Soal {sessionIndex + 1} dari {sessionItems.length}
-            </p>
-          </div>
-          <Button variant="outline" onClick={() => setSessionActive(false)}>
-            Keluar Sesi
-          </Button>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <span>Soal {sessionIndex + 1} ({current.points} poin)</span>
-              <Badge variant="outline">{getQuestionTypeLabel(current.question.type)}</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="prose prose-sm max-w-none">
-              <MathContent text={current.question.content} />
-              {current.question.imageUrl && (
-                <img src={resolveAssetUrl(current.question.imageUrl)} alt="Gambar soal" className="max-w-full h-auto" />
-              )}
+      <div className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-background">
+        <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-5 p-4 sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h1 className="text-xl font-bold sm:text-2xl">Sesi Pembahasan — {selectedExam?.title}</h1>
+              <p className="text-sm text-muted-foreground">
+                Soal {sessionIndex + 1} dari {sessionItems.length}
+              </p>
             </div>
-            <QuestionAnswerKey question={current.question} />
-          </CardContent>
-        </Card>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (document.fullscreenElement) {
+                    void document.exitFullscreen().catch(() => {});
+                  } else {
+                    void document.documentElement.requestFullscreen?.().catch(() => {});
+                  }
+                }}
+              >
+                <Maximize2 className="size-4" /> Layar Penuh
+              </Button>
+              <Button variant="outline" size="sm" onClick={exitSession}>
+                <X className="size-4" /> Keluar Sesi
+              </Button>
+            </div>
+          </div>
 
-        <div className="flex items-center justify-between">
-          <Button
-            variant="outline"
-            onClick={() => setSessionIndex((prev) => Math.max(0, prev - 1))}
-            disabled={sessionIndex === 0}
-          >
-            ← Sebelumnya
-          </Button>
-          <Button
-            onClick={() => setSessionIndex((prev) => Math.min(sessionItems.length - 1, prev + 1))}
-            disabled={sessionIndex === sessionItems.length - 1}
-          >
-            Selanjutnya →
-          </Button>
+          <Card className="flex-1">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <span>Soal {sessionIndex + 1} ({current.points} poin)</span>
+                <Badge variant="outline">{getQuestionTypeLabel(current.question.type)}</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="prose prose-sm max-w-none sm:prose-base">
+                <MathContent text={current.question.content} />
+                {current.question.imageUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={resolveAssetUrl(current.question.imageUrl)} alt="Gambar soal" className="max-h-[50vh] rounded-md border object-contain" />
+                )}
+              </div>
+              <QuestionAnswerKey question={current.question} />
+            </CardContent>
+          </Card>
+
+          <div className="flex items-center justify-between pb-4">
+            <Button
+              variant="outline"
+              onClick={() => setSessionIndex((prev) => Math.max(0, prev - 1))}
+              disabled={sessionIndex === 0}
+            >
+              ← Sebelumnya
+            </Button>
+            <Button
+              onClick={() => setSessionIndex((prev) => Math.min(sessionItems.length - 1, prev + 1))}
+              disabled={sessionIndex === sessionItems.length - 1}
+            >
+              Selanjutnya →
+            </Button>
+          </div>
         </div>
+      </div>
+    );
+  }
+
+  // Landing drill: pilih Jenjang → Mapel → Tipe dulu (sama seperti Latsol/Ujian).
+  if (!selectedExam && !drillDone(drill)) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Pembahasan Ujian</h1>
+          <p className="text-sm text-muted-foreground">
+            Pilih jenjang → mapel → tipe dulu untuk memfilter daftar ujian.
+          </p>
+        </div>
+        <ContentDrilldown
+          items={allExams}
+          levels={levels}
+          categories={catsQ.data}
+          value={drill}
+          onChange={setDrill}
+          itemNoun="Ujian"
+          loading={examsQ.isLoading || levelsQ.isLoading}
+        />
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Pembahasan Ujian</h1>
-
       {!selectedExam ? (
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold">Pilih Ujian untuk Pembahasan</h2>
-          <div className="grid gap-4">
+          <div>
+            <DrillBreadcrumb items={allExams} levels={levels} value={drill} onChange={setDrill} />
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight">Pembahasan Ujian</h1>
+          </div>
+          <div className="grid gap-3">
             {exams.map((exam) => (
               <Card key={exam.id} className="cursor-pointer hover:bg-accent" onClick={() => handleExamSelect(exam)}>
                 <CardHeader>
@@ -248,35 +287,33 @@ export function PembahasanManager() {
           {exams.length === 0 && (
             <Card>
               <CardContent className="pt-6">
-                <p className="text-center text-muted-foreground">Tidak ada ujian yang tersedia.</p>
+                <p className="text-center text-muted-foreground">Tidak ada ujian pada kategori ini.</p>
               </CardContent>
             </Card>
           )}
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-lg font-semibold">{selectedExam.title}</h2>
               <p className="text-sm text-muted-foreground">
-                {examQuestions.length} soal • {selectedQuestionIds.size} dipilih
+                {examQuestions.length} soal — kunci &amp; pembahasan tampil semua.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => setSelectedExam(null)}>
                 Kembali
               </Button>
-              <Button variant="outline" onClick={handleSelectAll}>
-                {selectedQuestionIds.size === examQuestions.length ? 'Batal Pilih Semua' : 'Pilih Semua'}
-              </Button>
-              {selectedQuestionIds.size > 0 && (
+              {examQuestions.length > 0 && (
                 <Button
+                  variant="outline"
                   onClick={() => {
                     setSessionIndex(0);
                     setSessionActive(true);
                   }}
                 >
-                  Mulai Pembahasan ({selectedQuestionIds.size} soal)
+                  Mode Presentasi ({examQuestions.length} soal)
                 </Button>
               )}
             </div>
@@ -290,37 +327,27 @@ export function PembahasanManager() {
             <div className="space-y-4">
               {examQuestions.map((item, index) => {
                 const question = item.question;
-                const isSelected = selectedQuestionIds.has(question.id);
 
                 return (
-                  <Card key={question.id} className={isSelected ? 'border-primary' : ''}>
+                  <Card key={question.id}>
                     <CardHeader>
-                      <div className="flex items-start gap-3">
-                        <Checkbox
-                          checked={isSelected}
-                          onCheckedChange={() => handleQuestionToggle(question.id)}
-                        />
-                        <div className="flex-1 space-y-2">
-                          <div className="flex items-center gap-2">
-                            <Label htmlFor={`q-${question.id}`} className="cursor-pointer">
-                              Soal {index + 1} ({item.points} poin)
-                            </Label>
-                            <Badge variant="outline">{getQuestionTypeLabel(question.type)}</Badge>
-                          </div>
-                          <div className="prose prose-sm max-w-none">
-                            <MathContent text={question.content} />
-                            {question.imageUrl && (
-                              <img src={resolveAssetUrl(question.imageUrl)} alt="Gambar soal" className="max-w-full h-auto" />
-                            )}
-                          </div>
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-base">
+                          Soal {index + 1} ({item.points} poin)
+                        </CardTitle>
+                        <Badge variant="outline">{getQuestionTypeLabel(question.type)}</Badge>
                       </div>
                     </CardHeader>
-                    {isSelected && (
-                      <CardContent className="space-y-4 pt-0">
-                        <QuestionAnswerKey question={question} />
-                      </CardContent>
-                    )}
+                    <CardContent className="space-y-4 pt-0">
+                      <div className="prose prose-sm max-w-none">
+                        <MathContent text={question.content} />
+                        {question.imageUrl && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={resolveAssetUrl(question.imageUrl)} alt="Gambar soal" className="max-h-80 rounded-md border object-contain" />
+                        )}
+                      </div>
+                      <QuestionAnswerKey question={question} />
+                    </CardContent>
                   </Card>
                 );
               })}

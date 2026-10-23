@@ -35,6 +35,9 @@ export interface PaymentFilters {
   groupId?: string;
   levelId?: string;
   search?: string;
+  /** Rentang tanggal dibuat/verifikasi (ISO date YYYY-MM-DD). */
+  from?: string;
+  to?: string;
 }
 
 export function usePaymentsList(filters: PaymentFilters) {
@@ -46,6 +49,8 @@ export function usePaymentsList(filters: PaymentFilters) {
     if (filters.groupId) p.set('groupId', filters.groupId);
     if (filters.levelId) p.set('levelId', filters.levelId);
     if (filters.search) p.set('search', filters.search);
+    if (filters.from) p.set('from', filters.from);
+    if (filters.to) p.set('to', filters.to);
     return p.toString();
   })();
   return useQuery({

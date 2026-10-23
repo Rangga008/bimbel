@@ -69,8 +69,11 @@ export class AnalyticsController {
    */
   @Get('exam/:examId/score-recap')
   @RequirePermissions(PERMISSION_CODES.ANALYTICS_EXAM_VIEW)
-  async getExamScoreRecap(@Param('examId') examId: string) {
-    return this.analytics.getExamScoreRecap(examId);
+  async getExamScoreRecap(
+    @Param('examId') examId: string,
+    @Query('groupId') groupId?: string,
+  ) {
+    return this.analytics.getExamScoreRecap(examId, groupId || undefined);
   }
 
   /**
@@ -78,8 +81,11 @@ export class AnalyticsController {
    */
   @Get('exam/:examId/answer-recap')
   @RequirePermissions(PERMISSION_CODES.ANALYTICS_EXAM_VIEW)
-  async getExamAnswerRecap(@Param('examId') examId: string) {
-    return this.analytics.getExamAnswerRecap(examId);
+  async getExamAnswerRecap(
+    @Param('examId') examId: string,
+    @Query('groupId') groupId?: string,
+  ) {
+    return this.analytics.getExamAnswerRecap(examId, groupId || undefined);
   }
 
   /** Export rekap nilai ujian ke .xlsx. */
@@ -87,9 +93,10 @@ export class AnalyticsController {
   @RequirePermissions(PERMISSION_CODES.ANALYTICS_EXAM_VIEW)
   async exportExamScoreRecap(
     @Param('examId') examId: string,
+    @Query('groupId') groupId: string | undefined,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { buffer, filename } = await this.analytics.exportExamScoreRecapXlsx(examId);
+    const { buffer, filename } = await this.analytics.exportExamScoreRecapXlsx(examId, groupId || undefined);
     res.set({
       'Content-Type':
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -104,9 +111,10 @@ export class AnalyticsController {
   @RequirePermissions(PERMISSION_CODES.ANALYTICS_EXAM_VIEW)
   async exportExamAnswerRecap(
     @Param('examId') examId: string,
+    @Query('groupId') groupId: string | undefined,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { buffer, filename } = await this.analytics.exportExamAnswerRecapXlsx(examId);
+    const { buffer, filename } = await this.analytics.exportExamAnswerRecapXlsx(examId, groupId || undefined);
     res.set({
       'Content-Type':
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -126,14 +134,15 @@ export class AnalyticsController {
     @Param('examId') examId: string,
     @Query('part') part: string,
     @Query('key') key: string,
+    @Query('groupId') groupId: string | undefined,
     @Res({ passthrough: true }) res: Response,
   ) {
     let html: string;
     if (part === 'answers') {
-      const recap = await this.analytics.getExamAnswerRecap(examId);
+      const recap = await this.analytics.getExamAnswerRecap(examId, groupId || undefined);
       html = this.analytics.renderAnswerRecapHtml(recap);
     } else if (part === 'scores') {
-      const recap = await this.analytics.getExamScoreRecap(examId);
+      const recap = await this.analytics.getExamScoreRecap(examId, groupId || undefined);
       html = this.analytics.renderScoreRecapHtml(recap);
     } else {
       const sheet = await this.analytics.getExamQuestionSheet(examId, key === '1');

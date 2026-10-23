@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
 	ArrowLeft,
@@ -250,7 +250,10 @@ export function AdminAcademicAnalytics() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [search, setSearch] = useState("");
+  const [applied, setApplied] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"score" | "answer" | null>("score");
+  const [expandedQ, setExpandedQ] = useState<string | null>(null);
+  const [recapGroupId, setRecapGroupId] = useState("");
 
   const programsQ = useQuery({
     queryKey: ['programs-options'],
@@ -272,22 +275,31 @@ export function AdminAcademicAnalytics() {
   const qs = params.toString();
 
   const analyticsQ = useQuery({
-    queryKey: ['analytics-admin-academic', qs],
+    queryKey: ['analytics-admin-academic', applied],
     queryFn: () =>
       apiFetch<AdminAcademicAnalyticsData>(
-        `/analytics/admin/academic${qs ? `?${qs}` : ''}`,
+        `/analytics/admin/academic${applied ? `?${applied}` : ''}`,
       ),
+    // Data hanya dimuat setelah user memilih filter & menekan Tampilkan —
+    // mencegah tabel langsung membanjiri layar saat halaman dibuka.
+    enabled: applied !== null,
   });
 
   const scoreQ = useQuery({
-    queryKey: ['exam-score-recap', selectedExamId],
-    queryFn: () => apiFetch<ScoreRecapData>(`/analytics/exam/${selectedExamId}/score-recap`),
+    queryKey: ['exam-score-recap', selectedExamId, recapGroupId],
+    queryFn: () =>
+      apiFetch<ScoreRecapData>(
+        `/analytics/exam/${selectedExamId}/score-recap${recapGroupId ? `?groupId=${recapGroupId}` : ''}`,
+      ),
     enabled: !!selectedExamId && activeTab === 'score',
   });
 
   const answerQ = useQuery({
-    queryKey: ['exam-answer-recap', selectedExamId],
-    queryFn: () => apiFetch<AnswerRecapData>(`/analytics/exam/${selectedExamId}/answer-recap`),
+    queryKey: ['exam-answer-recap', selectedExamId, recapGroupId],
+    queryFn: () =>
+      apiFetch<AnswerRecapData>(
+        `/analytics/exam/${selectedExamId}/answer-recap${recapGroupId ? `?groupId=${recapGroupId}` : ''}`,
+      ),
     enabled: !!selectedExamId && activeTab === 'answer',
   });
 
@@ -378,13 +390,26 @@ export function AdminAcademicAnalytics() {
             >
               Rekap Jawaban
             </Button>
+            <select
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+              value={recapGroupId}
+              onChange={(e) => setRecapGroupId(e.target.value)}
+              aria-label="Filter kelompok"
+            >
+              <option value="">Semua kelompok</option>
+              {(groupsQ.data ?? []).map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.code ? `${g.code} — ${g.name}` : g.name}
+                </option>
+              ))}
+            </select>
             <div className="ml-auto flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() =>
                   downloadBlob(
-                    `/analytics/exam/${selectedExam.examId}/${activeTab === 'score' ? 'score' : 'answer'}-recap.xlsx`,
+                    `/analytics/exam/${selectedExam.examId}/${activeTab === 'score' ? 'score' : 'answer'}-recap.xlsx${recapGroupId ? `?groupId=${recapGroupId}` : ''}`,
                     `rekap-${activeTab === 'score' ? 'nilai' : 'jawaban'}-${selectedExam.examTitle}.xlsx`,
                   )
                 }
@@ -396,7 +421,7 @@ export function AdminAcademicAnalytics() {
                 size="sm"
                 onClick={() =>
                   openPrintDoc(
-                    `/analytics/exam/${selectedExam.examId}/print?part=${activeTab === 'score' ? 'scores' : 'answers'}`,
+                    `/analytics/exam/${selectedExam.examId}/print?part=${activeTab === 'score' ? 'scores' : 'answers'}${recapGroupId ? `&groupId=${recapGroupId}` : ''}`,
                   )
                 }
               >
@@ -433,77 +458,104 @@ export function AdminAcademicAnalytics() {
             description="Soal akan muncul di sini setelah ada attempt ujian."
           />
         ) : (
-          <div className="grid gap-4">
-            {selectedExam.questionAnalytics.map((question, index) => (
-              <Card key={question.questionId}>
-                <CardHeader>
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <CardTitle className="text-base leading-snug">
-                        Soal {index + 1}: {question.questionContent}
-                      </CardTitle>
-                      <CardDescription className="mt-1">
-                        {question.questionType} · {question.totalAttempts} attempt
-                      </CardDescription>
-                    </div>
-                    <Badge variant={accuracyVariant(question.accuracy)}>
-                      Akurasi {question.accuracy.toFixed(1)}%
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <h4 className="mb-2 text-sm font-medium">Statistik Jawaban</h4>
-                      <div className="grid gap-2">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-1.5 text-muted-foreground">
-                            <Target className="size-4" />
-                            Jawaban benar
-                          </span>
-                          <span className="font-medium tabular-nums">
-                            {question.correctAttempts} / {question.totalAttempts}
-                          </span>
-                        </div>
-                        {question.avgResponseTimeMs ? (
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="flex items-center gap-1.5 text-muted-foreground">
-                              <Timer className="size-4" />
-                              Rata-rata waktu
-                            </span>
-                            <span className="font-medium tabular-nums">
-                              {(question.avgResponseTimeMs / 1000).toFixed(1)} detik
-                            </span>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div>
-                      <h4 className="mb-2 text-sm font-medium">Distribusi Opsi</h4>
-                      <div className="grid gap-2">
-                        {question.optionDistribution.map((option) => (
-                          <div
-                            key={option.optionId}
-                            className="flex items-center justify-between gap-2 text-sm"
-                          >
-                            <div className="flex min-w-0 items-center gap-2">
-                              <Badge variant={option.isCorrect ? "default" : "outline"}>
-                                {option.isCorrect ? "✓" : "✗"}
-                              </Badge>
-                              <span className="truncate">{option.optionContent}</span>
+          <div className="overflow-x-auto rounded-xl border">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b bg-muted/50 text-xs uppercase text-muted-foreground">
+                  <th className="px-3 py-2.5 font-medium">#</th>
+                  <th className="px-3 py-2.5 font-medium">Soal</th>
+                  <th className="px-3 py-2.5 font-medium">Tipe</th>
+                  <th className="px-3 py-2.5 font-medium">Attempt</th>
+                  <th className="px-3 py-2.5 font-medium">Benar</th>
+                  <th className="px-3 py-2.5 font-medium">Akurasi</th>
+                  <th className="px-3 py-2.5 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedExam.questionAnalytics.map((question, index) => {
+                  const open = expandedQ === question.questionId;
+                  return (
+                    <Fragment key={question.questionId}>
+                      <tr
+                        className="cursor-pointer border-b last:border-0 hover:bg-accent/50"
+                        onClick={() => setExpandedQ(open ? null : question.questionId)}
+                      >
+                        <td className="px-3 py-2.5 tabular-nums">{index + 1}</td>
+                        <td className="max-w-md px-3 py-2.5">
+                          <p className="truncate font-medium">{question.questionContent}</p>
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-muted-foreground">{question.questionType}</td>
+                        <td className="px-3 py-2.5 tabular-nums">{question.totalAttempts}</td>
+                        <td className="px-3 py-2.5 tabular-nums">{question.correctAttempts}</td>
+                        <td className="px-3 py-2.5">
+                          <Badge variant={accuracyVariant(question.accuracy)}>
+                            {question.accuracy.toFixed(1)}%
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <ChevronRight className={`ml-auto size-4 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
+                        </td>
+                      </tr>
+                      {open ? (
+                        <tr className="border-b last:border-0">
+                          <td colSpan={7} className="bg-muted/30 px-4 py-3">
+                            <div className="grid gap-4 md:grid-cols-2">
+                              <div>
+                                <h4 className="mb-2 text-sm font-medium">Statistik Jawaban</h4>
+                                <div className="grid gap-2">
+                                  <div className="flex items-center justify-between text-sm">
+                                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                                      <Target className="size-4" />
+                                      Jawaban benar
+                                    </span>
+                                    <span className="font-medium tabular-nums">
+                                      {question.correctAttempts} / {question.totalAttempts}
+                                    </span>
+                                  </div>
+                                  {question.avgResponseTimeMs ? (
+                                    <div className="flex items-center justify-between text-sm">
+                                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                                        <Timer className="size-4" />
+                                        Rata-rata waktu
+                                      </span>
+                                      <span className="font-medium tabular-nums">
+                                        {(question.avgResponseTimeMs / 1000).toFixed(1)} detik
+                                      </span>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <div>
+                                <h4 className="mb-2 text-sm font-medium">Distribusi Opsi</h4>
+                                <div className="grid gap-2">
+                                  {question.optionDistribution.map((option) => (
+                                    <div
+                                      key={option.optionId}
+                                      className="flex items-center justify-between gap-2 text-sm"
+                                    >
+                                      <div className="flex min-w-0 items-center gap-2">
+                                        <Badge variant={option.isCorrect ? "default" : "outline"}>
+                                          {option.isCorrect ? "✓" : "✗"}
+                                        </Badge>
+                                        <span className="truncate">{option.optionContent}</span>
+                                      </div>
+                                      <div className="flex shrink-0 items-center gap-2 tabular-nums">
+                                        <span className="text-muted-foreground">{option.selectedCount}x</span>
+                                        <span className="font-medium">{option.selectionRate.toFixed(1)}%</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex shrink-0 items-center gap-2 tabular-nums">
-                              <span className="text-muted-foreground">{option.selectedCount}x</span>
-                              <span className="font-medium">{option.selectionRate.toFixed(1)}%</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -589,81 +641,98 @@ export function AdminAcademicAnalytics() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
+        <Button size="sm" onClick={() => setApplied(qs)} disabled={!qs && applied === ""}>
+          Tampilkan
+        </Button>
         {programId || levelId || groupId || from || to || search ? (
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => { setProgramId(""); setLevelId(""); setGroupId(""); setFrom(""); setTo(""); setSearch(""); }}
+            onClick={() => { setProgramId(""); setLevelId(""); setGroupId(""); setFrom(""); setTo(""); setSearch(""); setApplied(null); }}
           >
             Reset
           </Button>
         ) : null}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        {[
-          { icon: FileCheck2, label: "Total Ujian", value: data?.totalExams ?? 0 },
-          { icon: Users, label: "Total Attempt", value: data?.totalAttempts ?? 0 },
-          { icon: Target, label: "Rata-rata Nilai", value: `${(data?.avgPercentage ?? 0).toFixed(1)}%` },
-        ].map((s) => (
-          <Card key={s.label}>
-            <CardContent className="flex items-center gap-3 pt-6">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand-blue-50 text-brand-blue-600">
-                <s.icon className="size-5" />
-              </span>
-              <div>
-                <p className="text-2xl font-bold tabular-nums tracking-tight">{s.value}</p>
-                <p className="text-xs text-muted-foreground">{s.label}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {exams.length === 0 ? (
+      {applied === null ? (
         <EmptyState
-          icon={FileCheck2}
-          title="Tidak ada ujian untuk filter ini"
-          description="Coba longgarkan filter, atau buat ujian lalu tunggu ada attempt."
+          icon={ChartLine}
+          title="Atur filter lalu tekan Tampilkan"
+          description="Data analisis tidak dimuat otomatis — pilih program/level/kelompok/tanggal dulu."
         />
+      ) : analyticsQ.isLoading ? (
+        <Skeleton className="h-40 w-full" />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {exams.map((exam) => {
-            const s = examSummary(exam);
-            return (
-              <Card
-                key={exam.examId}
-                role="button"
-                tabIndex={0}
-                onClick={() => setSelectedExamId(exam.examId)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    setSelectedExamId(exam.examId);
-                  }
-                }}
-                className="cursor-pointer transition-colors hover:border-brand-blue-300 hover:bg-brand-blue-50/40"
-              >
-                <CardContent className="flex items-center gap-4 pt-6">
+        <>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {[
+              { icon: FileCheck2, label: "Total Ujian", value: data?.totalExams ?? 0 },
+              { icon: Users, label: "Total Attempt", value: data?.totalAttempts ?? 0 },
+              { icon: Target, label: "Rata-rata Nilai", value: `${(data?.avgPercentage ?? 0).toFixed(1)}%` },
+            ].map((s) => (
+              <Card key={s.label}>
+                <CardContent className="flex items-center gap-3 pt-6">
                   <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand-blue-50 text-brand-blue-600">
-                    <FileCheck2 className="size-5" />
+                    <s.icon className="size-5" />
                   </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{exam.examTitle}</p>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                      <span>{s.questions} soal</span>
-                      <span>{s.attempts} attempt</span>
-                      <Badge variant={accuracyVariant(s.avgAccuracy)} className="text-[11px]">
-                        Akurasi {s.avgAccuracy.toFixed(1)}%
-                      </Badge>
-                    </div>
+                  <div>
+                    <p className="text-2xl font-bold tabular-nums tracking-tight">{s.value}</p>
+                    <p className="text-xs text-muted-foreground">{s.label}</p>
                   </div>
-                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                 </CardContent>
               </Card>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+
+          {exams.length === 0 ? (
+            <EmptyState
+              icon={FileCheck2}
+              title="Tidak ada ujian untuk filter ini"
+              description="Coba longgarkan filter, atau buat ujian lalu tunggu ada attempt."
+            />
+          ) : (
+            <div className="overflow-x-auto rounded-xl border">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50 text-xs uppercase text-muted-foreground">
+                    <th className="px-3 py-2.5 font-medium">Ujian</th>
+                    <th className="px-3 py-2.5 font-medium">Soal</th>
+                    <th className="px-3 py-2.5 font-medium">Attempt</th>
+                    <th className="px-3 py-2.5 font-medium">Akurasi</th>
+                    <th className="px-3 py-2.5 font-medium"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {exams.map((exam) => {
+                    const s = examSummary(exam);
+                    return (
+                      <tr
+                        key={exam.examId}
+                        className="cursor-pointer border-b last:border-0 hover:bg-accent/50"
+                        onClick={() => { setSelectedExamId(exam.examId); setRecapGroupId(""); }}
+                      >
+                        <td className="px-3 py-2.5 font-medium">{exam.examTitle}</td>
+                        <td className="px-3 py-2.5 tabular-nums">{s.questions}</td>
+                        <td className="px-3 py-2.5 tabular-nums">{s.attempts}</td>
+                        <td className="px-3 py-2.5">
+                          <Badge variant={accuracyVariant(s.avgAccuracy)}>
+                            {s.avgAccuracy.toFixed(1)}%
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <Button variant="ghost" size="sm" className="gap-1">
+                            Detail <ChevronRight className="size-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

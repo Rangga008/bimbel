@@ -59,6 +59,26 @@ const STATUS_FILTERS = [
 	{ value: "FAILED", label: "Gagal" },
 ] as const;
 
+/** Tipe antrean WA yang dikenal sistem — label ramah untuk dropdown filter. */
+const EVENT_TYPE_FILTERS = [
+	{ value: "", label: "Semua tipe" },
+	{ value: "INVOICE_ISSUED", label: "Invoice terbit" },
+	{ value: "PAYMENT_REMINDER", label: "Reminder tagihan" },
+	{ value: "PAYMENT_PROOF_SUBMITTED", label: "Bukti bayar masuk" },
+	{ value: "PAYMENT_VERIFIED", label: "Kwitansi / pembayaran disetujui" },
+	{ value: "PAYMENT_REJECTED", label: "Pembayaran ditolak" },
+	{ value: "PAYROLL_PAID", label: "Payroll tutor" },
+	{ value: "GROUP_REMINDER", label: "Reminder kelompok (ortu/siswa)" },
+	{ value: "TUTOR_WEEKLY_SCHEDULE", label: "Jadwal mingguan tutor" },
+	{ value: "TUTOR_ABSENCE", label: "Ketidakhadiran tutor" },
+	{ value: "TEST", label: "Pesan uji" },
+] as const;
+
+function eventLabel(code: string) {
+	const found = EVENT_TYPE_FILTERS.find((f) => f.value !== "" && code.startsWith(f.value));
+	return found ? `${found.label} (${code})` : code;
+}
+
 function statusBadge(status: OutboxRow["status"]) {
 	if (status === "SENT") return <Badge>Terkirim</Badge>;
 	if (status === "FAILED") return <Badge variant="destructive">Gagal</Badge>;
@@ -88,6 +108,7 @@ export function WhatsAppOutboxManager({
 	const debouncedSearch = useDebouncedValue(search, 400);
 	const [sortDesc, setSortDesc] = useState(true);
 	const [page, setPage] = useState(0);
+	const [pageSize, setPageSize] = useState(10);
 
 	const statsQ = useQuery({
 		queryKey: ["wa-outbox-stats"],
@@ -111,9 +132,8 @@ export function WhatsAppOutboxManager({
 		if (!sortDesc) r.reverse();
 		return r;
 	}, [listQ.data, sortDesc]);
-	const PAGE_SIZE = 25;
-	const pageCount = Math.ceil(rows.length / PAGE_SIZE);
-	const pagedRows = compact ? rows.slice(0, 5) : rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+	const pageCount = Math.ceil(rows.length / pageSize);
+	const pagedRows = compact ? rows.slice(0, 5) : rows.slice(page * pageSize, (page + 1) * pageSize);
 
 	const invalidate = () => {
 		qc.invalidateQueries({ queryKey: ["wa-outbox"] });
@@ -208,15 +228,19 @@ export function WhatsAppOutboxManager({
 								{f.label}
 							</Button>
 						))}
-						<Input
-							placeholder="Filter event (mis. TUTOR_WEEKLY)"
+						<select
+							className="h-9 rounded-md border border-input bg-background px-2 text-sm"
 							value={eventType}
 							onChange={(e) => {
 								setEventType(e.target.value);
 								setPage(0);
 							}}
-							className="w-52"
-						/>
+							aria-label="Filter tipe antrean"
+						>
+							{EVENT_TYPE_FILTERS.map((f) => (
+								<option key={f.value} value={f.value}>{f.label}</option>
+							))}
+						</select>
 						<Button
 							size="sm"
 							variant="outline"
@@ -253,7 +277,7 @@ export function WhatsAppOutboxManager({
 										{row.recipientName || row.recipientPhone}
 									</p>
 									<p className="text-xs text-muted-foreground">
-										{row.recipientPhone} · {row.eventType} ·{" "}
+										{row.recipientPhone} · {eventLabel(row.eventType)} ·{" "}
 										{new Date(row.createdAt).toLocaleString("id-ID")}
 									</p>
 								</div>
@@ -300,8 +324,10 @@ export function WhatsAppOutboxManager({
 						page={page}
 						pageCount={pageCount}
 						total={rows.length}
-						shown={PAGE_SIZE}
+						shown={pageSize}
 						onPageChange={setPage}
+						pageSize={pageSize}
+						onPageSizeChange={(s) => { setPageSize(s); setPage(0); }}
 					/>
 				) : null}
 			</CardContent>

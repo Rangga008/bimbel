@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiFetch, ApiError } from "@/lib/api-client";
-import { LeaderboardCard } from "./leaderboard-card";
+import { SiswaPodium } from "./siswa-podium";
 
 interface MyTotal {
   studentId: string;
@@ -46,7 +46,7 @@ export function StudentRankingPage() {
         </CardContent>
       </Card>
 
-      <LeaderboardCard myGroupToggle highlightMe />
+      <SiswaPodium />
     </div>
   );
 }

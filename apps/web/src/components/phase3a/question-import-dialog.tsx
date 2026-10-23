@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
@@ -36,6 +37,7 @@ interface ImportRowResult {
   ok: boolean;
   errors: string[];
   images?: number;
+  duplicate?: boolean;
 }
 
 interface ImportResult {
@@ -64,6 +66,10 @@ export function QuestionImportDialog({
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [tplCount, setTplCount] = useState('5');
+  const [tplTypes, setTplTypes] = useState<string[]>(
+    QUESTION_TYPES.map((t) => t.value),
+  );
   const [tingkat, setTingkat] = useState('');
   const [levelId, setLevelId] = useState('');
   const [subjectId, setSubjectId] = useState('');
@@ -159,8 +165,11 @@ export function QuestionImportDialog({
 
   const downloadTemplate = async (format: 'xlsx' | 'docx') => {
     try {
+      const p = new URLSearchParams({ format });
+      if (tplCount.trim()) p.set('count', tplCount.trim());
+      if (tplTypes.length) p.set('types', tplTypes.join(','));
       const blob = await apiFetchBlob(
-        `/questions/import/template?format=${format}`,
+        `/questions/import/template?${p.toString()}`,
       );
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -175,6 +184,8 @@ export function QuestionImportDialog({
 
   const ready = !!file && !!levelId && !!subjectId && !!category;
   const okCount = preview?.rows.filter((r) => r.ok).length ?? 0;
+  const dupCount = preview?.rows.filter((r) => r.duplicate).length ?? 0;
+  const createCount = okCount - dupCount;
   const failCount = preview ? preview.rows.length - okCount : 0;
 
   return (
@@ -231,6 +242,40 @@ export function QuestionImportDialog({
                 <FileSpreadsheet className="size-4" />
                 Template Excel
               </Button>
+            </div>
+            {/* Opsi isi template: jumlah baris contoh + tipe soal */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border bg-muted/30 px-3 py-2 text-xs">
+              <span className="text-muted-foreground">Isi template:</span>
+              <label className="flex items-center gap-1.5">
+                Jumlah
+                <Input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={tplCount}
+                  onChange={(e) => setTplCount(e.target.value)}
+                  className="h-7 w-16 px-2 text-xs"
+                />
+                soal
+              </label>
+              <span className="text-muted-foreground">Tipe:</span>
+              {QUESTION_TYPES.map((t) => (
+                <label key={t.value} className="flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    className="size-3.5 accent-primary"
+                    checked={tplTypes.includes(t.value)}
+                    onChange={(e) =>
+                      setTplTypes((prev) =>
+                        e.target.checked
+                          ? [...prev, t.value]
+                          : prev.filter((v) => v !== t.value),
+                      )
+                    }
+                  />
+                  {t.label}
+                </label>
+              ))}
             </div>
           </div>
 
@@ -306,7 +351,7 @@ export function QuestionImportDialog({
             </Button>
             <Button
               disabled={
-                !ready || !preview || okCount === 0 || importM.isPending
+                !ready || !preview || createCount === 0 || importM.isPending
               }
               onClick={() => importM.mutate()}
             >
@@ -315,7 +360,7 @@ export function QuestionImportDialog({
               ) : (
                 <FileUp className="size-4" />
               )}
-              Import {preview ? `${okCount} Soal` : ''}
+              Import {preview ? `${createCount} Soal` : ''}
             </Button>
           </div>
 
@@ -323,7 +368,12 @@ export function QuestionImportDialog({
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm">
                 <Badge variant="secondary">{preview.parsed} terbaca</Badge>
-                <Badge className="bg-success-600">{okCount} valid</Badge>
+                <Badge className="bg-success-600">{createCount} baru</Badge>
+                {dupCount > 0 && (
+                  <Badge variant="outline" className="border-amber-500 text-amber-600">
+                    {dupCount} duplikat
+                  </Badge>
+                )}
                 {failCount > 0 && (
                   <Badge variant="destructive">{failCount} bermasalah</Badge>
                 )}
@@ -334,10 +384,12 @@ export function QuestionImportDialog({
                     key={r.no}
                     className="flex items-start gap-2 rounded-md bg-muted/40 p-2 text-xs"
                   >
-                    {r.ok ? (
+                    {r.ok && !r.duplicate ? (
                       <CircleCheck className="mt-0.5 size-4 shrink-0 text-success-600" />
                     ) : (
-                      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                      <AlertTriangle
+                        className={`mt-0.5 size-4 shrink-0 ${r.duplicate ? 'text-amber-500' : 'text-destructive'}`}
+                      />
                     )}
                     <div className="min-w-0">
                       <p className="font-medium">

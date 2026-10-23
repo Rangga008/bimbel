@@ -18,8 +18,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Send, Trash2 } from "lucide-react";
-import { WhatsAppOutboxManager } from "@/components/phase5b/whatsapp-outbox-manager";
+import { Plus, Send, Trash2, ChevronRight, ArrowLeft } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
@@ -137,12 +136,29 @@ const WA_TOGGLES: Array<{
 	{ key: "notifyPayrollPaid", label: "Payroll dibayarkan", hint: "WA ke tutor saat honor dibayarkan" },
 ];
 
+/** Daftar bagian pengaturan — halaman utama menampilkan menu ini, tiap
+ * bagian dibuka di tampilan lanjutan sendiri agar form tidak saling
+ * mengganggu. `key` dipakai untuk meng-filter card yang dirender. */
+const SETTING_SECTIONS = [
+	{ key: "branding", title: "Identitas Aplikasi", desc: "Nama & logo aplikasi di sidebar, login, landing, dan email." },
+	{ key: "display", title: "Tampilan Landing", desc: "Foto hero & tampilan halaman depan publik." },
+	{ key: "exam", title: "Ujian & Perlindungan", desc: "Aturan durasi, pengacakan, dan anti-curang ujian." },
+	{ key: "company", title: "Identitas Bimbel", desc: "Nama lembaga, alamat, dan kontak resmi." },
+	{ key: "finance", title: "Parameter Keuangan", desc: "Prefix nomor, jatuh tempo, dan parameter tagihan." },
+	{ key: "whatsapp", title: "Notifikasi WhatsApp Otomatis", desc: "Nomor admin & toggle WA otomatis per kejadian." },
+	{ key: "reminders", title: "Template Reminder WhatsApp", desc: "Template pesan reminder tagihan & jadwal." },
+	{ key: "mail", title: "Email (SMTP)", desc: "Server email untuk notifikasi & reset password." },
+	{ key: "midtrans", title: "Payment Gateway (Midtrans)", desc: "Kunci server/client & mode sandbox/produksi." },
+	{ key: "accounts", title: "Akun Kas / Bank", desc: "Rekening & kas yang menerima pembayaran." },
+] as const;
+
 /**
  * Halaman "Pengaturan" (Admin Finance): identitas bimbel, parameter keuangan,
- * nomor WA & toggle notifikasi otomatis, akun kas/bank, monitor outbox WA,
- * dan ubah kata sandi.
+ * nomor WA & toggle notifikasi otomatis, akun kas/bank — tiap bagian dibuka
+ * di tampilan lanjutan sendiri (menu → bagian), tidak semua di satu halaman.
  */
 export function FinanceSettings() {
+	const [section, setSection] = useState<string | null>(null);
 	const qc = useQueryClient();
 	// Halaman ini dipakai admin finance & admin akademik — bagian kas/bank dan
 	// outbox WA butuh permission finance yang tidak dimiliki admin akademik,
@@ -150,10 +166,7 @@ export function FinanceSettings() {
 	const canViewAccounts =
 		useAuthStore((s) => s.user?.permissions.includes("invoice.view")) ??
 		false;
-	const canViewOutbox =
-		useAuthStore((s) =>
-			s.user?.permissions.includes("whatsapp_outbox.view"),
-		) ?? false;
+
 	const settingsQ = useQuery({
 		queryKey: ["app-settings"],
 		queryFn: () => apiFetch<AppSettings>("/settings"),
@@ -324,11 +337,46 @@ export function FinanceSettings() {
 		);
 	}
 
+	const currentSection = SETTING_SECTIONS.find((s) => s.key === section);
+
 	return (
-		<div className="flex flex-col gap-8">
-			<h1 className="text-2xl font-semibold tracking-tight">Pengaturan</h1>
+		<div className="flex flex-col gap-6">
+			<div className="flex flex-wrap items-center gap-3">
+				{section ? (
+					<Button variant="outline" size="sm" onClick={() => setSection(null)}>
+						<ArrowLeft className="size-4" /> Semua Pengaturan
+					</Button>
+				) : null}
+				<h1 className="text-2xl font-semibold tracking-tight">
+					Pengaturan{currentSection ? ` — ${currentSection.title}` : ""}
+				</h1>
+			</div>
+
+			{!section ? (
+				<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+					{SETTING_SECTIONS.filter(
+						(s) => s.key !== "accounts" || canViewAccounts,
+					).map((s) => (
+						<button
+							key={s.key}
+							type="button"
+							onClick={() => setSection(s.key)}
+							className="group flex items-center justify-between gap-3 rounded-xl border bg-card p-4 text-left transition-colors hover:border-primary/50 hover:bg-accent/40"
+						>
+							<div className="min-w-0">
+								<p className="font-medium">{s.title}</p>
+								<p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+									{s.desc}
+								</p>
+							</div>
+							<ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+						</button>
+					))}
+				</div>
+			) : null}
 
 			{/* ---- Identitas Aplikasi ---- */}
+			{(!section || section === "branding") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Identitas Aplikasi</CardTitle>
@@ -404,8 +452,10 @@ export function FinanceSettings() {
 					) : null}
 				</CardContent>
 			</Card>
+			) : null}
 
 			{/* ---- Tampilan Landing ---- */}
+			{(!section || section === "display") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Tampilan Landing</CardTitle>
@@ -513,8 +563,10 @@ export function FinanceSettings() {
 					/>
 				</CardContent>
 			</Card>
+			) : null}
 
 			{/* ---- Ujian & Proctoring ---- */}
+			{(!section || section === "exam") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Ujian &amp; Perlindungan</CardTitle>
@@ -565,8 +617,10 @@ export function FinanceSettings() {
 					) : null}
 				</CardContent>
 			</Card>
+			) : null}
 
 			{/* ---- Identitas Bimbel ---- */}
+			{(!section || section === "company") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Identitas Bimbel</CardTitle>
@@ -625,8 +679,10 @@ export function FinanceSettings() {
 					) : null}
 				</CardContent>
 			</Card>
+			) : null}
 
 			{/* ---- Parameter Keuangan ---- */}
+			{(!section || section === "finance") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Parameter Keuangan</CardTitle>
@@ -712,8 +768,10 @@ export function FinanceSettings() {
 					) : null}
 				</CardContent>
 			</Card>
+			) : null}
 
 			{/* ---- Notifikasi WhatsApp ---- */}
+			{(!section || section === "whatsapp") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Notifikasi WhatsApp Otomatis</CardTitle>
@@ -877,8 +935,10 @@ export function FinanceSettings() {
 					) : null}
 				</CardContent>
 			</Card>
+			) : null}
 
 			{/* ---- Template Reminder WhatsApp ---- */}
+			{(!section || section === "reminders") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Template Reminder WhatsApp</CardTitle>
@@ -949,8 +1009,10 @@ export function FinanceSettings() {
 					) : null}
 				</CardContent>
 			</Card>
+			) : null}
 
 			{/* ---- Email / SMTP ---- */}
+			{(!section || section === "mail") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Email (SMTP)</CardTitle>
@@ -1062,8 +1124,10 @@ export function FinanceSettings() {
 					) : null}
 				</CardContent>
 			</Card>
+			) : null}
 
 			{/* ---- Payment Gateway (Midtrans) ---- */}
+			{(!section || section === "midtrans") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Payment Gateway (Midtrans)</CardTitle>
@@ -1164,9 +1228,10 @@ export function FinanceSettings() {
 					) : null}
 				</CardContent>
 			</Card>
+			) : null}
 
 			{/* ---- Akun Kas / Bank ---- */}
-			{canViewAccounts ? (
+			{canViewAccounts && (!section || section === "accounts") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Akun Kas / Bank</CardTitle>
@@ -1286,9 +1351,6 @@ export function FinanceSettings() {
 
 			) : null}
 
-			{canViewOutbox ? (
-				<WhatsAppOutboxManager compact detailHref="/admin-finance/antrean-wa" />
-			) : null}
 
 			<ConfirmDialog
 				open={accToDelete !== null}

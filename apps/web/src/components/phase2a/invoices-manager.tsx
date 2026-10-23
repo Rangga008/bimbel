@@ -113,10 +113,11 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
     enabled: detailId !== null,
   });
 
-  const PAGE_SIZE = 12;
-  const [visible, setVisible] = useState(PAGE_SIZE);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
   const invoices = listQ.data ?? [];
-  const shownInvoices = invoices.slice(0, visible);
+  const pageCount = Math.ceil(invoices.length / pageSize);
+  const shownInvoices = invoices.slice(page * pageSize, (page + 1) * pageSize);
   const th = 'px-3 py-2 text-left font-medium whitespace-nowrap';
   const thR = 'px-3 py-2 text-right font-medium whitespace-nowrap';
   const td = 'px-3 py-2 align-top';
@@ -211,7 +212,7 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
-              setVisible(PAGE_SIZE);
+              setPage(0);
             }}
             className="pl-9"
           />
@@ -223,7 +224,7 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
               type="button"
               onClick={() => {
                 setStatus(t.value);
-                setVisible(PAGE_SIZE);
+                setPage(0);
               }}
               className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
                 status === t.value
@@ -239,7 +240,7 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
           <ComboboxField
             id="inv-filter-program"
             value={filterProgramId}
-            onChange={(v) => { setFilterProgramId(v); setFilterLevelId(''); setVisible(PAGE_SIZE); }}
+            onChange={(v) => { setFilterProgramId(v); setFilterLevelId(''); setPage(0); }}
             options={(programsQ.data ?? []).map((p) => ({ value: p.id, label: `${p.name} (${p.code})` }))}
             placeholder="- Semua program -"
           />
@@ -248,7 +249,7 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
           <ComboboxField
             id="inv-filter-level"
             value={filterLevelId}
-            onChange={(v) => { setFilterLevelId(v); setVisible(PAGE_SIZE); }}
+            onChange={(v) => { setFilterLevelId(v); setPage(0); }}
             options={(programsQ.data?.find((p) => p.id === filterProgramId)?.levels ?? []).map((l) => ({ value: l.id, label: l.name }))}
             placeholder="- Semua level -"
           />
@@ -275,12 +276,11 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
 
       {shownInvoices.length > 0 ? (
         <div className="overflow-x-auto rounded-md border">
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className={th}>Invoice</th>
-                <th className={th}>Siswa</th>
-                <th className={th}>Orang Tua</th>
+                <th className={th}>Siswa / Orang Tua</th>
                 <th className={th}>Program / Paket</th>
                 <th className={thR}>Total</th>
                 <th className={thR}>Dibayar</th>
@@ -295,13 +295,15 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
                   <td className={td}>
                     <span className="flex items-center gap-2">
                       <UserAvatar name={inv.student.user.name} avatarUrl={inv.student.user.avatarUrl} className="size-7" />
-                      <span className="truncate">{inv.student.user.name}</span>
+                      <span className="min-w-0">
+                        <span className="block truncate">{inv.student.user.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {(inv.student.parentStudents ?? []).map((p) => p.parent.user.name).join(', ') || '—'}
+                        </span>
+                      </span>
                     </span>
                   </td>
-                  <td className={`${td} text-muted-foreground`}>
-                    {(inv.student.parentStudents ?? []).map((p) => p.parent.user.name).join(', ') || '—'}
-                  </td>
-                  <td className={`${td} text-muted-foreground`}>
+                  <td className={`${td} max-w-56 text-muted-foreground`}>
                     {(() => {
                       const enr = inv.enrollmentLink ?? inv.enrollment;
                       if (enr) {
@@ -370,12 +372,13 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
       ) : null}
 
       <ListPager
-        mode="loadMore"
-        page={0}
-        pageCount={Math.ceil(invoices.length / PAGE_SIZE)}
+        page={page}
+        pageCount={pageCount}
         total={invoices.length}
-        shown={shownInvoices.length}
-        onPageChange={(p) => setVisible((p + 1) * PAGE_SIZE)}
+        shown={pageSize}
+        onPageChange={setPage}
+        pageSize={pageSize}
+        onPageSizeChange={(s) => { setPageSize(s); setPage(0); }}
       />
 
       <Phase1aFormDialog

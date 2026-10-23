@@ -273,7 +273,9 @@ export class WhatsAppOutboxService {
       }
       where.status = s;
     }
-    if (query.eventType) where.eventType = query.eventType.toUpperCase();
+    // Prefix-match — mis. filter "GROUP_REMINDER" menangkap semua
+    // GROUP_REMINDER_PARENT_WEEKLY dst.; kode lain tetap efektif exact.
+    if (query.eventType) where.eventType = { startsWith: query.eventType.toUpperCase() };
     if (query.search?.trim()) {
       const s = query.search.trim();
       where.OR = [

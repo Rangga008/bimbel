@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
@@ -38,6 +39,8 @@ export interface ImportRowResult {
   ok: boolean;
   errors: string[];
   images?: number;
+  /** True bila soal identik sudah ada — baris dilewati saat import. */
+  duplicate?: boolean;
 }
 
 export interface ImportResult {
@@ -76,51 +79,14 @@ const DOCX_TEMPLATE_LINES = [
   'TEMPLATE IMPORT SOAL — BIMBEL GFS',
   '',
   'PETUNJUK:',
-  '- Dua format didukung: (1) blok teks "SOAL <nomor>" seperti contoh di bawah,',
-  '  atau (2) TABEL — baris pertama header: No | Tipe | Soal | Opsi A..E | Kunci | Poin | Kesulitan | Pembahasan.',
-  '  Boleh juga satu tabel kecil per soal: kolom 1 = label (No/Tipe/Soal/A/B/Kunci…), kolom 2 = isi.',
-  '- GAMBAR: tempel gambar langsung di sel/baris soal, opsi, atau pembahasan — otomatis terupload.',
-  '- Baris "Tipe:" berisi: PG (pilihan ganda), PGK (ganda kompleks), BS (benar/salah), ISIAN, atau ESSAY.',
-  '- Opsi jawaban ditulis per baris diawali huruf + titik: "A. ...", "B. ..." (maks E).',
-  '- Baris "Kunci:" berisi huruf jawaban benar (mis. B, atau A,C untuk PGK), teks isian, atau Benar/Salah.',
-  '- "Poin:" (opsional, angka), "Kesulitan:" (EASY/MEDIUM/HARD, opsional), "Pembahasan:" (opsional).',
-  '- Jenjang, mapel, dan tipe/kategori DIPILIH di halaman import — tidak perlu ditulis di file.',
-  '',
-  'SOAL 1',
-  'Tipe: PG',
-  'Soal: Berapa hasil dari 7 x 8?',
-  'A. 54',
-  'B. 56',
-  'C. 63',
-  'D. 64',
-  'Kunci: B',
-  'Poin: 2',
-  'Kesulitan: EASY',
-  'Pembahasan: 7 x 8 = 56.',
-  '',
-  'SOAL 2',
-  'Tipe: BS',
-  'Soal: Indonesia berada di benua Asia.',
-  'Kunci: Benar',
-  'Poin: 1',
-  '',
-  'SOAL 3',
-  'Tipe: PGK',
-  'Soal: Manakah yang termasuk bilangan prima?',
-  'A. 2',
-  'B. 4',
-  'C. 5',
-  'D. 9',
-  'Kunci: A,C',
-  '',
-  'SOAL 4',
-  'Tipe: ISIAN',
-  'Soal: Ibukota Indonesia adalah ...',
-  'Kunci: Jakarta',
-  '',
-  'SOAL 5',
-  'Tipe: ESSAY',
-  'Soal: Jelaskan proses fotosintesis!',
+  '- Isi tabel di bawah: 1 baris = 1 soal. Tambahkan/salin baris sesuai kebutuhan.',
+  '- Tipe: PG (pilihan ganda) | PGK (ganda kompleks) | BS (benar/salah) | ISIAN | ESSAY.',
+  '- Kunci: huruf opsi (mis. B), beberapa huruf untuk PGK (mis. A,C), Benar/Salah untuk BS,',
+  '  teks jawaban untuk ISIAN, dan dikosongkan untuk ESSAY.',
+  '- Opsi hanya diisi untuk PG/PGK (maksimal E). Tipe lain boleh dikosongkan.',
+  '- GAMBAR: tempel gambar langsung di sel Soal/Opsi/Pembahasan — otomatis terupload.',
+  '- Format alternatif: satu tabel kecil per soal — kolom 1 label (No/Tipe/Soal/A/B/…/Kunci), kolom 2 isi.',
+  '- Jenjang, mapel, dan kategori DIPILIH di halaman import — tidak perlu ditulis di file.',
 ];
 
 const XLSX_HEADERS = [
@@ -138,20 +104,54 @@ const XLSX_HEADERS = [
   'Pembahasan',
 ];
 
-const XLSX_EXAMPLE = [
-  1,
-  'PG',
-  'Berapa hasil dari 7 x 8?',
-  '54',
-  '56',
-  '63',
-  '64',
-  '',
-  'B',
-  2,
-  'EASY',
-  '7 x 8 = 56.',
-];
+/** Alias tipe file (PG/PGK/BS/ISIAN/ESSAY) ↔ enum QuestionType. */
+const TYPE_TO_ALIAS: Record<QuestionType, string> = {
+  SINGLE_CHOICE: 'PG',
+  MULTIPLE_CHOICE: 'PGK',
+  TRUE_FALSE: 'BS',
+  SHORT_ANSWER: 'ISIAN',
+  ESSAY: 'ESSAY',
+};
+
+/** Satu baris contoh per tipe soal — untuk template docx/xlsx. */
+function exampleRow(no: number, type: QuestionType): (string | number)[] {
+  const t = TYPE_TO_ALIAS[type];
+  switch (type) {
+    case 'SINGLE_CHOICE':
+      return [no, t, `Contoh soal pilihan ganda no ${no}: Berapa hasil 2 + 2?`, '3', '4', '5', '6', '', 'B', 1, 'EASY', '2 + 2 = 4.'];
+    case 'MULTIPLE_CHOICE':
+      return [no, t, `Contoh soal ganda kompleks no ${no}: Pilih semua bilangan genap.`, '2', '3', '4', '5', '', 'A,C', 2, 'MEDIUM', ''];
+    case 'TRUE_FALSE':
+      return [no, t, `Contoh soal benar/salah no ${no}: Matahari terbit dari timur.`, '', '', '', '', '', 'Benar', 1, 'EASY', ''];
+    case 'SHORT_ANSWER':
+      return [no, t, `Contoh soal isian no ${no}: Ibukota Indonesia adalah ...`, '', '', '', '', '', 'Jakarta', 1, 'MEDIUM', ''];
+    default:
+      return [no, t, `Contoh soal essay no ${no}: Jelaskan proses fotosintesis!`, '', '', '', '', '', '', 3, 'HARD', 'Fotosintesis mengubah CO2 + air menjadi glukosa.'];
+  }
+}
+
+/** Normalisasi query types: 'PG,BS,ISIAN' atau nama enum (SINGLE_CHOICE dst). */
+function parseTemplateTypes(types?: string): QuestionType[] {
+  const all: QuestionType[] = [
+    'SINGLE_CHOICE',
+    'MULTIPLE_CHOICE',
+    'TRUE_FALSE',
+    'SHORT_ANSWER',
+    'ESSAY',
+  ];
+  if (!types?.trim()) return all;
+  const picked = types
+    .split(/[,\s]+/)
+    .map((t) => TYPE_ALIASES[t.trim().toUpperCase()])
+    .filter((t): t is QuestionType => !!t);
+  return picked.length ? picked : all;
+}
+
+function parseTemplateCount(count?: string): number {
+  const n = Number(count);
+  if (!Number.isFinite(n) || n < 1) return 5;
+  return Math.min(Math.floor(n), 100);
+}
 
 @Injectable()
 export class QuestionsImportService {
@@ -165,7 +165,9 @@ export class QuestionsImportService {
 
   // ---------- TEMPLATE ----------
 
-  async templateXlsx(): Promise<Buffer> {
+  async templateXlsx(count?: string, types?: string): Promise<Buffer> {
+    const n = parseTemplateCount(count);
+    const typeList = parseTemplateTypes(types);
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Soal');
     ws.columns = XLSX_HEADERS.map((h, i) => ({
@@ -174,22 +176,9 @@ export class QuestionsImportService {
       width: i === 2 ? 50 : i >= 3 && i <= 7 ? 22 : 14,
     }));
     ws.getRow(1).font = { bold: true };
-    ws.addRow(XLSX_EXAMPLE);
-    ws.addRow([
-      2,
-      'BS',
-      'Matahari terbit dari timur.',
-      '',
-      '',
-      '',
-      '',
-      '',
-      'Benar',
-      1,
-      'EASY',
-      '',
-    ]);
-    ws.addRow([3, 'ISIAN', 'Ibukota Indonesia adalah ...', '', '', '', '', '', 'Jakarta', 1, 'MEDIUM', '']);
+    for (let i = 0; i < n; i++) {
+      ws.addRow(exampleRow(i + 1, typeList[i % typeList.length]));
+    }
     const guide = wb.addWorksheet('Petunjuk');
     [
       'Isi kolom sesuai header di sheet "Soal".',
@@ -201,7 +190,9 @@ export class QuestionsImportService {
     return Buffer.from(await wb.xlsx.writeBuffer());
   }
 
-  async templateDocx(): Promise<Buffer> {
+  async templateDocx(count?: string, types?: string): Promise<Buffer> {
+    const n = parseTemplateCount(count);
+    const typeList = parseTemplateTypes(types);
     const para = (line: string, bold = false) =>
       `<w:p><w:r>${bold ? '<w:rPr><w:b/></w:rPr>' : ''}<w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r></w:p>`;
     const textLines = DOCX_TEMPLATE_LINES.map((l) => para(l)).join('');
@@ -219,35 +210,22 @@ export class QuestionsImportService {
     const grid = (widths: number[]) =>
       `<w:tblGrid>${widths.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
 
-    // Tabel grid (format seperti Excel) — header tebal.
-    const w1 = [700, 900, 3400, 1300, 1300, 1300, 1300, 1100, 800, 1100];
+    // Satu tabel grid — baris contoh di-generate sesuai count + tipe yang diminta.
+    const w1 = [600, 800, 3200, 1100, 1100, 1100, 1100, 1100, 1000, 700, 1000, 2400];
+    const tableRows = Array.from({ length: n }, (_, i) =>
+      gridRow(
+        exampleRow(i + 1, typeList[i % typeList.length]).map(String),
+        w1,
+      ),
+    ).join('');
     const gridTable =
       `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>${borders}</w:tblPr>${grid(w1)}` +
-      gridRow(['No', 'Tipe', 'Soal', 'Opsi A', 'Opsi B', 'Opsi C', 'Opsi D', 'Kunci', 'Poin', 'Kesulitan'], w1, true) +
-      gridRow(['1', 'PG', 'Berapa hasil 5 x 6? (gambar boleh ditempel di sel ini)', '25', '30', '35', '40', 'B', '2', 'EASY'], w1) +
-      gridRow(['2', 'BS', 'Bumi berbentuk bulat.', '', '', '', '', 'Benar', '1', 'EASY'], w1) +
+      gridRow(XLSX_HEADERS, w1, true) +
+      tableRows +
       '</w:tbl>';
 
-    // Tabel per-soal (kolom 1 label, kolom 2 isi).
-    const w2 = [1800, 7000];
-    const blockTable =
-      `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>${borders}</w:tblPr>${grid(w2)}` +
-      gridRow(['No', '3'], w2, true) +
-      gridRow(['Tipe', 'PG'], w2) +
-      gridRow(['Soal', 'Hasil dari 12 x 11? (gambar juga boleh ditempel di sini)'], w2) +
-      gridRow(['A', '121'], w2) +
-      gridRow(['B', '132'], w2) +
-      gridRow(['C', '144'], w2) +
-      gridRow(['D', '156'], w2) +
-      gridRow(['Kunci', 'B'], w2) +
-      gridRow(['Poin', '2'], w2) +
-      '</w:tbl>';
-
-    const heading1 = para('CONTOH FORMAT TABEL (grid seperti Excel):', true);
-    const note1 = para('Gambar bisa ditempel langsung di sel Soal/Opsi/Pembahasan — otomatis terupload.');
-    const heading2 = para('ATAU FORMAT PER-TABEL (1 tabel = 1 soal):', true);
     const document = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${heading1}${gridTable}${note1}${heading2}${blockTable}${textLines}<w:sectPr/></w:body></w:document>`;
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${textLines}${para('')}${gridTable}<w:sectPr/></w:body></w:document>`;
     const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`;
     const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -849,6 +827,15 @@ export class QuestionsImportService {
       r.explanationImages.length +
       Object.values(r.optionImages).reduce((s, a) => s + a.length, 0);
 
+    // Fingerprint soal yang sudah ada di tujuan — mencegah duplikat bila
+    // file yang sama diimport ulang atau ada baris kembar dalam satu file.
+    const fingerprints = await this.questions.existingFingerprints({
+      programId: refs.programId,
+      levelId: refs.levelId,
+      subjectId: refs.subjectId,
+      category: refs.category,
+    });
+
     const results: ImportRowResult[] = [];
     const valid: { row: ParsedRow; dto: CreateQuestionDto }[] = [];
     for (const row of rows) {
@@ -859,6 +846,26 @@ export class QuestionsImportService {
         dto.levelId = refs.levelId;
         dto.subjectId = refs.subjectId;
         dto.category = refs.category;
+        const fp = this.questions.fingerprintOf({
+          type: dto.type,
+          content: dto.content,
+          imageUrl: dto.imageUrl,
+          answerKey: dto.answerKey,
+          options: dto.options,
+        });
+        if (fingerprints.has(fp)) {
+          results.push({
+            no: row.no,
+            content: dto.content.slice(0, 120),
+            type: dto.type,
+            ok: true,
+            duplicate: true,
+            errors: ['Duplikat — soal identik sudah ada, dilewati.'],
+            images: imgCount(row) || undefined,
+          });
+          continue;
+        }
+        fingerprints.add(fp);
         valid.push({ row, dto });
         results.push({
           no: row.no,
@@ -884,8 +891,21 @@ export class QuestionsImportService {
       for (const { row, dto } of valid) {
         // Upload gambar hasil ekstrak docx ke pustaka media, lalu tempel URL-nya.
         await this.attachImages(row, dto, actor.id, results);
-        await this.questions.create(actor, dto);
-        created++;
+        try {
+          await this.questions.create(actor, dto);
+          created++;
+        } catch (e) {
+          // Balapan dua import — baris yang tiba-tiba duplikat ditandai, bukan abort.
+          if (e instanceof ConflictException) {
+            const res = results.find((r) => r.no === row.no);
+            if (res) {
+              res.duplicate = true;
+              res.errors.push('Duplikat — soal identik sudah ada, dilewati.');
+            }
+            continue;
+          }
+          throw e;
+        }
       }
     }
 

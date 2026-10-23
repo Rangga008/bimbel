@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { Ban, Eye, KeyRound, Pencil, Search, Trash2, UserCog } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { ListPager } from "@/components/shared/list-pager";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { ComboboxField } from "@/components/shared/combobox-field";
 import type { ManagedUser, RoleItem } from "@/lib/users-types";
@@ -54,6 +56,8 @@ export function AccountsManager({ basePath }: { basePath: string }) {
   const debouncedSearch = useDebouncedValue(search);
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<Record<string, string>>({});
   const [createRoles, setCreateRoles] = useState<string[]>([]);
@@ -182,35 +186,43 @@ export function AccountsManager({ basePath }: { basePath: string }) {
         <Button onClick={() => setCreateOpen(true)}>Buat Akun</Button>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-3">
-        <Input
-          placeholder="Cari nama / email..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <ComboboxField
-          id="filter-role"
-          label=""
-          value={roleFilter}
-          onChange={setRoleFilter}
-          options={[
-            { value: "", label: "Semua role" },
-            ...(rolesQuery.data ?? []).map((r) => ({ value: r.name, label: r.name })),
-          ]}
-          placeholder="Semua role"
-        />
-        <ComboboxField
-          id="filter-status"
-          label=""
-          value={statusFilter}
-          onChange={setStatusFilter}
-          options={[
-            { value: "", label: "Semua status" },
-            { value: "aktif", label: "Aktif" },
-            { value: "nonaktif", label: "Nonaktif" },
-          ]}
-          placeholder="Semua status"
-        />
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Cari nama / email / HP..."
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+            className="pl-9"
+          />
+        </div>
+        <div className="w-full sm:w-48">
+          <ComboboxField
+            id="filter-role"
+            label=""
+            value={roleFilter}
+            onChange={(v) => { setRoleFilter(v); setPage(0); }}
+            options={[
+              { value: "", label: "Semua tipe akun" },
+              ...(rolesQuery.data ?? []).map((r) => ({ value: r.name, label: r.name })),
+            ]}
+            placeholder="Semua tipe akun"
+          />
+        </div>
+        <div className="w-full sm:w-40">
+          <ComboboxField
+            id="filter-status"
+            label=""
+            value={statusFilter}
+            onChange={(v) => { setStatusFilter(v); setPage(0); }}
+            options={[
+              { value: "", label: "Semua status" },
+              { value: "aktif", label: "Aktif" },
+              { value: "nonaktif", label: "Nonaktif" },
+            ]}
+            placeholder="Semua status"
+          />
+        </div>
       </div>
 
       {usersQuery.isLoading ? (
@@ -228,68 +240,142 @@ export function AccountsManager({ basePath }: { basePath: string }) {
         </Card>
       ) : null}
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {usersQuery.data?.map((u) => (
-          <Card key={u.id}>
-            <CardContent className="flex flex-col gap-2 py-4">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <UserAvatar name={u.name} avatarUrl={u.avatarUrl} className="size-10" />
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{u.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">{u.email}</p>
-                    {u.phone ? <p className="truncate text-xs text-muted-foreground">{u.phone}</p> : null}
-                  </div>
-                </div>
-                <Badge variant={u.isActive ? "secondary" : "outline"}>
-                  {u.isActive ? "Aktif" : "Nonaktif"}
-                </Badge>
+      {(() => {
+        const users = usersQuery.data ?? [];
+        const pageCount = Math.ceil(users.length / pageSize);
+        const paged = users.slice(page * pageSize, (page + 1) * pageSize);
+        return (
+          <>
+            {users.length > 0 ? (
+              <div className="overflow-x-auto rounded-md border">
+                <table className="w-full min-w-[720px] text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="px-3 py-2 text-left font-medium">Akun</th>
+                      <th className="px-3 py-2 text-left font-medium">No. HP</th>
+                      <th className="px-3 py-2 text-left font-medium">Tipe / Role</th>
+                      <th className="px-3 py-2 text-left font-medium">Status</th>
+                      <th className="px-3 py-2 text-right font-medium">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paged.map((u) => (
+                      <tr key={u.id} className="border-b last:border-0">
+                        <td className="px-3 py-2">
+                          <span className="flex items-center gap-2">
+                            <UserAvatar name={u.name} avatarUrl={u.avatarUrl} className="size-8" />
+                            <span className="min-w-0">
+                              <span className="block truncate font-medium">{u.name}</span>
+                              <span className="block truncate text-xs text-muted-foreground">{u.email}</span>
+                            </span>
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
+                          {u.phone || "—"}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className="flex flex-wrap gap-1">
+                            {u.roles.length === 0 ? (
+                              <Badge variant="outline">tanpa role</Badge>
+                            ) : (
+                              u.roles.map((r) => (
+                                <Badge key={r} variant="outline">{r}</Badge>
+                              ))
+                            )}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <Badge variant={u.isActive ? "secondary" : "outline"}>
+                            {u.isActive ? "Aktif" : "Nonaktif"}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap text-right">
+                          <span className="inline-flex items-center gap-1">
+                            <Link href={`${basePath}/akun/${u.id}`}>
+                              <Button variant="ghost" size="icon-sm" aria-label={`Profil ${u.name}`} title="Profil">
+                                <Eye className="size-4" />
+                              </Button>
+                            </Link>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`Edit ${u.name}`}
+                              title="Edit"
+                              onClick={() => { setEditUser(u); setEditForm({ name: u.name, email: u.email, phone: u.phone ?? "" }); }}
+                            >
+                              <Pencil className="size-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`Role ${u.name}`}
+                              title="Atur role"
+                              onClick={() => setRoleUser(u)}
+                            >
+                              <UserCog className="size-4" />
+                            </Button>
+                            {canReset ? (
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label={`Reset password ${u.name}`}
+                                title="Reset password"
+                                onClick={() => { setResetUser(u); setResetForm({}); }}
+                              >
+                                <KeyRound className="size-4" />
+                              </Button>
+                            ) : null}
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`${u.isActive ? "Nonaktifkan" : "Aktifkan"} ${u.name}`}
+                              title={
+                                me?.id === u.id
+                                  ? "Tidak bisa menonaktifkan akun sendiri"
+                                  : u.isActive ? "Nonaktifkan" : "Aktifkan"
+                              }
+                              disabled={toggleMutation.isPending || (me?.id === u.id && u.isActive)}
+                              onClick={() => setUserToToggle(u)}
+                            >
+                              <Ban className={u.isActive ? "size-4 text-warning-500" : "size-4 text-success-600"} />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`Hapus ${u.name}`}
+                              title={me?.id === u.id ? "Tidak bisa menghapus akun sendiri" : "Hapus"}
+                              disabled={deleteMutation.isPending || me?.id === u.id}
+                              onClick={() => setUserToDelete(u)}
+                            >
+                              <Trash2 className="size-4 text-destructive" />
+                            </Button>
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <div className="flex flex-wrap gap-1">
-                {u.roles.length === 0 ? (
-                  <Badge variant="outline">tanpa role</Badge>
-                ) : (
-                  u.roles.map((r) => <Badge key={r} variant="outline">{r}</Badge>)
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Link href={`${basePath}/akun/${u.id}`}>
-                  <Button size="sm" variant="outline">Profil</Button>
-                </Link>
-                <Button size="sm" variant="outline" onClick={() => { setEditUser(u); setEditForm({ name: u.name, email: u.email, phone: u.phone ?? "" }); }}>
-                  Edit
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setRoleUser(u)}>
-                  Role
-                </Button>
-                {canReset ? (
-                  <Button size="sm" variant="outline" onClick={() => { setResetUser(u); setResetForm({}); }}>
-                    Reset PW
-                  </Button>
-                ) : null}
-                <Button
-                  size="sm"
-                  variant={u.isActive ? "destructive" : "outline"}
-                  disabled={toggleMutation.isPending || (me?.id === u.id && u.isActive)}
-                  title={me?.id === u.id ? "Tidak bisa menonaktifkan akun sendiri" : undefined}
-                  onClick={() => setUserToToggle(u)}
-                >
-                  {u.isActive ? "Nonaktifkan" : "Aktifkan"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  disabled={deleteMutation.isPending || me?.id === u.id}
-                  title={me?.id === u.id ? "Tidak bisa menghapus akun sendiri" : undefined}
-                  onClick={() => setUserToDelete(u)}
-                >
-                  Hapus
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+            ) : null}
+            {users.length === 0 && !usersQuery.isLoading && !usersQuery.isError ? (
+              <Card>
+                <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                  Tidak ada akun yang cocok dengan filter.
+                </CardContent>
+              </Card>
+            ) : null}
+            <ListPager
+              page={page}
+              pageCount={pageCount}
+              total={users.length}
+              shown={pageSize}
+              onPageChange={setPage}
+              pageSize={pageSize}
+              onPageSizeChange={(s) => { setPageSize(s); setPage(0); }}
+            />
+          </>
+        );
+      })()}
 
       <Phase1aFormDialog
         open={createOpen}

@@ -33,6 +33,7 @@ import type { RoleKey } from "@/config/role-nav";
 import { fmtDateTime } from "@/lib/phase1c-types";
 import type { HomeData } from "@/lib/home-types";
 import { rupiah } from "@/components/phase2a/invoices-manager";
+import { SiswaPodium } from "@/components/phase4b/siswa-podium";
 
 const COUNT_META: Record<string, { label: string; icon: LucideIcon }> = {
 	students: { label: "Siswa", icon: GraduationCap },
@@ -137,6 +138,9 @@ export function RoleHome({
 					) : null}
 				</div>
 			</div>
+
+			{/* Podium ranking — siswa langsung lihat top skor kelompok & GFS di atas. */}
+			{data?.role === "SISWA" ? <SiswaPodium /> : null}
 
 			{isLoading && <Skeleton className="h-24 w-full" />}
 			{isError && (

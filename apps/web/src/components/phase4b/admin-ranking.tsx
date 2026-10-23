@@ -1,19 +1,19 @@
 "use client";
 
-import { LeaderboardCard } from "./leaderboard-card";
+import { AdminPodiumBoard } from "./admin-podium-board";
 import { ScoreRulesManager } from "./score-rules-manager";
 
-/** Halaman "Ranking" untuk Admin Academic: leaderboard berscope + kelola score rules. */
+/** Halaman "Ranking" untuk Admin Academic: podium per kelompok/gedung/GFS + score rules. */
 export function AdminRankingPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Ranking</h1>
         <p className="text-sm text-muted-foreground">
-          Leaderboard siswa per periode dengan scope kelompok/level/program/gedung, plus konfigurasi score rules.
+          Top skor pengerjaan soal per kelompok, per gedung, dan seluruh GFS — plus konfigurasi score rules.
         </p>
       </div>
-      <LeaderboardCard adminFilters />
+      <AdminPodiumBoard />
       <ScoreRulesManager />
     </div>
   );

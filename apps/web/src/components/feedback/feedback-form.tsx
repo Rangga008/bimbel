@@ -97,6 +97,11 @@ export function FeedbackForm() {
 			apiFetch<MyFeedback>(`/me/feedback?week=${encodeURIComponent(weekIso)}`),
 		enabled: !!weekStart,
 	});
+	// Siswa: minggu yang sudah lewat hanya bisa dilihat, tidak bisa diubah.
+	const readOnly =
+		contextQ.data?.authorRole === "SISWA" &&
+		!!weekStart &&
+		weekStart.getTime() < mondayOf(new Date()).getTime();
 
 	const existing = useMemo(() => {
 		const map = new Map<string, { content: string; authorName: string; authorRole: string }>();
@@ -348,6 +353,11 @@ export function FeedbackForm() {
 							<CardTitle className="text-base">
 								{st.name} — {g.name}
 								{g.code ? <span className="ml-1 font-mono text-xs text-muted-foreground">({g.code})</span> : null}
+								{readOnly ? (
+									<span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+										Terkirim — hanya dilihat
+									</span>
+								) : null}
 							</CardTitle>
 						</CardHeader>
 						<CardContent className="flex flex-col gap-4">
@@ -365,14 +375,20 @@ export function FeedbackForm() {
 											{sub.name}
 											<span className="ml-1 font-mono text-xs text-muted-foreground">({sub.code})</span>
 										</label>
-										<Textarea
-											rows={2}
-											placeholder={`Apa yang dipelajari ${st.name} di mapel ${sub.name} minggu ini?`}
-											value={drafts[k] ?? prev?.content ?? ""}
-											onChange={(e) =>
-												setDrafts((d) => ({ ...d, [k]: e.target.value }))
-											}
-										/>
+										{readOnly ? (
+											<p className="rounded-md border bg-muted/40 px-3 py-2 text-sm whitespace-pre-wrap">
+												{prev?.content || <span className="text-muted-foreground">— tidak ada feedback —</span>}
+											</p>
+										) : (
+											<Textarea
+												rows={2}
+												placeholder={`Apa yang dipelajari ${st.name} di mapel ${sub.name} minggu ini?`}
+												value={drafts[k] ?? prev?.content ?? ""}
+												onChange={(e) =>
+													setDrafts((d) => ({ ...d, [k]: e.target.value }))
+												}
+											/>
+										)}
 										{prev ? (
 											<p className="text-xs text-muted-foreground">
 												Terakhir diisi oleh {prev.authorName}
@@ -382,7 +398,7 @@ export function FeedbackForm() {
 									</div>
 								);
 							})}
-							{g.subjects.length > 0 ? (
+							{g.subjects.length > 0 && !readOnly ? (
 								<div>
 									<Button
 										size="sm"
@@ -392,6 +408,11 @@ export function FeedbackForm() {
 										{saveM.isPending ? "Menyimpan..." : "Simpan Feedback"}
 									</Button>
 								</div>
+							) : null}
+							{readOnly ? (
+								<p className="text-xs text-muted-foreground">
+									Feedback minggu ini sudah terkirim dan tidak bisa diubah.
+								</p>
 							) : null}
 						</CardContent>
 					</Card>

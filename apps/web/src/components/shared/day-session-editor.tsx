@@ -229,7 +229,9 @@ export function DaySessionEditor({
 				endsAt: new Date(`${dateKey}T${editForm.end}`).toISOString(),
 				subjectId: editForm.subjectId || null,
 				roomId: editForm.roomId || null,
-				status: editForm.status || undefined,
+				// COMPLETED dihasilkan sistem (absensi) — backend menolak status itu
+				// di PATCH; jangan ikutkan supaya edit sesi selesai tetap bisa disimpan.
+				status: editForm.status === "SCHEDULED" || editForm.status === "CANCELLED" ? editForm.status : undefined,
 			},
 		});
 	}

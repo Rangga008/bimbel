@@ -306,6 +306,17 @@ export class FeedbackService {
       throw new ForbiddenException('Hanya akun orang tua atau siswa.');
     }
 
+    // Siswa hanya bisa mengisi minggu berjalan — feedback minggu lalu yang
+    // sudah terkirim bersifat read-only (riwayat).
+    if (
+      authorRole === 'SISWA' &&
+      weekStart.getTime() < this.weekStartOf(new Date()).getTime()
+    ) {
+      throw new BadRequestException(
+        'Feedback minggu yang sudah lewat tidak bisa diubah — hanya bisa dilihat.',
+      );
+    }
+
     const member = await this.prisma.groupMember.findUnique({
       where: { groupId_studentId: { groupId: dto.groupId, studentId: dto.studentId } },
     });

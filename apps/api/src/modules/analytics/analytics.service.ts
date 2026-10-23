@@ -200,6 +200,9 @@ export class AnalyticsService {
     // Get topic analysis based on question difficulty/program/level
     const topicAnalysis = await this.buildTopicAnalysis(studentId);
 
+    // Rincian pengerjaan soal per mapel × kesulitan (ujian + latsol).
+    const subjectDifficulty = await this.buildSubjectDifficulty(studentId);
+
     // Grafik perkembangan nilai per bab (kategori soal) antar ujian.
     const categoryProgress = await this.buildCategoryProgress(studentId);
 
@@ -211,9 +214,85 @@ export class AnalyticsService {
       studentName: student.user.name,
       examHistory,
       topicAnalysis,
+      subjectDifficulty,
       categoryProgress,
       overallStats,
     };
+  }
+
+  /**
+   * Rincian pengerjaan soal per mapel × tingkat kesulitan, dari jawaban ujian
+   * dan latsol yang sudah disubmit: "Matematika — 200 dikerjakan, Easy 30/50
+   * benar, Medium …, Hard …" — dipakai halaman Performa siswa.
+   */
+  private async buildSubjectDifficulty(studentId: string) {
+    const select = {
+      isCorrect: true,
+      question: {
+        select: {
+          difficulty: true,
+          subject: { select: { id: true, name: true } },
+        },
+      },
+    } as const;
+    const [examAnswers, latsolAnswers] = await Promise.all([
+      this.prisma.examAnswer.findMany({
+        where: { attempt: { studentId, status: 'SUBMITTED' } },
+        select,
+      }),
+      this.prisma.latsolAnswer.findMany({
+        where: { attempt: { studentId, status: 'SUBMITTED' } },
+        select,
+      }),
+    ]);
+
+    type Bucket = { total: number; correct: number };
+    const blank = (): Bucket => ({ total: 0, correct: 0 });
+    const groups = new Map<
+      string,
+      {
+        subjectId: string | null;
+        subjectName: string;
+        total: number;
+        correct: number;
+        easy: Bucket;
+        medium: Bucket;
+        hard: Bucket;
+      }
+    >();
+
+    for (const a of [...examAnswers, ...latsolAnswers]) {
+      const sid = a.question.subject?.id ?? null;
+      const key = sid ?? '_umum';
+      if (!groups.has(key)) {
+        groups.set(key, {
+          subjectId: sid,
+          subjectName: a.question.subject?.name ?? 'Umum',
+          total: 0,
+          correct: 0,
+          easy: blank(),
+          medium: blank(),
+          hard: blank(),
+        });
+      }
+      const g = groups.get(key)!;
+      const diff = (a.question.difficulty ?? '').toUpperCase();
+      const bucket =
+        diff === 'EASY' ? g.easy : diff === 'HARD' ? g.hard : g.medium;
+      g.total++;
+      bucket.total++;
+      if (a.isCorrect === true) {
+        g.correct++;
+        bucket.correct++;
+      }
+    }
+
+    return Array.from(groups.values())
+      .map((g) => ({
+        ...g,
+        accuracy: g.total ? Math.round((g.correct / g.total) * 1000) / 10 : 0,
+      }))
+      .sort((a, b) => b.total - a.total || a.subjectName.localeCompare(b.subjectName));
   }
 
   /**
@@ -303,28 +382,31 @@ export class AnalyticsService {
    * Build topic analysis by grouping questions by program/level/difficulty
    */
   private async buildTopicAnalysis(studentId: string) {
-    // Get all answers for this student
-    const answers = await this.prisma.examAnswer.findMany({
-      where: {
-        attempt: {
-          studentId,
-          status: 'SUBMITTED',
+    // Jawaban ujian + latsol siswa — digrup per mapel supaya filter topik
+    // (kuat/cukup/lemah) di halaman Performa bermakna.
+    const qSel = {
+      question: {
+        select: {
+          id: true,
+          difficulty: true,
+          type: true,
+          subject: { select: { id: true, name: true } },
         },
       },
-      include: {
-        question: {
-          select: {
-            id: true,
-            programId: true,
-            levelId: true,
-            difficulty: true,
-            type: true,
-          },
-        },
-      },
-    });
+    } as const;
+    const [examAnswers, latsolAnswers] = await Promise.all([
+      this.prisma.examAnswer.findMany({
+        where: { attempt: { studentId, status: 'SUBMITTED' } },
+        select: { score: true, isCorrect: true, ...qSel },
+      }),
+      this.prisma.latsolAnswer.findMany({
+        where: { attempt: { studentId, status: 'SUBMITTED' } },
+        select: { score: true, isCorrect: true, ...qSel },
+      }),
+    ]);
+    const answers = [...examAnswers, ...latsolAnswers];
 
-    // Group by difficulty as a simple topic classification
+    // Group per mapel — filter Lemah/Cukup/Kuat di UI bekerja pada level ini.
     const topicGroups = new Map<string, {
       totalQuestions: number;
       correctCount: number;
@@ -334,8 +416,7 @@ export class AnalyticsService {
 
     for (const answer of answers) {
       const question = answer.question;
-      const topicKey = question.difficulty || 'MEDIUM';
-      const topicName = `${topicKey} Difficulty`;
+      const topicName = question.subject?.name ?? 'Umum';
 
       if (!topicGroups.has(topicName)) {
         topicGroups.set(topicName, {
@@ -564,7 +645,7 @@ export class AnalyticsService {
    * Data dasar rekap ujian: exam + item terurut + attempt SUBMITTED
    * beserta siswa (nama, asal sekolah, kelompok) dan jawabannya.
    */
-  private async loadExamRecapBase(examId: string) {
+  private async loadExamRecapBase(examId: string, groupId?: string) {
     const exam = await this.prisma.exam.findUnique({
       where: { id: examId },
       include: {
@@ -592,7 +673,14 @@ export class AnalyticsService {
     const catName = new Map(catDefs.map((c) => [c.code, c.name]));
 
     const rawAttempts = await this.prisma.examAttempt.findMany({
-      where: { examId, status: 'SUBMITTED' },
+      where: {
+        examId,
+        status: 'SUBMITTED',
+        // Filter opsional per kelompok — rekap bisa dibatasi anggota 1 kelompok.
+        ...(groupId
+          ? { student: { groupMembers: { some: { groupId } } } }
+          : {}),
+      },
       orderBy: { submittedAt: 'desc' },
       include: {
         answers: true,
@@ -658,8 +746,8 @@ export class AnalyticsService {
   }
 
   /** Rekap nilai semua siswa dalam satu ujian — ala "HASIL SIMULASI" (PDF1). */
-  async getExamScoreRecap(examId: string) {
-    const { exam, attempts, catName } = await this.loadExamRecapBase(examId);
+  async getExamScoreRecap(examId: string, groupId?: string) {
+    const { exam, attempts, catName } = await this.loadExamRecapBase(examId, groupId);
     const { columns, keyOf } = this.recapColumns(exam, catName);
     const colMax = new Map<string, number>(columns.map((c) => [c.key, 0]));
     for (const item of exam.items) {
@@ -718,8 +806,8 @@ export class AnalyticsService {
    * Rekap jawaban per nomor — ala "JAWABAN SISWA" (PDF2):
    * baris KUNCI + jawaban tiap siswa per nomor soal.
    */
-  async getExamAnswerRecap(examId: string) {
-    const { exam, attempts } = await this.loadExamRecapBase(examId);
+  async getExamAnswerRecap(examId: string, groupId?: string) {
+    const { exam, attempts } = await this.loadExamRecapBase(examId, groupId);
 
     // Kunci per soal: huruf opsi benar (A,B,…) / kunci isian / label esai.
     const optionLetters = new Map<string, string>();
@@ -819,8 +907,8 @@ export class AnalyticsService {
   }
 
   /** Export rekap nilai ujian ke .xlsx (ExcelJS). */
-  async exportExamScoreRecapXlsx(examId: string) {
-    const recap = await this.getExamScoreRecap(examId);
+  async exportExamScoreRecapXlsx(examId: string, groupId?: string) {
+    const recap = await this.getExamScoreRecap(examId, groupId);
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Rekap Nilai');
 
@@ -894,8 +982,8 @@ export class AnalyticsService {
    * Export rekap jawaban per nomor ke .xlsx — baris KUNCI + jawaban tiap
    * siswa per nomor, sel benar hijau / salah merah (matriks "JAWABAN SISWA").
    */
-  async exportExamAnswerRecapXlsx(examId: string) {
-    const recap = await this.getExamAnswerRecap(examId);
+  async exportExamAnswerRecapXlsx(examId: string, groupId?: string) {
+    const recap = await this.getExamAnswerRecap(examId, groupId);
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Rekap Jawaban');
 

@@ -25,17 +25,19 @@ export class QuestionsController {
     private readonly audit: AuditService,
   ) {}
 
-  /** Template import soal: ?format=xlsx (default) atau docx. */
+  /** Template import soal: ?format=xlsx (default)|docx, ?count=N, ?types=PG,BS,... */
   @Get('questions/import/template')
   @RequirePermissions(PERMISSION_CODES.QUESTION_MANAGE)
   async template(
     @Query('format') format: string | undefined,
+    @Query('count') count: string | undefined,
+    @Query('types') types: string | undefined,
     @Res() res: Response,
   ) {
     const isDocx = format === 'docx';
     const buf = isDocx
-      ? await this.importer.templateDocx()
-      : await this.importer.templateXlsx();
+      ? await this.importer.templateDocx(count, types)
+      : await this.importer.templateXlsx(count, types);
     res.setHeader(
       'Content-Type',
       isDocx
