@@ -157,7 +157,7 @@ export class AuthController {
     // Login otomatis pakai email kalau diisi, kalau tidak pakai nomor HP —
     // endpoint login sudah mendukung dua-duanya sebagai identifier.
     const tokens = await this.authService.login(
-      dto.email || dto.phone,
+      dto.email || dto.phone || '',
       dto.password,
       {
         ipAddress: req.ip,
@@ -170,7 +170,7 @@ export class AuthController {
 
   /**
    * Pendaftaran mandiri SISWA dari luar bimbel (try out/promosi) — hanya
-   * butuh nama + no HP + sandi; email & kode kelompok opsional. Kode yang
+   * butuh nama + no HP/email + sandi. Kode yang
    * valid langsung memasukkan siswa ke kelompok sehingga ujian yang
    * ditugaskan ke kelompok itu bisa langsung dikerjakan.
    */
@@ -193,7 +193,7 @@ export class AuthController {
       userAgent: req.headers['user-agent'],
     });
     const tokens = await this.authService.login(
-      dto.email || dto.phone,
+      dto.email || dto.phone || '',
       dto.password,
       {
         ipAddress: req.ip,

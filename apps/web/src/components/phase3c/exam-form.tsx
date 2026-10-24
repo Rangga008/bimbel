@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Plus, Trash2 } from 'lucide-react';
+import { FileUp, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,6 +27,7 @@ import {
   emptyQuestionDraft,
   type QuestionDraft,
 } from '@/components/phase3a/question-form-card';
+import { QuestionImportDialog } from '@/components/phase3a/question-import-dialog';
 
 /** Satu subtes di form — nama, durasi sendiri, mapel, dan soalnya sendiri. */
 export interface ExamSubtesForm {
@@ -58,6 +59,8 @@ export interface ExamFormState {
   proctoringEnabled: boolean;
   /** true = siswa langsung melihat nilai+kunci setelah submit. */
   showResultImmediately: boolean;
+  /** true = ujian tampil di halaman publik /tryout (peserta luar). */
+  isPublic: boolean;
   notes: string;
   /** Mode biasa — soal langsung milik ujian. */
   questionIds: string[];
@@ -80,6 +83,7 @@ export function emptyExamForm(): ExamFormState {
     durationMinutes: undefined,
     proctoringEnabled: true,
     showResultImmediately: false,
+    isPublic: false,
     notes: '',
     questionIds: [],
     subtes: [],
@@ -210,6 +214,8 @@ export function ExamForm({
     queryFn: () => apiFetch<GroupListItem[]>('/groups'),
   });
   const [allLevelsGroups, setAllLevelsGroups] = useState(false);
+  // Dialog import soal — 'main' = ujian biasa, angka = indeks subtes.
+  const [importTarget, setImportTarget] = useState<'main' | number | null>(null);
 
   const groups = (groupsQ.data ?? []).filter(
     (g) =>
@@ -243,6 +249,32 @@ export function ExamForm({
   };
 
   const subtesMode = form.subtes.length > 0;
+
+  // Gabung id hasil import ke pilihan target (ujian utama atau subtes).
+  const mergeImported = (ids: string[]) => {
+    if (importTarget === null || !ids.length) return;
+    if (importTarget === 'main') {
+      onChange({
+        ...form,
+        questionIds: [...new Set([...form.questionIds, ...ids])],
+      });
+    } else {
+      const s = form.subtes[importTarget];
+      if (s) {
+        updateSubtes(importTarget, {
+          questionIds: [...new Set([...s.questionIds, ...ids])],
+        });
+      }
+    }
+  };
+
+  // Filter taksonomi yang dipakai dialog import = filter picker target.
+  const importSeed =
+    importTarget === null
+      ? null
+      : importTarget === 'main'
+        ? form.pickerFilters
+        : form.subtes[importTarget]?.pickerFilters;
 
   return (
     <Card>
@@ -364,6 +396,29 @@ export function ExamForm({
               Aktif: siswa langsung melihat nilai, kunci, dan pembahasan begitu selesai.
               Nonaktif: hasil baru dirilis setelah waktu ujian berakhir / ujian diakhiri pengawas
               (cocok untuk try out serentak).
+            </span>
+          </span>
+        </label>
+
+        <label
+          htmlFor="ex-ispublic"
+          className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3"
+        >
+          <input
+            id="ex-ispublic"
+            type="checkbox"
+            checked={form.isPublic}
+            onChange={(e) => onChange({ ...form, isPublic: e.target.checked })}
+            className="mt-0.5 h-4 w-4 accent-emerald-600"
+          />
+          <span className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium">
+              Tampilkan di halaman Try Out publik
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Ujian muncul di halaman /tryout beranda — untuk try out promosi
+              yang bisa diikuti peserta luar. Peserta luar daftar akun,
+              verifikasi HP, lalu masukkan kode akses ujian.
             </span>
           </span>
         </label>
@@ -539,18 +594,28 @@ export function ExamForm({
                       })
                     }
                   />
-                  <QuickQuestionCreate
-                    seed={{
-                      tingkat: s.pickerFilters.tingkat,
-                      programId: s.pickerFilters.programId,
-                      levelId: s.pickerFilters.levelId,
-                      subjectId: s.pickerFilters.subjectId,
-                      category: form.category,
-                    }}
-                    onCreated={(qid) =>
-                      updateSubtes(idx, { questionIds: [...s.questionIds, qid] })
-                    }
-                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <QuickQuestionCreate
+                      seed={{
+                        tingkat: s.pickerFilters.tingkat,
+                        programId: s.pickerFilters.programId,
+                        levelId: s.pickerFilters.levelId,
+                        subjectId: s.pickerFilters.subjectId,
+                        category: form.category,
+                      }}
+                      onCreated={(qid) =>
+                        updateSubtes(idx, { questionIds: [...s.questionIds, qid] })
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setImportTarget(idx)}
+                    >
+                      <FileUp className="mr-1 h-4 w-4" /> Import Soal (Word/Excel)
+                    </Button>
+                  </div>
                 </div>
               ))}
               <Button
@@ -586,20 +651,55 @@ export function ExamForm({
               selectedIds={form.questionIds}
               onToggle={toggleQuestionSelection}
             />
-            <QuickQuestionCreate
-              seed={{
-                tingkat: form.pickerFilters.tingkat,
-                programId: form.pickerFilters.programId,
-                levelId: form.pickerFilters.levelId,
-                subjectId: form.pickerFilters.subjectId,
-                category: form.category,
-              }}
-              onCreated={(qid) =>
-                onChange({ ...form, questionIds: [...form.questionIds, qid] })
-              }
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <QuickQuestionCreate
+                seed={{
+                  tingkat: form.pickerFilters.tingkat,
+                  programId: form.pickerFilters.programId,
+                  levelId: form.pickerFilters.levelId,
+                  subjectId: form.pickerFilters.subjectId,
+                  category: form.category,
+                }}
+                onCreated={(qid) =>
+                  onChange({ ...form, questionIds: [...form.questionIds, qid] })
+                }
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setImportTarget('main')}
+              >
+                <FileUp className="mr-1 h-4 w-4" /> Import Soal (Word/Excel)
+              </Button>
+            </div>
           </>
         )}
+
+        {/* Import soal langsung ke pilihan — soal duplikat otomatis memakai
+            soal yang sudah ada di bank soal. */}
+        <QuestionImportDialog
+          open={importTarget !== null}
+          onOpenChange={(o) => {
+            if (!o) setImportTarget(null);
+          }}
+          initial={
+            importSeed
+              ? {
+                  tingkat: importSeed.tingkat,
+                  levelId: importSeed.levelId,
+                  subjectId:
+                    importTarget === 'main'
+                      ? importSeed.subjectId
+                      : typeof importTarget === 'number'
+                        ? form.subtes[importTarget]?.subjectId || importSeed.subjectId
+                        : importSeed.subjectId,
+                  category: form.category,
+                }
+              : undefined
+          }
+          onImported={mergeImported}
+        />
       </CardContent>
     </Card>
   );

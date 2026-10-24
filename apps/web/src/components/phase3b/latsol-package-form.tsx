@@ -1,10 +1,14 @@
 'use client';
 
+import { useState } from 'react';
+import { FileUp } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { QuestionPicker } from '@/components/shared/question-picker';
+import { QuestionImportDialog } from '@/components/phase3a/question-import-dialog';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
 import { categoryOptions } from '@/lib/content-taxonomy';
 import { useContentCategories } from '@/components/shared/content-drilldown';
@@ -34,6 +38,7 @@ export function LatsolPackageForm({
   onChange: (form: LatsolPackageFormState) => void;
 }) {
   const catsQ = useContentCategories();
+  const [importOpen, setImportOpen] = useState(false);
 
   const toggleQuestion = (questionId: string) => {
     onChange({
@@ -85,6 +90,33 @@ export function LatsolPackageForm({
           onFiltersChange={(f) => onChange({ ...form, tingkat: f.tingkat, subjectId: f.subjectId, programId: f.programId, levelId: f.levelId, category: f.category })}
           selectedIds={form.questionIds}
           onToggle={toggleQuestion}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-fit"
+          onClick={() => setImportOpen(true)}
+        >
+          <FileUp className="mr-1 h-4 w-4" /> Import Soal (Word/Excel)
+        </Button>
+        {/* Soal hasil import langsung terpilih — duplikat memakai soal yang
+            sudah ada di bank soal. */}
+        <QuestionImportDialog
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          initial={{
+            tingkat: form.tingkat,
+            levelId: form.levelId,
+            subjectId: form.subjectId,
+            category: form.category,
+          }}
+          onImported={(ids) =>
+            onChange({
+              ...form,
+              questionIds: [...new Set([...form.questionIds, ...ids])],
+            })
+          }
         />
       </CardContent>
     </Card>

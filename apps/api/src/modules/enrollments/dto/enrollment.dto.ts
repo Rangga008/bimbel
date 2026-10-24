@@ -184,4 +184,10 @@ export class SubmitStatementDto {
   @IsBoolean()
   @Equals(true, { message: 'Ketentuan administrasi harus disetujui.' })
   agreed: boolean;
+
+  /** Tanda tangan digital — data URL PNG dari signature pad (opsional). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(400_000, { message: 'Data tanda tangan terlalu besar.' })
+  signatureData?: string;
 }

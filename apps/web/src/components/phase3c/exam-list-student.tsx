@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { CategoryChips } from '@/components/shared/category-chips';
 import { useContentCategories } from '@/components/shared/content-drilldown';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
 import { categoryLabel } from '@/lib/content-taxonomy';
@@ -193,7 +194,11 @@ export function ExamListStudent() {
   const typeOptions = useMemo(() => {
     const codes = [...new Set(visibleExams.map((e) => e.category).filter((c): c is string => !!c))];
     return codes
-      .map((c) => ({ value: c, label: categoryLabel(c, catsQ.data) }))
+      .map((c) => ({
+        value: c,
+        label: categoryLabel(c, catsQ.data),
+        count: visibleExams.filter((e) => e.category === c).length,
+      }))
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [visibleExams, catsQ.data]);
 
@@ -269,6 +274,17 @@ export function ExamListStudent() {
         </CardContent>
       </Card>
 
+      {/* Pengkategorian — chips tipe (hanya tipe yang ada ujiannya) +
+          filter mapel langsung; tidak perlu drill jenjang. */}
+      {typeOptions.length > 0 ? (
+        <CategoryChips
+          options={typeOptions}
+          value={catFilter}
+          onChange={setCatFilter}
+          total={visibleExams.length}
+        />
+      ) : null}
+
       <div className="flex flex-wrap items-end gap-3">
         <div className="w-full sm:w-44">
           <Phase1aSelectField
@@ -278,16 +294,6 @@ export function ExamListStudent() {
             onChange={setSubjectFilter}
             options={subjectOptions}
             placeholder="Semua mapel"
-          />
-        </div>
-        <div className="w-full sm:w-44">
-          <Phase1aSelectField
-            id="ex-type"
-            label="Tipe"
-            value={catFilter}
-            onChange={setCatFilter}
-            options={typeOptions}
-            placeholder="Semua tipe"
           />
         </div>
         <div className="relative w-full sm:w-56">

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CheckCircle2, FileSignature } from "lucide-react";
+import { CheckCircle2, Eraser, FileSignature } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -19,8 +19,14 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { apiFetch, ApiError } from "@/lib/api-client";
+import { PrintStatementButton } from "./statement-print";
 
-interface StatementRecord {
+export interface StatementInstallment {
+	label: string;
+	amount: number;
+}
+
+export interface ParentStatement {
 	id: string;
 	parentName: string;
 	address: string | null;
@@ -30,11 +36,12 @@ interface StatementRecord {
 	schoolOrigin: string | null;
 	programName: string;
 	paymentLabel: string;
-	installments: { label: string; amount: number }[];
+	installments: StatementInstallment[];
 	installmentAmount: number | null;
 	installmentCount: number | null;
 	totalAmount: number;
 	dueDay: number | null;
+	signatureData: string | null;
 	agreedAt: string;
 }
 
@@ -47,14 +54,14 @@ interface StatementFormData {
 	programName: string;
 	dueDay: number | null;
 	paymentLabel: string;
-	installments: { label: string; amount: number }[];
+	installments: StatementInstallment[];
 	installmentAmount: number | null;
 	installmentCount: number | null;
 	totalAmount: number;
 }
 
 interface StatementResponse {
-	statement: StatementRecord | null;
+	statement: ParentStatement | null;
 	status: string;
 	form: StatementFormData;
 }
@@ -67,7 +74,7 @@ function rp(value: number | string | null | undefined) {
 }
 
 /** Ketentuan administrasi kontrak belajar — versi v1 sesuai brosur GFS. */
-const TERMS = [
+export const STATEMENT_TERMS = [
 	"Biaya les bukan dihitung biaya per bulan, tetapi biaya paket sampai selesai akhir tahun ajaran yang dapat dipermudah dengan diangsur. Jika program sudah selesai dan masih memiliki sisa pembayaran sesuai total biaya les yang seharusnya, orang tua wajib menyelesaikan sisa pembayaran (tidak tergantung tanggal/bulan masuk les).",
 	"Menjelang akhir tahun ajaran, orang tua wajib menyelesaikan seluruh pembayaran yakni: maksimal satu minggu sebelum ujian sekolah/UTBK untuk kelas 6, 9, dan 12; maksimal satu minggu sebelum ujian kenaikan kelas untuk kelas 3, 4, 5, 7, 8, 10, dan 11.",
 	"Jika siswa mengonfirmasi tidak menyelesaikan/berhenti sebelum program berakhir dan pilihan biaya les diangsur, maka orang tua wajib membayar denda 50% dari sisa angsuran yang seharusnya dibayarkan.",
@@ -81,6 +88,105 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 		<div className="flex flex-col gap-1">
 			<Label className="text-xs text-muted-foreground">{label}</Label>
 			{children}
+		</div>
+	);
+}
+
+/** Kanvas tanda tangan sederhana — pointer events, output dataURL PNG. */
+function SignaturePad({
+	onChange,
+}: {
+	onChange: (dataUrl: string | null) => void;
+}) {
+	const canvasRef = useRef<HTMLCanvasElement>(null);
+	const drawing = useRef(false);
+	const [empty, setEmpty] = useState(true);
+
+	useEffect(() => {
+		const canvas = canvasRef.current;
+		if (!canvas) return;
+		const ctx = canvas.getContext("2d");
+		if (!ctx) return;
+		ctx.fillStyle = "#ffffff";
+		ctx.fillRect(0, 0, canvas.width, canvas.height);
+		ctx.strokeStyle = "#1e293b";
+		ctx.lineWidth = 2.2;
+		ctx.lineCap = "round";
+		ctx.lineJoin = "round";
+	}, []);
+
+	const pos = (e: React.PointerEvent) => {
+		const canvas = canvasRef.current!;
+		const rect = canvas.getBoundingClientRect();
+		return {
+			x: ((e.clientX - rect.left) / rect.width) * canvas.width,
+			y: ((e.clientY - rect.top) / rect.height) * canvas.height,
+		};
+	};
+
+	const emit = () => {
+		const canvas = canvasRef.current;
+		if (canvas) onChange(canvas.toDataURL("image/png"));
+	};
+
+	return (
+		<div className="flex flex-col gap-1.5">
+			<canvas
+				ref={canvasRef}
+				width={480}
+				height={170}
+				className="w-full touch-none rounded-md border bg-white"
+				onPointerDown={(e) => {
+					drawing.current = true;
+					const ctx = canvasRef.current?.getContext("2d");
+					const p = pos(e);
+					ctx?.beginPath();
+					ctx?.moveTo(p.x, p.y);
+					(e.target as HTMLElement).setPointerCapture(e.pointerId);
+				}}
+				onPointerMove={(e) => {
+					if (!drawing.current) return;
+					const ctx = canvasRef.current?.getContext("2d");
+					const p = pos(e);
+					ctx?.lineTo(p.x, p.y);
+					ctx?.stroke();
+					if (empty) setEmpty(false);
+				}}
+				onPointerUp={() => {
+					if (drawing.current) {
+						drawing.current = false;
+						emit();
+					}
+				}}
+				onPointerLeave={() => {
+					if (drawing.current) {
+						drawing.current = false;
+						emit();
+					}
+				}}
+			/>
+			<div className="flex items-center justify-between">
+				<p className="text-xs text-muted-foreground">
+					Gambar tanda tangan di dalam kotak (opsional — bisa juga materai saat cetak).
+				</p>
+				<Button
+					type="button"
+					variant="ghost"
+					size="sm"
+					onClick={() => {
+						const canvas = canvasRef.current;
+						const ctx = canvas?.getContext("2d");
+						if (canvas && ctx) {
+							ctx.fillStyle = "#ffffff";
+							ctx.fillRect(0, 0, canvas.width, canvas.height);
+						}
+						setEmpty(true);
+						onChange(null);
+					}}
+				>
+					<Eraser className="size-3.5" /> Hapus
+				</Button>
+			</div>
 		</div>
 	);
 }
@@ -108,6 +214,7 @@ export function ParentStatementDialog({
 		agreed: false,
 	});
 	const [editing, setEditing] = useState(false);
+	const [signatureData, setSignatureData] = useState<string | null>(null);
 
 	const dataQ = useQuery({
 		queryKey: ["parent-statement", enrollmentId],
@@ -134,7 +241,7 @@ export function ParentStatementDialog({
 
 	const submitM = useMutation({
 		mutationFn: () =>
-			apiFetch<StatementRecord>(`/me/enrollments/${enrollmentId}/statement`, {
+			apiFetch<ParentStatement>(`/me/enrollments/${enrollmentId}/statement`, {
 				method: "POST",
 				body: {
 					parentName: form.parentName.trim(),
@@ -142,6 +249,7 @@ export function ParentStatementDialog({
 					phone: form.phone.trim() || undefined,
 					schoolOrigin: form.schoolOrigin.trim() || undefined,
 					dueDay: form.dueDay ? Number(form.dueDay) : undefined,
+					signatureData: signatureData ?? undefined,
 					agreed: true,
 				},
 			}),
@@ -238,9 +346,21 @@ export function ParentStatementDialog({
 									</div>
 								</div>
 							</div>
-							<Button variant="outline" size="sm" className="self-end" onClick={() => setEditing(true)}>
-								Perbarui Surat Pernyataan
-							</Button>
+							{s.signatureData ? (
+								<Field label="Tanda Tangan">
+									<img
+										src={s.signatureData}
+										alt="Tanda tangan orang tua"
+										className="h-20 w-auto rounded-md border bg-white object-contain p-1"
+									/>
+								</Field>
+							) : null}
+							<div className="flex items-center justify-end gap-2">
+								<PrintStatementButton enrollmentId={enrollmentId!} base="/me/enrollments" />
+								<Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+									Perbarui Surat Pernyataan
+								</Button>
+							</div>
 						</div>
 					) : (
 						// Formulir pengisian / koreksi surat pernyataan.
@@ -331,10 +451,15 @@ export function ParentStatementDialog({
 							<div className="rounded-md border">
 								<div className="border-b bg-muted/50 px-3 py-2 text-xs font-medium">Ketentuan Administrasi</div>
 								<ol className="max-h-44 list-decimal space-y-2 overflow-y-auto px-6 py-3 text-xs text-muted-foreground">
-									{TERMS.map((t, i) => (
+									{STATEMENT_TERMS.map((t, i) => (
 										<li key={i}>{t}</li>
 									))}
 								</ol>
+							</div>
+
+							<div className="flex flex-col gap-1">
+								<Label className="text-xs text-muted-foreground">Tanda Tangan Orang Tua/Wali</Label>
+								<SignaturePad onChange={setSignatureData} />
 							</div>
 
 							<label className="flex cursor-pointer items-start gap-2 text-sm">

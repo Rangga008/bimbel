@@ -124,6 +124,11 @@ export class CreateExamDto {
   @IsOptional()
   @IsBoolean()
   showResultImmediately?: boolean;
+
+  /** true = tampil di halaman publik /tryout (promosi peserta luar). */
+  @IsOptional()
+  @IsBoolean()
+  isPublic?: boolean;
 }
 
 export class UpdateExamDto {
@@ -206,6 +211,11 @@ export class UpdateExamDto {
   @IsOptional()
   @IsBoolean()
   showResultImmediately?: boolean;
+
+  /** true = tampil di halaman publik /tryout (promosi peserta luar). */
+  @IsOptional()
+  @IsBoolean()
+  isPublic?: boolean;
 }
 
 export class RedeemExamCodeDto {

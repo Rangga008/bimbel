@@ -104,9 +104,9 @@ function LatsolPackageEditForm({
     onError: (e) => toast.error(err(e, 'Gagal menghapus paket latsol.')),
   });
 
-  // Jenjang + mapel + tipe wajib — paket latsol dikategorikan per jenjang.
+  // Jenjang + tipe wajib; mapel opsional (paket campuran boleh tanpa mapel).
   const isValid =
-    !!form.title.trim() && !!form.levelId && !!form.subjectId && !!form.category &&
+    !!form.title.trim() && !!form.levelId && !!form.category &&
     form.questionIds.length > 0;
 
   return (

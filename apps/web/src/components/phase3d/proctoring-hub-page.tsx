@@ -64,12 +64,25 @@ export function ProctoringHubPage({ examBasePath }: { examBasePath: string }) {
   const catsQ = useContentCategories();
   const [search, setSearch] = useState('');
   const [liveFilter, setLiveFilter] = useState<LiveFilter>('RUNNING');
+  const [catFilter, setCatFilter] = useState('');
 
   const examsQ = useQuery({
     queryKey: ['exams'],
     queryFn: () => apiFetch<ExamRow[]>('/exams?all=1'),
     refetchInterval: 30000,
   });
+
+  // Opsi tipe diturunkan dari ujian yang ada — berguna saat ujian banyak.
+  const catOptions = [
+    ...new Set(
+      (examsQ.data ?? [])
+        .filter((e) => e.status === 'PUBLISHED' || e.status === 'ENDED')
+        .map((e) => e.category)
+        .filter((c): c is string => !!c),
+    ),
+  ]
+    .map((c) => ({ value: c, label: categoryLabel(c, catsQ.data) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
   if (examsQ.isLoading) {
     return (
@@ -94,6 +107,7 @@ export function ProctoringHubPage({ examBasePath }: { examBasePath: string }) {
   const rows = (examsQ.data ?? [])
     .filter((e) => e.status === 'PUBLISHED' || e.status === 'ENDED')
     .filter((e) => !liveFilter || liveState(e) === liveFilter)
+    .filter((e) => !catFilter || e.category === catFilter)
     .filter(
       (e) =>
         !q ||
@@ -128,6 +142,16 @@ export function ProctoringHubPage({ examBasePath }: { examBasePath: string }) {
             onChange={(v) => setLiveFilter(v as LiveFilter)}
             options={LIVE_FILTER_OPTIONS}
             placeholder="Semua ujian aktif"
+          />
+        </div>
+        <div className="w-full sm:w-44">
+          <Phase1aSelectField
+            id="proc-exam-type"
+            label="Tipe Ujian"
+            value={catFilter}
+            onChange={setCatFilter}
+            options={catOptions}
+            placeholder="Semua tipe"
           />
         </div>
         <div className="relative w-full sm:w-64">

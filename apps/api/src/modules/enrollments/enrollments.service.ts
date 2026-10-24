@@ -701,6 +701,11 @@ export class EnrollmentsService {
       );
     }
     const snap = this.statementSnapshot(e);
+    // Hanya terima data URL PNG/JPG dari signature pad — blokir konten lain.
+    const signatureData =
+      dto.signatureData && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(dto.signatureData)
+        ? dto.signatureData
+        : null;
     const data = {
       parentName: dto.parentName.trim(),
       address: dto.address?.trim() || null,
@@ -712,6 +717,7 @@ export class EnrollmentsService {
       dueDay: dto.dueDay ?? (e.invoices[0]?.dueDate ? new Date(e.invoices[0].dueDate).getDate() : null),
       ...snap,
       installments: snap.installments as unknown as Prisma.InputJsonValue,
+      signatureData,
       agreedAt: new Date(),
     };
     return this.prisma.parentStatement.upsert({
@@ -724,6 +730,33 @@ export class EnrollmentsService {
       },
       update: data,
     });
+  }
+
+  /**
+   * Admin: baca surat pernyataan satu pendaftaran (untuk cetak arsip).
+   * Bentuk respons sama dengan statementForm ortu.
+   */
+  async adminStatement(enrollmentId: string) {
+    const e = await this.prisma.enrollment.findUnique({
+      where: { id: enrollmentId },
+      include: this.statementEnrollmentInclude(),
+    });
+    if (!e) throw new NotFoundException('Pendaftaran tidak ditemukan.');
+    const snap = this.statementSnapshot(e);
+    return {
+      statement: e.statement,
+      status: e.status,
+      form: {
+        parentName: e.parent.user.name,
+        phone: e.parent.user.phone ?? '',
+        studentName: e.student?.user.name ?? e.childName,
+        levelName: e.level.name,
+        schoolOrigin: e.student?.schoolOrigin ?? '',
+        programName: e.program.name,
+        dueDay: e.invoices[0]?.dueDate ? new Date(e.invoices[0].dueDate).getDate() : null,
+        ...snap,
+      },
+    };
   }
 
   /** Ortu: daftar anak yang tertaut ke akunnya — termasuk identitas login

@@ -161,6 +161,13 @@ export class EnrollmentsController {
     return this.enrollments.list({ status, studentId });
   }
 
+  /** Admin: surat pernyataan tersimpan untuk satu pendaftaran (cetak arsip). */
+  @Get('enrollments/:id/statement')
+  @RequirePermissions(PERMISSION_CODES.ENROLLMENT_VIEW)
+  adminStatement(@Param('id') id: string) {
+    return this.enrollments.adminStatement(id);
+  }
+
   @Post('enrollments/:id/accept')
   @RequirePermissions(PERMISSION_CODES.ENROLLMENT_REVIEW)
   async accept(

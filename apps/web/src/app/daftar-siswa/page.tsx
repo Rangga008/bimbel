@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -42,22 +42,16 @@ interface RegisterResponse {
 	};
 }
 
-interface GroupJoinInfo {
-	name: string;
-	level: string | null;
-	program: string | null;
-}
-
 const HIGHLIGHTS = [
 	{ icon: GraduationCap, text: "Ikut try out & ujian tanpa daftar lewat ortu" },
-	{ icon: Ticket, text: "Masuk kelompok otomatis pakai kode dari bimbel" },
-	{ icon: FileCheck2, text: "Hasil, ranking & pembahasan langsung di akunmu" },
+	{ icon: Ticket, text: "Masuk ujian cukup pakai kode akses dari bimbel" },
+	{ icon: FileCheck2, text: "Hasil, nilai per subtes & pembahasan di akunmu" },
 	{ icon: Trophy, text: "Kumpulkan poin dan naik peringkat" },
 ];
 
 /** Pendaftaran mandiri siswa dari luar bimbel — cukup nama + no HP + sandi.
- *  Kode kelompok opsional: bila valid, siswa langsung jadi anggota kelompok
- *  dan bisa mengerjakan ujian yang ditugaskan ke kelompok itu (try out/promosi). */
+ *  Setelah daftar, siswa masuk ke menu Ujian dan memasukkan kode akses ujian
+ *  (try out/promosi) — tidak perlu kode kelompok. */
 export default function DaftarSiswaPage() {
 	const router = useRouter();
 	const setSession = useAuthStore((state) => state.setSession);
@@ -66,40 +60,15 @@ export default function DaftarSiswaPage() {
 	const [phone, setPhone] = useState("");
 	const [password, setPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
-	const [joinCode, setJoinCode] = useState("");
-	const [joinInfo, setJoinInfo] = useState<GroupJoinInfo | null>(null);
-	const [joinError, setJoinError] = useState<string | null>(null);
 	const [showPassword, setShowPassword] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
-	// Preview kode kelompok — cek ke API saat kode terlihat lengkap.
-	useEffect(() => {
-		const code = joinCode.trim();
-		if (code.length < 5) {
-			setJoinInfo(null);
-			setJoinError(null);
-			return;
-		}
-		const t = setTimeout(async () => {
-			try {
-				const info = await apiFetch<GroupJoinInfo>(
-					`/auth/group-join/${encodeURIComponent(code)}`,
-					{ auth: false },
-				);
-				setJoinInfo(info);
-				setJoinError(null);
-			} catch (e) {
-				setJoinInfo(null);
-				setJoinError(
-					e instanceof ApiError ? e.message : "Kode kelompok tidak valid.",
-				);
-			}
-		}, 400);
-		return () => clearTimeout(t);
-	}, [joinCode]);
-
 	async function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
+		if (!phone.trim() && !email.trim()) {
+			toast.error("Isi nomor HP atau email — minimal salah satu.");
+			return;
+		}
 		if (password !== confirmPassword) {
 			toast.error("Konfirmasi kata sandi tidak sama.");
 			return;
@@ -110,18 +79,17 @@ export default function DaftarSiswaPage() {
 				method: "POST",
 				body: {
 					name,
-					phone,
+					phone: phone.trim() || undefined,
 					password,
 					email: email.trim() || undefined,
-					joinCode: joinCode.trim() || undefined,
 				},
 				auth: false,
 			});
 			setSession(data.accessToken, data.user);
 			toast.success(
-				`Pendaftaran berhasil — selamat datang, ${data.user.name}!${
-					joinInfo ? ` Kamu masuk kelompok ${joinInfo.name}.` : ""
-				} Verifikasi nomor HP via WhatsApp dari banner di halaman utama.`,
+				phone.trim()
+					? `Pendaftaran berhasil — selamat datang, ${data.user.name}! Verifikasi nomor HP via WhatsApp dari banner di halaman utama.`
+					: `Pendaftaran berhasil — selamat datang, ${data.user.name}! Masuk memakai email Anda.`,
 				{ duration: 8000 },
 			);
 			router.replace("/siswa");
@@ -177,7 +145,7 @@ export default function DaftarSiswaPage() {
 						</div>
 						<div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
 							<div className="flex flex-col gap-1.5">
-								<Label htmlFor="phone">No. HP / WhatsApp *</Label>
+								<Label htmlFor="phone">No. HP / WhatsApp</Label>
 								<div className="relative">
 									<Phone className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
 									<Input
@@ -186,7 +154,6 @@ export default function DaftarSiswaPage() {
 										autoComplete="tel"
 										placeholder="08..."
 										className="pl-9"
-										required
 										minLength={9}
 										value={phone}
 										onChange={(e) => setPhone(e.target.value)}
@@ -194,12 +161,7 @@ export default function DaftarSiswaPage() {
 								</div>
 							</div>
 							<div className="flex flex-col gap-1.5">
-								<Label htmlFor="email">
-									Email{" "}
-									<span className="font-normal text-muted-foreground">
-										(opsional)
-									</span>
-								</Label>
+								<Label htmlFor="email">Email</Label>
 								<div className="relative">
 									<Mail className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
 									<Input
@@ -215,42 +177,10 @@ export default function DaftarSiswaPage() {
 							</div>
 						</div>
 						<p className="-mt-2 text-xs text-muted-foreground">
-							No. HP dipakai untuk masuk — email boleh dikosongkan.
+							Isi <b>salah satu</b>: no HP (login via HP + verifikasi WA) atau
+							email (login via email). No HP/email yang sudah terdaftar akan
+							ditolak supaya tidak ada akun ganda.
 						</p>
-
-						<div className="flex flex-col gap-1.5">
-							<Label htmlFor="joinCode">
-								Kode Kelompok{" "}
-								<span className="font-normal text-muted-foreground">
-									(opsional — dari pengumuman bimbel)
-								</span>
-							</Label>
-							<div className="relative">
-								<Ticket className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-								<Input
-									id="joinCode"
-									placeholder="Mis. K7X2P4"
-									className="pl-9 uppercase"
-									maxLength={20}
-									value={joinCode}
-									onChange={(e) => setJoinCode(e.target.value)}
-								/>
-							</div>
-							{joinInfo && (
-								<p className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-									Kode valid — kamu akan masuk kelompok{" "}
-									<strong>{joinInfo.name}</strong>
-									{joinInfo.level ? ` (${joinInfo.level})` : ""}
-									{joinInfo.program ? ` · ${joinInfo.program}` : ""} dan bisa
-									langsung mengerjakan ujiannya.
-								</p>
-							)}
-							{joinError && (
-								<p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-									{joinError}
-								</p>
-							)}
-						</div>
 
 						<div className="flex flex-col gap-1.5">
 							<Label htmlFor="password">Kata Sandi</Label>

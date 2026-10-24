@@ -62,6 +62,10 @@ export default function DaftarPage() {
 
 	async function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
+		if (!phone.trim() && !email.trim()) {
+			toast.error("Isi nomor HP atau email — minimal salah satu.");
+			return;
+		}
 		if (password !== confirmPassword) {
 			toast.error("Konfirmasi kata sandi tidak sama.");
 			return;
@@ -73,14 +77,16 @@ export default function DaftarPage() {
 				body: {
 					name,
 					email: email.trim() || undefined,
-					phone,
+					phone: phone.trim() || undefined,
 					password,
 				},
 				auth: false,
 			});
 			setSession(data.accessToken, data.user);
 			toast.success(
-				`Pendaftaran berhasil — selamat datang, ${data.user.name}! Verifikasi nomor HP via WhatsApp dari banner di halaman utama.`,
+				phone.trim()
+					? `Pendaftaran berhasil — selamat datang, ${data.user.name}! Verifikasi nomor HP via WhatsApp dari banner di halaman utama.`
+					: `Pendaftaran berhasil — selamat datang, ${data.user.name}! Masuk memakai email Anda.`,
 				{ duration: 8000 },
 			);
 			router.replace("/orang-tua");
@@ -135,7 +141,7 @@ export default function DaftarPage() {
 						</div>
 						<div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
 							<div className="flex flex-col gap-1.5">
-								<Label htmlFor="phone">No. HP / WhatsApp *</Label>
+								<Label htmlFor="phone">No. HP / WhatsApp</Label>
 								<div className="relative">
 									<Phone className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
 									<Input
@@ -144,7 +150,6 @@ export default function DaftarPage() {
 										autoComplete="tel"
 										placeholder="08..."
 										className="pl-9"
-										required
 										minLength={9}
 										value={phone}
 										onChange={(e) => setPhone(e.target.value)}
@@ -152,7 +157,7 @@ export default function DaftarPage() {
 								</div>
 							</div>
 							<div className="flex flex-col gap-1.5">
-								<Label htmlFor="email">Email <span className="font-normal text-muted-foreground">(opsional)</span></Label>
+								<Label htmlFor="email">Email</Label>
 								<div className="relative">
 									<Mail className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
 									<Input
@@ -168,7 +173,9 @@ export default function DaftarPage() {
 							</div>
 						</div>
 						<p className="-mt-2 text-xs text-muted-foreground">
-							No. HP dipakai untuk masuk &amp; notifikasi WhatsApp — email boleh dikosongkan.
+							Isi <b>salah satu</b>: no HP (login via HP + notifikasi WhatsApp)
+							atau email (login via email). No HP/email yang sudah terdaftar
+							akan ditolak supaya tidak ada akun ganda.
 						</p>
 						<div className="flex flex-col gap-1.5">
 							<Label htmlFor="password">Kata Sandi</Label>

@@ -19,8 +19,9 @@ import { apiFetch, resolveAssetUrl } from "@/lib/api-client";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { PhoneVerificationBanner } from "@/components/shared/phone-verification-banner";
 import { useAuthStore } from "@/stores/auth-store";
-import { ROLE_LABELS, ROLE_NAV, type RoleKey } from "@/config/role-nav";
+import { ROLE_LABELS, navItemsFor, type RoleKey } from "@/config/role-nav";
 import { NotificationBell, userInitials } from "./shell-shared";
+import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { useBranding } from "@/lib/use-branding";
 
 export function AppShellMobile({
@@ -36,8 +37,10 @@ export function AppShellMobile({
 	const clearSession = useAuthStore((state) => state.clearSession);
 	const branding = useBranding();
 
-	const navItems = ROLE_NAV[role].filter((item) => item.placement === "nav");
-	const moreItems = ROLE_NAV[role].filter(
+	const navItems = navItemsFor(role, user).filter(
+		(item) => item.placement === "nav",
+	);
+	const moreItems = navItemsFor(role, user).filter(
 		(item) => item.placement === "lainnya",
 	);
 	// Kelompokkan "Lainnya" per grup menu supaya sheet panjang tetap rapi.
@@ -83,6 +86,7 @@ export function AppShellMobile({
 					</div>
 				</Link>
 				<div className="flex shrink-0 items-center gap-1.5">
+					<ThemeToggle variant="ghost" />
 					<NotificationBell role={role} />
 					<Avatar size="sm">
 						{user?.avatarUrl ? (

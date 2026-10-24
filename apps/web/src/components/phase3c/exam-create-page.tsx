@@ -17,6 +17,19 @@ function err(e: unknown, fb: string) {
   return e instanceof ApiError ? e.message : fb;
 }
 
+/** datetime-local (waktu lokal/WIB admin) → ISO UTC untuk disimpan server. */
+export function localInputToIso(v: string): string {
+  return v ? new Date(v).toISOString() : v;
+}
+
+/** ISO UTC dari server → nilai input datetime-local (waktu lokal). */
+export function isoToLocalInput(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /** Susun payload create/update dari state form — mode subtes vs mode biasa. */
 export function buildExamPayload(form: ExamFormState) {
   const subtesMode = form.subtes.length > 0;
@@ -27,11 +40,12 @@ export function buildExamPayload(form: ExamFormState) {
     category: form.category || undefined,
     title: form.title,
     description: form.description || undefined,
-    scheduledStartAt: form.scheduledStartAt,
-    scheduledEndAt: form.scheduledEndAt,
+    scheduledStartAt: localInputToIso(form.scheduledStartAt),
+    scheduledEndAt: localInputToIso(form.scheduledEndAt),
     durationMinutes: form.durationMinutes,
     proctoringEnabled: form.proctoringEnabled,
     showResultImmediately: form.showResultImmediately,
+    isPublic: form.isPublic,
     notes: form.notes || undefined,
     groupIds: form.groupIds,
     // Selalu kirim `subtes` — array kosong membersihkan subtes lama saat
@@ -65,7 +79,8 @@ export function examFormValid(form: ExamFormState): boolean {
       (s) => s.name.trim() && Number(s.durationMinutes) > 0 && s.questionIds.length > 0,
     );
   }
-  return !!form.pickerFilters.subjectId && form.questionIds.length > 0;
+  // Mapel opsional — ujian campuran/try out boleh tanpa mapel tunggal.
+  return form.questionIds.length > 0;
 }
 
 /** Halaman "Buat Ujian" — halaman terpisah (bukan modal). */

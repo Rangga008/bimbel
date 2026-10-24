@@ -7,6 +7,9 @@ export interface AuthUser {
 	avatarUrl?: string | null;
 	roles: string[];
 	permissions: string[];
+	/** true = siswa tanpa keanggotaan kelompok (peserta luar/try out) —
+	 *  menu disempitkan jadi Ujian + Profil. */
+	studentGroupless?: boolean;
 }
 
 interface AuthState {

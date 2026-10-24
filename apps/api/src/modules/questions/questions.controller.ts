@@ -113,6 +113,7 @@ export class QuestionsController {
     @Query('type') type?: string,
     @Query('difficulty') difficulty?: string,
     @Query('search') search?: string,
+    @Query('ids') ids?: string,
   ) {
     return this.questions.list(actor, {
       programId,
@@ -122,6 +123,7 @@ export class QuestionsController {
       type,
       difficulty,
       search,
+      ids,
     });
   }
 

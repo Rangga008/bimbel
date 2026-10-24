@@ -7,10 +7,12 @@ import {
 	ArrowDownToLine,
 	ArrowUpFromLine,
 	Bell,
+	BookOpen,
 	ChartColumn,
 	ClipboardList,
 	GraduationCap,
 	Landmark,
+	Presentation,
 	Printer,
 	Receipt,
 	TriangleAlert,
@@ -70,6 +72,15 @@ function esc(s: string) {
 		.replace(/>/g, "&gt;")
 		.replace(/"/g, "&quot;");
 }
+
+const COUNT_META: Record<string, { label: string; icon: LucideIcon }> = {
+	students: { label: "Siswa", icon: GraduationCap },
+	parents: { label: "Orang Tua", icon: Users },
+	tutors: { label: "Tutor", icon: Presentation },
+	groups: { label: "Kelompok", icon: Users },
+	activeGroups: { label: "Kelompok Aktif", icon: Users },
+	programs: { label: "Program", icon: BookOpen },
+};
 
 function deltaBadge(pct: number | null) {
 	if (pct === null || pct === undefined) return null;
@@ -262,6 +273,17 @@ export function FinanceDashboard() {
 
 			{data ? (
 				<>
+					{/* Statistik populasi — program/kelompok/tutor/siswa/ortu,
+					    seperti dashboard admin akademik. */}
+					{Object.keys(counts).length > 0 ? (
+						<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+							{Object.entries(counts).map(([key, value]) => {
+								const meta = COUNT_META[key] ?? { label: key, icon: ChartColumn };
+								return <KpiCard key={key} icon={meta.icon} label={meta.label} value={value} />;
+							})}
+						</div>
+					) : null}
+
 					{/* KPI bisnis */}
 					<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
 						<KpiCard icon={ArrowDownToLine} label="Pendapatan Bulan Ini" value={rupiah(cmp?.revenue.current ?? 0)} tone="success" />

@@ -148,7 +148,22 @@ export class PaymentsService {
       include: { parentStudents: { select: { studentId: true } } },
     });
     if (!parent) return [];
-    return parent.parentStudents.map((p) => p.studentId);
+    // Pendaftaran atas nama ortu ini juga membuktikan kepemilikan anak —
+    // jangan bergantung pada link saja (link bisa terhapus terpisah dari
+    // enrollment, mis. unlink admin), supaya tagihannya tetap bisa dibayar.
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: {
+        parentId: parent.id,
+        status: { not: 'REJECTED' },
+      },
+      select: { studentId: true },
+    });
+    return [
+      ...new Set([
+        ...parent.parentStudents.map((p) => p.studentId),
+        ...enrollments.map((e) => e.studentId),
+      ]),
+    ];
   }
 
   async allowedStudentsOrThrow(userId: string): Promise<string[]> {

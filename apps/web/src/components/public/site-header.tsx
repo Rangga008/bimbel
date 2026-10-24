@@ -20,18 +20,18 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useBranding } from "@/lib/use-branding";
+import { ThemeToggle } from "@/components/shared/theme-toggle";
 import {
 	DEFAULT_REGISTRATION_URL,
 	programSlug,
 	useLanding,
 } from "@/lib/landing";
 
+/** Nav utama — sengaja dirampingkan: hanya pintasan penting; anchor detail
+ *  (testimoni, fasilitas, cara daftar) tetap bisa diakses lewat footer. */
 const NAV_LINKS = [
 	{ href: "/#beranda", label: "Beranda" },
-	{ href: "/#tentang", label: "Tentang" },
-	{ href: "/#cara-daftar", label: "Cara Daftar" },
-	{ href: "/#testimoni", label: "Testimoni" },
-	{ href: "/#fasilitas", label: "Fasilitas" },
+	{ href: "/tryout", label: "Try Out" },
 	{ href: "/#kontak", label: "Kontak" },
 ];
 
@@ -90,7 +90,7 @@ export function SiteHeader() {
 					</div>
 				</Link>
 				<nav className="hidden items-center gap-1 lg:flex">
-					{NAV_LINKS.slice(0, 2).map((l) => (
+					{NAV_LINKS.slice(0, 1).map((l) => (
 						<Link
 							key={l.href}
 							href={l.href}
@@ -100,7 +100,7 @@ export function SiteHeader() {
 						</Link>
 					))}
 					{programMenu}
-					{NAV_LINKS.slice(2).map((l) => (
+					{NAV_LINKS.slice(1).map((l) => (
 						<Link
 							key={l.href}
 							href={l.href}
@@ -111,6 +111,7 @@ export function SiteHeader() {
 					))}
 				</nav>
 				<div className="ml-2 hidden items-center gap-2 lg:flex">
+					<ThemeToggle />
 					<Button
 						variant="outline"
 						size="sm"
@@ -133,6 +134,9 @@ export function SiteHeader() {
 						<ArrowRight className="size-4" />
 					</Button>
 				</div>
+				<span className="lg:hidden">
+					<ThemeToggle />
+				</span>
 				<Sheet>
 					<SheetTrigger
 						className="flex size-9 items-center justify-center rounded-lg text-brand-blue-100 transition-colors hover:bg-white/10 lg:hidden"
@@ -145,7 +149,7 @@ export function SiteHeader() {
 							<SheetTitle>{branding.appName}</SheetTitle>
 						</SheetHeader>
 						<nav className="flex flex-col gap-1 px-6 pb-6">
-							{NAV_LINKS.slice(0, 2).map((l) => (
+							{NAV_LINKS.slice(0, 1).map((l) => (
 								<SheetClose key={l.href} render={<Link href={l.href} />}>
 									<span className="block rounded-lg px-3 py-2.5 text-sm font-medium hover:bg-muted">
 										{l.label}
@@ -170,7 +174,7 @@ export function SiteHeader() {
 									Semua Program →
 								</span>
 							</SheetClose>
-							{NAV_LINKS.slice(2).map((l) => (
+							{NAV_LINKS.slice(1).map((l) => (
 								<SheetClose key={l.href} render={<Link href={l.href} />}>
 									<span className="block rounded-lg px-3 py-2.5 text-sm font-medium hover:bg-muted">
 										{l.label}

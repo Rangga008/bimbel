@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -45,6 +45,8 @@ interface ImportResult {
   created: number;
   dryRun: boolean;
   rows: ImportRowResult[];
+  /** Id soal hasil import (baru + duplikat yang sudah ada). */
+  questionIds?: string[];
 }
 
 function errMsg(e: unknown, fb: string) {
@@ -59,9 +61,16 @@ function errMsg(e: unknown, fb: string) {
 export function QuestionImportDialog({
   open,
   onOpenChange,
+  initial,
+  onImported,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
+  /** Prefill tujuan taksonomi — mis. filter yang sedang dipakai di form ujian. */
+  initial?: { tingkat?: string; levelId?: string; subjectId?: string; category?: string };
+  /** Dipanggil setelah import sukses dengan semua id soal (baru + duplikat)
+   * — dipakai form ujian/latsol untuk langsung memilih soal-soalnya. */
+  onImported?: (questionIds: string[], result: ImportResult) => void;
 }) {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -70,10 +79,10 @@ export function QuestionImportDialog({
   const [tplTypes, setTplTypes] = useState<string[]>(
     QUESTION_TYPES.map((t) => t.value),
   );
-  const [tingkat, setTingkat] = useState('');
-  const [levelId, setLevelId] = useState('');
-  const [subjectId, setSubjectId] = useState('');
-  const [category, setCategory] = useState('');
+  const [tingkat, setTingkat] = useState(initial?.tingkat ?? '');
+  const [levelId, setLevelId] = useState(initial?.levelId ?? '');
+  const [subjectId, setSubjectId] = useState(initial?.subjectId ?? '');
+  const [category, setCategory] = useState(initial?.category ?? '');
   const [preview, setPreview] = useState<ImportResult | null>(null);
 
   const levelsQ = useContentLevels();
@@ -122,12 +131,18 @@ export function QuestionImportDialog({
 
   const reset = () => {
     setFile(null);
-    setTingkat('');
-    setLevelId('');
-    setSubjectId('');
-    setCategory('');
+    setTingkat(initial?.tingkat ?? '');
+    setLevelId(initial?.levelId ?? '');
+    setSubjectId(initial?.subjectId ?? '');
+    setCategory(initial?.category ?? '');
     setPreview(null);
   };
+
+  // Re-seed taksonomi tiap dialog dibuka — mengikuti filter form saat ini.
+  useEffect(() => {
+    if (open) reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initial?.levelId, initial?.subjectId, initial?.category, initial?.tingkat]);
 
   const runImport = async (dryRun: boolean) => {
     if (!file) throw new ApiError('Pilih file .docx atau .xlsx dulu.', 400);
@@ -154,9 +169,17 @@ export function QuestionImportDialog({
   const importM = useMutation({
     mutationFn: () => runImport(false),
     onSuccess: (r) => {
-      toast.success(`${r.created} soal berhasil diimport.`);
+      const dupCount = r.rows.filter((x) => x.duplicate).length;
+      toast.success(
+        dupCount > 0
+          ? `${r.created} soal baru diimport — ${dupCount} duplikat langsung memakai soal yang sudah ada.`
+          : `${r.created} soal berhasil diimport.`,
+      );
       qc.invalidateQueries({ queryKey: ['questions'] });
+      qc.invalidateQueries({ queryKey: ['questions-select'] });
       qc.invalidateQueries({ queryKey: ['questions-summary'] });
+      // Serahkan semua id (baru + duplikat) ke form — langsung terpilih.
+      onImported?.(r.questionIds ?? [], r);
       onOpenChange(false);
       reset();
     },

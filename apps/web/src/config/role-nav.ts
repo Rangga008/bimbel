@@ -784,3 +784,17 @@ export const ROLE_NAV: Record<RoleKey, NavItem[]> = {
 export function findNavItem(role: RoleKey, slug: string): NavItem | undefined {
 	return ROLE_NAV[role].find((item) => item.slug === slug);
 }
+
+/** Nav efektif untuk user — siswa luar (tanpa keanggotaan kelompok, mis.
+ *  peserta try out) hanya melihat Ujian + Profil; menu yang butuh paket/
+ *  kelompok (materi, latsol, jadwal, dst.) disembunyikan. */
+export function navItemsFor(
+	role: RoleKey,
+	user?: { studentGroupless?: boolean } | null,
+): NavItem[] {
+	const items = ROLE_NAV[role];
+	if (role === "siswa" && user?.studentGroupless) {
+		return items.filter((i) => i.slug === "ujian" || i.slug === "profil");
+	}
+	return items;
+}

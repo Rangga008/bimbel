@@ -41,6 +41,8 @@ export interface ImportRowResult {
   images?: number;
   /** True bila soal identik sudah ada — baris dilewati saat import. */
   duplicate?: boolean;
+  /** Id soal — baru dibuat (import) atau yang sudah ada (duplikat). */
+  questionId?: string;
 }
 
 export interface ImportResult {
@@ -48,6 +50,8 @@ export interface ImportResult {
   created: number;
   dryRun: boolean;
   rows: ImportRowResult[];
+  /** Semua id soal hasil import — untuk auto-pilih di form ujian/latsol. */
+  questionIds?: string[];
 }
 
 const TYPE_ALIASES: Record<string, QuestionType> = {
@@ -853,19 +857,21 @@ export class QuestionsImportService {
           answerKey: dto.answerKey,
           options: dto.options,
         });
-        if (fingerprints.has(fp)) {
+        const existingId = fingerprints.get(fp);
+        if (existingId !== undefined) {
           results.push({
             no: row.no,
             content: dto.content.slice(0, 120),
             type: dto.type,
             ok: true,
             duplicate: true,
-            errors: ['Duplikat — soal identik sudah ada, dilewati.'],
+            questionId: existingId,
+            errors: ['Duplikat — soal identik sudah ada, langsung dipakai.'],
             images: imgCount(row) || undefined,
           });
           continue;
         }
-        fingerprints.add(fp);
+        fingerprints.set(fp, '__pending__');
         valid.push({ row, dto });
         results.push({
           no: row.no,
@@ -892,8 +898,10 @@ export class QuestionsImportService {
         // Upload gambar hasil ekstrak docx ke pustaka media, lalu tempel URL-nya.
         await this.attachImages(row, dto, actor.id, results);
         try {
-          await this.questions.create(actor, dto);
+          const q = await this.questions.create(actor, dto);
           created++;
+          const res = results.find((r) => r.no === row.no);
+          if (res) res.questionId = q.id;
         } catch (e) {
           // Balapan dua import — baris yang tiba-tiba duplikat ditandai, bukan abort.
           if (e instanceof ConflictException) {
@@ -914,6 +922,11 @@ export class QuestionsImportService {
       created,
       dryRun: !!refs.dryRun,
       rows: results,
+      // Semua id soal hasil import (baru + duplikat yang sudah ada) — dipakai
+      // form ujian/latsol untuk langsung memilih soal tanpa cari manual.
+      questionIds: results
+        .map((r) => r.questionId)
+        .filter((id): id is string => !!id),
     };
   }
 }

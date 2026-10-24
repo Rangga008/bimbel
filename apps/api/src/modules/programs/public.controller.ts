@@ -2,6 +2,7 @@ import { Controller, Get, NotFoundException, Param } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ProgramsService } from './programs.service';
 import { receiptDetailInclude } from '../payments/receipt.includes';
+import { LANDING_DISPLAY_DEFAULTS } from '../settings/settings.service';
 
 /**
  * Endpoint publik (tanpa JWT) untuk landing page `/`:
@@ -69,6 +70,11 @@ export class PublicController {
     }));
 
     const displayVal = (displayRow?.value ?? {}) as Record<string, unknown>;
+    // Teks landing — fallback ke default bila admin belum mengisi.
+    const dstr = (k: keyof typeof LANDING_DISPLAY_DEFAULTS) =>
+      typeof displayVal[k] === 'string' && displayVal[k]
+        ? (displayVal[k] as string)
+        : LANDING_DISPLAY_DEFAULTS[k];
     return {
       stats: {
         students,
@@ -94,7 +100,89 @@ export class PublicController {
           displayVal.registrationUrl
             ? displayVal.registrationUrl
             : 'https://s.id/info-daftarGFS2627',
+        heroBadge: dstr('heroBadge'),
+        heroTitle: dstr('heroTitle'),
+        heroHighlight: dstr('heroHighlight'),
+        heroSubtitle: dstr('heroSubtitle'),
+        aboutParagraph1: dstr('aboutParagraph1'),
+        aboutParagraph2: dstr('aboutParagraph2'),
+        officeAddress: dstr('officeAddress'),
+        officeHours: dstr('officeHours'),
+        ctaTitle: dstr('ctaTitle'),
+        ctaSubtitle: dstr('ctaSubtitle'),
+        testimonials: Array.isArray(displayVal.testimonials)
+          ? displayVal.testimonials
+          : [],
+        locations: Array.isArray(displayVal.locations)
+          ? displayVal.locations
+          : [],
       },
+    };
+  }
+
+  /**
+   * Try out publik — ujian yang ditandai "tampil di landing /tryout" oleh
+   * admin. Dipakai untuk promosi: peserta luar daftar akun → verifikasi HP →
+   * masukkan kode akses → kerjakan. Hanya info non-sensitif (tanpa soal).
+   */
+  @Get('tryouts')
+  async tryouts() {
+    const [exams, catDefs] = await Promise.all([
+      this.prisma.exam.findMany({
+        where: { isPublic: true, status: { in: ['PUBLISHED', 'LOCKED'] } },
+        orderBy: { scheduledStartAt: 'desc' },
+        take: 30,
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          category: true,
+          accessCode: true,
+          scheduledStartAt: true,
+          scheduledEndAt: true,
+          durationMinutes: true,
+          status: true,
+          showResultImmediately: true,
+          subject: { select: { name: true } },
+          _count: { select: { items: true } },
+          subtes: {
+            orderBy: { sortOrder: 'asc' },
+            select: {
+              name: true,
+              durationMinutes: true,
+              _count: { select: { items: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.contentCategoryDef.findMany({
+        select: { code: true, name: true },
+      }),
+    ]);
+    const catName = new Map(catDefs.map((c) => [c.code, c.name]));
+    return {
+      tryouts: exams.map((e) => ({
+        id: e.id,
+        title: e.title,
+        description: e.description,
+        // Label ramah dari definisi kategori konten (kode → nama).
+        category: (e.category && catName.get(e.category)) || e.category || 'Umum',
+        accessCode: e.accessCode,
+        scheduledStartAt: e.scheduledStartAt,
+        scheduledEndAt: e.scheduledEndAt,
+        durationMinutes: e.durationMinutes,
+        status: e.status,
+        showResultImmediately: e.showResultImmediately,
+        subjectName: e.subject?.name ?? null,
+        questionCount: e.subtes.length
+          ? e.subtes.reduce((n, s) => n + s._count.items, 0)
+          : e._count.items,
+        subtes: e.subtes.map((s) => ({
+          name: s.name,
+          durationMinutes: s.durationMinutes,
+          questionCount: s._count.items,
+        })),
+      })),
     };
   }
 

@@ -19,6 +19,7 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
+import { PrintStatementButton } from "./statement-print";
 import { apiFetch, ApiError } from "@/lib/api-client";
 
 export interface StaffEnrollment {
@@ -331,6 +332,7 @@ export function FinanceEnrollments() {
 														<BadgePercent /> Diskon
 													</Button>
 												) : null}
+												<PrintStatementButton enrollmentId={e.id} base="/enrollments" />
 											</div>
 										</td>
 									</tr>

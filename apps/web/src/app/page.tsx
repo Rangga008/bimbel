@@ -60,8 +60,10 @@ import { SiteFooter } from "@/components/public/site-footer";
 import {
 	DEFAULT_REGISTRATION_URL,
 	fmtIDR,
+	landingHeroImages,
 	programSlug,
 	useLanding,
+	type LandingHeroImage,
 	type LandingPackage,
 } from "@/lib/landing";
 
@@ -84,9 +86,9 @@ const PROGRAM_ICONS: Record<string, typeof GraduationCap> = {
 	PRV: Users,
 };
 
-/** Slider foto hero (foto-foto siswa) — gambar diatur admin di
- *  Pengaturan > Tampilan Landing. Auto-rotate + navigasi manual. */
-function HeroPhotoSlider({ images }: { images: string[] }) {
+/** Slider foto hero (foto-foto siswa) — gambar & link klik per foto diatur
+ *  admin di Pengaturan > Tampilan Landing. Auto-rotate + navigasi manual. */
+function HeroPhotoSlider({ images }: { images: LandingHeroImage[] }) {
 	const [active, setActive] = useState(0);
 	const count = images.length;
 
@@ -100,20 +102,40 @@ function HeroPhotoSlider({ images }: { images: string[] }) {
 
 	return (
 		<div className="relative aspect-[16/10] w-full overflow-hidden rounded-2xl border shadow-2xl sm:aspect-[21/9]">
-			{images.map((src, i) => (
-				<Image
-					key={src}
-					src={resolveAssetUrl(src)}
-					alt={`Foto siswa ${i + 1}`}
-					fill
-					className={`object-cover transition-opacity duration-700 ${i === active ? "opacity-100" : "opacity-0"}`}
-					unoptimized
-					priority={i === 0}
-				/>
-			))}
+			{images.map((img, i) => {
+				const cls = `absolute inset-0 transition-opacity duration-700 ${
+					i === active ? "opacity-100" : "pointer-events-none opacity-0"
+				}`;
+				const content = (
+					<Image
+						src={resolveAssetUrl(img.url)}
+						alt={`Foto siswa ${i + 1}`}
+						fill
+						className="object-cover"
+						unoptimized
+						priority={i === 0}
+					/>
+				);
+				return img.link ? (
+					<a
+						key={`${img.url}-${i}`}
+						href={img.link}
+						target="_blank"
+						rel="noopener noreferrer"
+						aria-label={`Buka tautan foto ${i + 1}`}
+						className={cls}
+					>
+						{content}
+					</a>
+				) : (
+					<div key={`${img.url}-${i}`} aria-hidden className={cls}>
+						{content}
+					</div>
+				);
+			})}
 			<div
 				aria-hidden
-				className="absolute inset-0 bg-gradient-to-t from-brand-blue-900/50 via-transparent to-transparent"
+				className="pointer-events-none absolute inset-0 bg-gradient-to-t from-brand-blue-900/50 via-transparent to-transparent"
 			/>
 			{count > 1 ? (
 				<>
@@ -459,9 +481,38 @@ export default function LandingPage() {
 	const stats = landingQ.data?.stats;
 	const facilities = landingQ.data?.facilities ?? [];
 	const programs = landingQ.data?.catalog ?? [];
-	const heroImages = landingQ.data?.display?.heroImages ?? [];
+	const display = landingQ.data?.display;
+	const heroImages = landingHeroImages(display);
 	const regUrl =
-		landingQ.data?.display?.registrationUrl || DEFAULT_REGISTRATION_URL;
+		display?.registrationUrl || DEFAULT_REGISTRATION_URL;
+
+	// Konten landing — diatur admin di Pengaturan > Tampilan Landing;
+	// fallback ke bawaan bila belum diisi.
+	const heroBadge = display?.heroBadge || "Bimbel berkualitas sejak 2011";
+	const heroTitle = display?.heroTitle || "Belajar Lebih Terarah,";
+	const heroHighlight = display?.heroHighlight || "Prestasi Lebih Nyata";
+	const heroSubtitle = (
+		display?.heroSubtitle ||
+		"{appName} mendampingi siswa SD hingga persiapan UTBK dengan jadwal terstruktur, tutor berpengalaman, evaluasi berkala, dan laporan perkembangan yang bisa dipantau orang tua."
+	).replace("{appName}", branding.appName);
+	const aboutP1 =
+		display?.aboutParagraph1 ||
+		"Bimbingan Belajar Great Formula Solution (Bimbel GFS) berdiri sejak tahun 2011 dan telah membimbing lebih dari 3.000 siswa dengan tutor-tutor berpengalaman di bidangnya, sehingga bisa membimbing dan membantu para siswa semakin berprestasi.";
+	const aboutP2 =
+		display?.aboutParagraph2 ||
+		"Ditunjang fasilitas belajar yang memadai — multimedia, AC, dan free wifi — siswa nyaman belajar. Dan yang paling penting: dengan biaya yang terjangkau.";
+	const officeAddress =
+		display?.officeAddress ||
+		"Jl. Hj. Saodah No. 125, Jatihandap – Cicaheum, Bandung";
+	const officeHours = display?.officeHours || "Senin–Sabtu, 09.00–18.00";
+	const ctaTitle = display?.ctaTitle || "Jadilah siswa GFS berikutnya!";
+	const ctaSubtitle =
+		display?.ctaSubtitle ||
+		"Sudah lebih dari 3.000 siswa bergabung sejak 2011. Daftar sebagai orang tua, lalu hubungkan anak Anda ke program belajar — jadwal, ujian, latihan, dan pembayaran dalam satu tempat.";
+	const testimonials =
+		display?.testimonials && display.testimonials.length > 0
+			? display.testimonials
+			: TESTIMONIALS;
 
 	// Hanya paket dengan siswa terbanyak yang tampil di landing — katalog
 	// lengkap pindah ke halaman /program dan /program/[code].
@@ -528,18 +579,16 @@ export default function LandingPage() {
 					<div className="flex flex-col gap-6">
 						<span className="inline-flex w-fit items-center gap-2 rounded-full border border-brand-gold-400/40 bg-brand-gold-400/10 px-3 py-1 text-xs font-medium text-brand-gold-200">
 							<Sparkles className="size-3.5" />
-							Les murah plus berkualitas — sejak 2011
+							{heroBadge}
 						</span>
 						<h1 className="text-3xl font-bold tracking-tight text-balance sm:text-4xl lg:text-5xl">
-							Belajar Lebih Terarah,{" "}
+							{heroTitle}{" "}
 							<span className="bg-gradient-to-r from-brand-gold-300 via-brand-gold-400 to-brand-gold-500 bg-clip-text text-transparent">
-								Prestasi Lebih Nyata
+								{heroHighlight}
 							</span>
 						</h1>
 						<p className="max-w-xl text-base text-brand-blue-100 sm:text-lg">
-							{branding.appName} mendampingi siswa SD hingga persiapan UTBK dengan
-							jadwal terstruktur, tutor berpengalaman, evaluasi berkala, dan
-							laporan perkembangan yang bisa dipantau orang tua.
+							{heroSubtitle}
 						</p>
 						<div className="flex flex-wrap items-center gap-3">
 							<Button
@@ -548,6 +597,15 @@ export default function LandingPage() {
 								className="gap-2 bg-brand-gold-400 font-semibold text-brand-blue-900 hover:bg-brand-gold-300"
 							>
 								Daftar Sekarang
+								<ArrowRight className="size-4" />
+							</Button>
+							<Button
+								size="lg"
+								variant="outline"
+								render={<Link href="/tryout" />}
+								className="gap-2 border-brand-gold-300/50 bg-brand-gold-400/10 text-brand-gold-200 hover:bg-brand-gold-400/25 hover:text-brand-gold-100"
+							>
+								Coba Try Out
 								<ArrowRight className="size-4" />
 							</Button>
 							<Button
@@ -638,17 +696,8 @@ export default function LandingPage() {
 						<h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
 							Sekilas {branding.appName}
 						</h2>
-						<p className="mt-4 text-muted-foreground">
-							Bimbingan Belajar Great Formula Solution (Bimbel GFS) berdiri
-							sejak tahun 2011 dan telah membimbing lebih dari 3.000 siswa
-							dengan tutor-tutor berpengalaman di bidangnya, sehingga bisa
-							membimbing dan membantu para siswa semakin berprestasi.
-						</p>
-						<p className="mt-3 text-muted-foreground">
-							Ditunjang fasilitas belajar yang memadai — multimedia, AC, dan
-							free wifi — siswa nyaman belajar. Dan yang paling penting:
-							dengan biaya yang terjangkau.
-						</p>
+						<p className="mt-4 text-muted-foreground">{aboutP1}</p>
+						<p className="mt-3 text-muted-foreground">{aboutP2}</p>
 						<div className="mt-6 flex flex-wrap gap-3">
 							<Button
 								variant="outline"
@@ -848,15 +897,12 @@ export default function LandingPage() {
 						<div>
 							<p className="font-medium">Mau datang langsung?</p>
 							<p className="text-sm text-muted-foreground">
-								Kantor GFS: Jl. Hj. Saodah No. 125, Jatihandap – Cicaheum,
-								Bandung — Senin–Sabtu, 09.00–18.00.
+								Kantor {branding.appName}: {officeAddress} — {officeHours}.
 							</p>
 						</div>
 					</div>
 					<Button
-						render={
-							<a href={regUrl} target="_blank" rel="noopener noreferrer" />
-						}
+						render={<Link href="/daftar" />}
 						className="gap-2 bg-brand-gold-400 font-semibold text-brand-blue-900 hover:bg-brand-gold-300"
 					>
 						Isi Formulir Pendaftaran
@@ -877,7 +923,7 @@ export default function LandingPage() {
 						</h2>
 					</div>
 					<div className="grid gap-4 sm:grid-cols-2">
-						{TESTIMONIALS.map((t) => (
+						{testimonials.map((t) => (
 							<Card key={t.name} className="relative overflow-hidden">
 								<Quote
 									aria-hidden
@@ -1034,12 +1080,10 @@ export default function LandingPage() {
 					/>
 					<div className="relative mx-auto flex max-w-xl flex-col items-center gap-4">
 						<h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
-							Jadilah siswa GFS berikutnya!
+							{ctaTitle}
 						</h2>
 						<p className="text-sm text-brand-blue-100 sm:text-base">
-							Sudah lebih dari 3.000 siswa bergabung sejak 2011. Daftar sebagai
-							orang tua, lalu hubungkan anak Anda ke program belajar — jadwal,
-							ujian, latihan, dan pembayaran dalam satu tempat.
+							{ctaSubtitle}
 						</p>
 						<div className="mt-2 flex flex-wrap items-center justify-center gap-3">
 							<Button
@@ -1048,6 +1092,15 @@ export default function LandingPage() {
 								className="gap-2 bg-brand-gold-400 font-semibold text-brand-blue-900 hover:bg-brand-gold-300"
 							>
 								Daftar Sekarang
+								<ArrowRight className="size-4" />
+							</Button>
+							<Button
+								size="lg"
+								variant="outline"
+								render={<Link href="/tryout" />}
+								className="gap-2 border-brand-gold-300/50 bg-brand-gold-400/10 text-brand-gold-200 hover:bg-brand-gold-400/25 hover:text-brand-gold-100"
+							>
+								Coba Try Out
 								<ArrowRight className="size-4" />
 							</Button>
 							<Button

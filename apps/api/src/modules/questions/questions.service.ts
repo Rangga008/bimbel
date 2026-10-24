@@ -92,7 +92,7 @@ export class QuestionsService {
     levelId?: string | null;
     subjectId?: string | null;
     category?: string | null;
-  }): Promise<Set<string>> {
+  }): Promise<Map<string, string>> {
     const existing = await this.prisma.question.findMany({
       where: {
         programId: scope.programId ?? null,
@@ -102,7 +102,9 @@ export class QuestionsService {
       },
       include: { options: true },
     });
-    return new Set(existing.map((q) => this.fingerprintOf(q)));
+    // fingerprint → id soal yang sudah ada — dipakai import untuk menandai
+    // baris duplikat sekaligus mengembalikan id-nya ke pemilih soal.
+    return new Map(existing.map((q) => [this.fingerprintOf(q), q.id]));
   }
 
   /** Konsistensi opsi vs tipe soal:
@@ -162,9 +164,20 @@ export class QuestionsService {
       type?: string;
       difficulty?: string;
       search?: string;
+      /** Daftar id eksplisit (dipisah koma) — untuk menampilkan soal terpilih
+       * di pemilih soal walau di luar filter taksonomi saat ini. */
+      ids?: string;
     },
   ) {
     const where: Record<string, unknown> = {};
+    if (query.ids) {
+      where.id = {
+        in: query.ids
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      };
+    }
     if (query.programId) where.programId = query.programId;
     if (query.levelId) where.levelId = query.levelId;
     if (query.subjectId) where.subjectId = query.subjectId;

@@ -141,20 +141,37 @@ export function QuestionPicker({
     ],
     queryFn: () => {
       const p = new URLSearchParams();
-      p.set('subjectId', filters.subjectId);
+      // Semua filter opsional — tanpa filter, server mengembalikan
+      // 100 soal terbaru; filter/cari untuk mempersempit.
+      if (filters.subjectId) p.set('subjectId', filters.subjectId);
       if (filters.programId) p.set('programId', filters.programId);
       if (filters.levelId) p.set('levelId', filters.levelId);
       if (filters.category) p.set('category', filters.category);
       if (questionSearch) p.set('search', questionSearch);
       return apiFetch<QuestionSelectItem[]>(`/questions?${p.toString()}`);
     },
-    enabled: !!filters.subjectId,
+  });
+
+  // Ambil detail soal terpilih yang tidak muncul di daftar terfilter
+  // (mis. hasil import di taksonomi lain atau soal dari filter sebelumnya).
+  const missingIds = selectedIds.filter(
+    (id) => !(questionsQ.data ?? []).some((q) => q.id === id),
+  );
+  const missingKey = missingIds.slice().sort().join(',');
+  const selectedDetailQ = useQuery({
+    queryKey: ['questions-selected', missingKey],
+    queryFn: () =>
+      apiFetch<QuestionSelectItem[]>(
+        `/questions?ids=${encodeURIComponent(missingIds.join(','))}`,
+      ),
+    enabled: missingIds.length > 0,
   });
 
   // Cache item yang pernah tampil — strip "soal dipilih" di bawah tetap bisa
   // menampilkan label soal walau filter saat ini menyembunyikan daftarnya.
   const knownRef = useRef(new Map<string, QuestionSelectItem>());
   for (const q of questionsQ.data ?? []) knownRef.current.set(q.id, q);
+  for (const q of selectedDetailQ.data ?? []) knownRef.current.set(q.id, q);
   const selectedItems = selectedIds
     .map((id) => knownRef.current.get(id))
     .filter((q): q is QuestionSelectItem => !!q);
@@ -192,10 +209,11 @@ export function QuestionPicker({
         </div>
         <Phase1aSelectField
           id="qp-subject"
-          label="Mapel *"
+          label="Mapel (opsional)"
           value={filters.subjectId}
           onChange={(v) => onFiltersChange({ ...filters, subjectId: v })}
           options={subjectOptions}
+          placeholder="Semua mapel"
         />
         <Phase1aSelectField
           id="qp-category"
@@ -241,50 +259,48 @@ export function QuestionPicker({
             </div>
           </div>
         ) : null}
-        {!filters.subjectId ? (
-          <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-            Pilih Mapel dulu untuk menampilkan daftar soal. Gunakan Tingkat,
-            Jenjang, dan Tipe untuk mempersempit — mis. hanya soal Bab 1.
-            Soal yang sudah dipilih tetap tersimpan walau filter dikosongkan.
-          </p>
-        ) : (
-          <>
-            <input
-              placeholder="Cari soal berdasarkan konten..."
-              value={questionSearch}
-              onChange={(e) => setQuestionSearch(e.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-3"
-            />
-            {questionsQ.isLoading ? <Skeleton className="h-24 w-full" /> : null}
-            {questionsQ.isError ? <p className="text-sm text-destructive">Gagal memuat soal.</p> : null}
-            <div className="max-h-96 overflow-y-auto border rounded-md p-2">
-              {questionsQ.data?.map((q) => (
-                <div key={q.id} className="flex items-start gap-2 p-2 hover:bg-muted/50">
-                  <Checkbox
-                    checked={selectedIds.includes(q.id)}
-                    onCheckedChange={() => onToggle(q.id)}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <label className="text-sm font-medium cursor-pointer block" onClick={() => onToggle(q.id)}>
-                      <MathContent text={q.content.slice(0, 120)} />
-                      {q.content.length > 120 ? '...' : ''}
-                    </label>
-                    <div className="flex gap-1 mt-1">
-                      {q.subject && <Badge variant="default" className="text-xs">{q.subject.name}</Badge>}
-                      {q.category && <Badge variant="secondary" className="text-xs">{categoryLabel(q.category, catsQ.data)}</Badge>}
-                      <Badge variant="outline" className="text-xs">{q.type}</Badge>
-                      {q.difficulty && <Badge variant="secondary" className="text-xs">{q.difficulty}</Badge>}
-                      {q.points && <Badge variant="outline" className="text-xs">{q.points} poin</Badge>}
-                    </div>
+        <>
+          <input
+            placeholder="Cari soal berdasarkan konten..."
+            value={questionSearch}
+            onChange={(e) => setQuestionSearch(e.target.value)}
+            className="h-9 rounded-md border border-input bg-background px-3"
+          />
+          {!filters.subjectId ? (
+            <p className="text-xs text-muted-foreground">
+              Menampilkan maks. 100 soal terbaru — gunakan filter Tingkat /
+              Jenjang / Mapel / Tipe atau kolom cari untuk mempersempit.
+            </p>
+          ) : null}
+          {questionsQ.isLoading ? <Skeleton className="h-24 w-full" /> : null}
+          {questionsQ.isError ? <p className="text-sm text-destructive">Gagal memuat soal.</p> : null}
+          <div className="max-h-96 overflow-y-auto border rounded-md p-2">
+            {questionsQ.data?.map((q) => (
+              <div key={q.id} className="flex items-start gap-2 p-2 hover:bg-muted/50">
+                <Checkbox
+                  checked={selectedIds.includes(q.id)}
+                  onCheckedChange={() => onToggle(q.id)}
+                />
+                <div className="flex-1 min-w-0">
+                  <label className="text-sm font-medium cursor-pointer block" onClick={() => onToggle(q.id)}>
+                    <MathContent text={q.content.slice(0, 120)} />
+                    {q.content.length > 120 ? '...' : ''}
+                  </label>
+                  <div className="flex gap-1 mt-1">
+                    {q.subject && <Badge variant="default" className="text-xs">{q.subject.name}</Badge>}
+                    {q.category && <Badge variant="secondary" className="text-xs">{categoryLabel(q.category, catsQ.data)}</Badge>}
+                    <Badge variant="outline" className="text-xs">{q.type}</Badge>
+                    {q.difficulty && <Badge variant="secondary" className="text-xs">{q.difficulty}</Badge>}
+                    {q.points && <Badge variant="outline" className="text-xs">{q.points} poin</Badge>}
                   </div>
                 </div>
-              ))}
-              {questionsQ.data?.length === 0 && (
-                <p className="text-sm text-muted-foreground p-2">Tidak ada soal yang cocok.</p>
-              )}
-            </div>
-          </>
-        )}
+              </div>
+            ))}
+            {questionsQ.data?.length === 0 && (
+              <p className="text-sm text-muted-foreground p-2">Tidak ada soal yang cocok.</p>
+            )}
+          </div>
+        </>
       </div>
     </div>
   );

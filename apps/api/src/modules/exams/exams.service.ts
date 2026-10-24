@@ -317,6 +317,7 @@ export class ExamsService {
           durationMinutes: dto.durationMinutes,
           proctoringEnabled: dto.proctoringEnabled ?? true,
           showResultImmediately: dto.showResultImmediately ?? false,
+          isPublic: dto.isPublic ?? false,
           notes: dto.notes?.trim(),
           createdBy: actor.id,
         },
@@ -446,6 +447,7 @@ export class ExamsService {
             durationMinutes: dto.durationMinutes,
             proctoringEnabled: dto.proctoringEnabled,
             showResultImmediately: dto.showResultImmediately,
+            isPublic: dto.isPublic,
             notes: dto.notes?.trim(),
           },
           include: {
@@ -481,6 +483,7 @@ export class ExamsService {
         durationMinutes: dto.durationMinutes,
         proctoringEnabled: dto.proctoringEnabled,
         showResultImmediately: dto.showResultImmediately,
+        isPublic: dto.isPublic,
         notes: dto.notes?.trim(),
       },
       include: {
@@ -700,14 +703,11 @@ export class ExamsService {
     const sScope = await this.tutorScope.forStudent(actor);
     // Ujian ENDED tetap terlihat bila siswa punya attempt — supaya hasil
     // yang sudah dirilis masih bisa dibuka dari daftar.
-    let studentId: string | undefined;
-    if (sScope) {
-      const s = await this.prisma.student.findUnique({
-        where: { userId: actor.id },
-        select: { id: true },
-      });
-      studentId = s?.id;
-    }
+    const s = await this.prisma.student.findUnique({
+      where: { userId: actor.id },
+      select: { id: true },
+    });
+    const studentId = s?.id;
     const statusOr: Record<string, unknown>[] = [
       { status: 'PUBLISHED' },
       ...(studentId
@@ -731,7 +731,17 @@ export class ExamsService {
             { programId: { in: sScope.programIds } },
             { levelId: { in: sScope.levelIds } },
             { subjectId: { in: sScope.subjectIds } },
-            { AND: [{ programId: null }, { levelId: null }, { subjectId: null }] },
+            // Ujian umum (tanpa taksonomi) terbuka untuk semua jenjang —
+            // kecuali ujian try out publik: itu jalur kode akses, jangan
+            // disiarkan ke semua siswa.
+            {
+              AND: [
+                { isPublic: false },
+                { programId: null },
+                { levelId: null },
+                { subjectId: null },
+              ],
+            },
           ],
         },
         // Ujian bertarget kelompok hanya tampil untuk anggota kelompok tsb;
@@ -748,8 +758,16 @@ export class ExamsService {
       (where.OR as Record<string, unknown>[])[0] = {
         AND: [{ OR: statusOr }, ...scopeAnd],
       };
+    } else if (studentId) {
+      // Siswa luar (tanpa jenjang/kelompok) TIDAK melihat daftar ujian
+      // umum — mereka masuk lewat kode akses saja.
+      (where.OR as Record<string, unknown>[])[0] = {
+        AND: [{ OR: statusOr }, { participants: { some: { studentId } } }],
+      };
+      (where.OR as Record<string, unknown>[]).length = 1;
     } else {
-      (where.OR as Record<string, unknown>[])[0] = { OR: statusOr };
+      (where.OR as Record<string, unknown>[])[0] = { id: '__none__' };
+      (where.OR as Record<string, unknown>[]).length = 1;
     }
     return this.prisma.exam.findMany({
       where,

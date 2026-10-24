@@ -58,6 +58,7 @@ export class AuthService {
     },
     roles: string[],
     permissions: string[],
+    studentGroupless?: boolean,
   ): AuthenticatedUser {
     return {
       id: user.id,
@@ -66,7 +67,21 @@ export class AuthService {
       avatarUrl: user.avatarUrl ?? null,
       roles,
       permissions,
+      ...(studentGroupless !== undefined ? { studentGroupless } : {}),
     };
+  }
+
+  /** Siswa tanpa keanggotaan kelompok — akun luar (daftar-mandiri untuk
+   *  try out) yang menunya disempitkan jadi Ujian + Profil. */
+  private async studentGrouplessFlag(
+    userId: string,
+    roles: string[],
+  ): Promise<boolean | undefined> {
+    if (!roles.includes(ROLE_NAMES.SISWA)) return undefined;
+    const count = await this.prisma.groupMember.count({
+      where: { student: { userId } },
+    });
+    return count === 0;
   }
 
   /** Pesan error generik & human-friendly — jangan bocorkan apakah email terdaftar atau tidak. */
@@ -119,6 +134,7 @@ export class AuthService {
         name: authUser.name,
         roles: authUser.roles,
         permissions: authUser.permissions,
+        studentGroupless: authUser.studentGroupless,
       },
       {
         secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
@@ -174,28 +190,35 @@ export class AuthService {
 
   async registerParent(dto: RegisterParentDto) {
     return this.prisma.$transaction(async (tx) => {
+      const phone = dto.phone?.trim() || undefined;
       // Cegah duplikasi akun aktif: no HP yang sudah dipakai akun aktif
       // tidak boleh didaftarkan lagi (nanti login-nya ambigu). Akun
       // nonaktif dengan nomor sama tidak menghalangi — daftar ulang aman.
-      const phoneTaken = await tx.user.findFirst({
-        where: {
-          phone: { in: this.phoneVariants(dto.phone) },
-          isActive: true,
-        },
-        select: { id: true },
-      });
-      if (phoneTaken) {
-        throw new BadRequestException(
-          'Nomor HP sudah terdaftar pada akun aktif. Silakan login atau hubungi admin.',
-        );
+      if (phone) {
+        const phoneTaken = await tx.user.findFirst({
+          where: {
+            phone: { in: this.phoneVariants(phone) },
+            isActive: true,
+          },
+          select: { id: true },
+        });
+        if (phoneTaken) {
+          throw new BadRequestException(
+            'Nomor HP sudah terdaftar pada akun aktif. Silakan login atau hubungi admin.',
+          );
+        }
       }
       const email =
         dto.email?.trim() ||
-        (await this.synthEmailFromPhone(tx, dto.phone));
+        (phone
+          ? await this.synthEmailFromPhone(tx, phone)
+          : (() => {
+              throw new BadRequestException('Isi nomor HP atau email — minimal salah satu.');
+            })());
       const created = await this.usersService.createUserForPersonInTx(tx, {
         email,
         name: dto.name,
-        phone: dto.phone,
+        phone,
         roleName: ROLE_NAMES.ORANG_TUA,
         tempPassword: dto.password,
         // Daftar-mandiri — wajib verifikasi no HP via OTP WhatsApp.
@@ -217,23 +240,26 @@ export class AuthService {
    */
   async registerStudent(dto: {
     name: string;
-    phone: string;
+    phone?: string;
     password: string;
     email?: string;
     joinCode?: string;
   }) {
     return this.prisma.$transaction(async (tx) => {
-      const phoneTaken = await tx.user.findFirst({
-        where: {
-          phone: { in: this.phoneVariants(dto.phone) },
-          isActive: true,
-        },
-        select: { id: true },
-      });
-      if (phoneTaken) {
-        throw new BadRequestException(
-          'Nomor HP sudah terdaftar pada akun aktif. Silakan login atau hubungi admin.',
-        );
+      const phone = dto.phone?.trim() || undefined;
+      if (phone) {
+        const phoneTaken = await tx.user.findFirst({
+          where: {
+            phone: { in: this.phoneVariants(phone) },
+            isActive: true,
+          },
+          select: { id: true },
+        });
+        if (phoneTaken) {
+          throw new BadRequestException(
+            'Nomor HP sudah terdaftar pada akun aktif. Silakan login atau hubungi admin.',
+          );
+        }
       }
       // Kode kelompok (opsional) — salah kode ditolak supaya tidak asal masuk.
       let group: { id: string; name: string } | null = null;
@@ -249,11 +275,15 @@ export class AuthService {
       }
       const email =
         dto.email?.trim() ||
-        (await this.synthEmailFromPhone(tx, dto.phone));
+        (phone
+          ? await this.synthEmailFromPhone(tx, phone)
+          : (() => {
+              throw new BadRequestException('Isi nomor HP atau email — minimal salah satu.');
+            })());
       const created = await this.usersService.createUserForPersonInTx(tx, {
         email,
         name: dto.name,
-        phone: dto.phone,
+        phone,
         roleName: ROLE_NAMES.SISWA,
         tempPassword: dto.password,
         // Daftar-mandiri — wajib verifikasi no HP via OTP WhatsApp.
@@ -296,7 +326,12 @@ export class AuthService {
     const user = await this.validateCredentials(email, password);
     const { roles, permissions } =
       this.usersService.buildRolesAndPermissions(user);
-    const authUser = this.toAuthenticatedUser(user, roles, permissions);
+    const authUser = this.toAuthenticatedUser(
+      user,
+      roles,
+      permissions,
+      await this.studentGrouplessFlag(user.id, roles),
+    );
 
     const accessToken = this.signAccessToken(authUser);
     const { rawToken, expiresAt } = await this.issueRefreshToken(user.id, ctx);
@@ -335,7 +370,12 @@ export class AuthService {
 
     const { roles, permissions } =
       this.usersService.buildRolesAndPermissions(user);
-    const authUser = this.toAuthenticatedUser(user, roles, permissions);
+    const authUser = this.toAuthenticatedUser(
+      user,
+      roles,
+      permissions,
+      await this.studentGrouplessFlag(user.id, roles),
+    );
 
     const accessToken = this.signAccessToken(authUser);
     const { rawToken, expiresAt } = await this.issueRefreshToken(user.id, ctx);

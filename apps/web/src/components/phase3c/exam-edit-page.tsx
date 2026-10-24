@@ -12,7 +12,7 @@ import type { ExamRow, UpdateExamDto } from '@/lib/phase3c-types';
 import { drillBackFromUrl, tingkatCode } from '@/lib/content-taxonomy';
 import { useContentLevels } from '@/components/shared/content-drilldown';
 import { ExamForm, emptyExamForm, emptySubtes, type ExamFormState } from './exam-form';
-import { buildExamPayload, examFormValid } from './exam-create-page';
+import { buildExamPayload, examFormValid, isoToLocalInput } from './exam-create-page';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 
 function err(e: unknown, fb: string) {
@@ -33,11 +33,12 @@ function toForm(exam: ExamRow): ExamFormState {
     pickerFilters: { ...basePicker, subjectId: exam.subjectId ?? '' },
     title: exam.title,
     description: exam.description || '',
-    scheduledStartAt: exam.scheduledStartAt.slice(0, 16),
-    scheduledEndAt: exam.scheduledEndAt.slice(0, 16),
+    scheduledStartAt: isoToLocalInput(exam.scheduledStartAt),
+    scheduledEndAt: isoToLocalInput(exam.scheduledEndAt),
     durationMinutes: exam.durationMinutes || undefined,
     proctoringEnabled: exam.proctoringEnabled ?? true,
     showResultImmediately: exam.showResultImmediately ?? false,
+    isPublic: exam.isPublic ?? false,
     notes: exam.notes || '',
     // Mode subtes → soal dipetakan per subtesId; mode biasa → semua item.
     subtes: hasSubtes

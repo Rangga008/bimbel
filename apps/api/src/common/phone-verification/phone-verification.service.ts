@@ -37,9 +37,11 @@ export class PhoneVerificationService {
   async assertVerified(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { phoneVerifiedAt: true },
+      select: { phone: true, phoneVerifiedAt: true },
     });
-    if (user && !user.phoneVerifiedAt) {
+    // Akun tanpa nomor HP (mis. daftar pakai email saja) tidak bisa di-OTP
+    // — tidak digate; verifikasi baru wajib begitu mereka mengisi nomor HP.
+    if (user && user.phone && !user.phoneVerifiedAt) {
       throw new ForbiddenException(
         'Verifikasi nomor HP dulu — kode dikirim ke WhatsApp Anda (banner di halaman utama).',
       );
@@ -53,7 +55,8 @@ export class PhoneVerificationService {
       select: { phone: true, phoneVerifiedAt: true },
     });
     return {
-      verified: !!user?.phoneVerifiedAt,
+      // Tanpa nomor HP tidak ada yang bisa diverifikasi — banner disembunyikan.
+      verified: !user?.phone || !!user?.phoneVerifiedAt,
       phone: user?.phone ?? null,
     };
   }

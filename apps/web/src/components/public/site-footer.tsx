@@ -12,10 +12,9 @@ import {
 
 const FOOTER_LINKS = [
 	{ href: "/#beranda", label: "Beranda" },
+	{ href: "/tryout", label: "Try Out" },
 	{ href: "/#tentang", label: "Tentang" },
-	{ href: "/#cara-daftar", label: "Cara Daftar" },
 	{ href: "/#testimoni", label: "Testimoni" },
-	{ href: "/#fasilitas", label: "Fasilitas" },
 	{ href: "/#kontak", label: "Kontak" },
 ];
 
@@ -24,9 +23,15 @@ export function SiteFooter() {
 	const branding = useBranding();
 	const landingQ = useLanding();
 	const programs = landingQ.data?.catalog ?? [];
-	const locations = landingQ.data?.locations ?? [];
+	// Lokasi footer — diatur admin di Pengaturan > Tampilan Landing; bila
+	// kosong, fallback ke daftar gedung dari data master.
+	const locations = landingQ.data?.display?.locations?.length
+		? landingQ.data.display.locations
+		: (landingQ.data?.locations ?? []);
 	const regUrl =
 		landingQ.data?.display?.registrationUrl || DEFAULT_REGISTRATION_URL;
+	const officeHours =
+		landingQ.data?.display?.officeHours || "Senin – Sabtu, 09.00 – 18.00 WIB";
 
 	return (
 		<footer className="border-t text-white" style={{ backgroundColor: "#032a41" }}>
@@ -126,12 +131,7 @@ export function SiteFooter() {
 					)}
 					<p className="mt-3 flex items-start gap-2 text-sm text-brand-blue-100">
 						<Clock className="mt-0.5 size-4 shrink-0 text-brand-gold-300" />
-						<span>
-							Senin – Sabtu
-							<span className="block text-xs text-brand-blue-200">
-								09.00 – 18.00 WIB
-							</span>
-						</span>
+						<span>{officeHours}</span>
 					</p>
 				</div>
 			</div>

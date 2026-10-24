@@ -60,6 +60,8 @@ export interface ExamRow {
   showResultImmediately?: boolean;
   /** Kode akses untuk peserta luar (ditukar di halaman ujian siswa). */
   accessCode?: string | null;
+  /** true = tampil di halaman publik /tryout. */
+  isPublic?: boolean;
   notes: string | null;
   createdBy: string;
   createdAt: string;
@@ -213,6 +215,8 @@ export interface CreateExamDto {
   proctoringEnabled?: boolean;
   /** true = siswa langsung melihat hasil setelah submit. */
   showResultImmediately?: boolean;
+  /** true = tampil di halaman publik /tryout. */
+  isPublic?: boolean;
   notes?: string;
   questionIds?: string[];
   points?: number[];
@@ -236,6 +240,8 @@ export interface UpdateExamDto {
   durationMinutes?: number;
   proctoringEnabled?: boolean;
   showResultImmediately?: boolean;
+  /** true = tampil di halaman publik /tryout. */
+  isPublic?: boolean;
   notes?: string;
   questionIds?: string[];
   points?: number[];

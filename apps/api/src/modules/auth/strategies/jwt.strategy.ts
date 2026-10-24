@@ -10,6 +10,7 @@ export interface AccessTokenPayload {
   name: string;
   roles: string[];
   permissions: string[];
+  studentGroupless?: boolean;
 }
 
 @Injectable()
@@ -29,6 +30,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       name: payload.name,
       roles: payload.roles,
       permissions: payload.permissions,
+      studentGroupless: payload.studentGroupless,
     };
   }
 }

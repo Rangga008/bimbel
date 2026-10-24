@@ -9,10 +9,10 @@ import {
 
 /**
  * Pendaftaran mandiri SISWA dari luar bimbel (`/daftar-siswa`) — mis. untuk
- * try out/promosi. Identitas utama = nomor HP; email opsional (placeholder
- * dari HP bila kosong). `joinCode` opsional: bila diisi dan cocok dengan
- * kode gabung sebuah kelompok, siswa langsung jadi anggota kelompok itu
- * dan bisa mengerjakan ujian yang ditugaskan ke kelompok tersebut.
+ * try out/promosi. Identitas = nomor HP ATAU email (minimal salah satu).
+ * `joinCode` opsional: bila diisi dan cocok dengan kode gabung sebuah
+ * kelompok, siswa langsung jadi anggota kelompok itu dan bisa mengerjakan
+ * ujian yang ditugaskan ke kelompok tersebut.
  */
 export class RegisterStudentDto {
   @IsString()
@@ -20,18 +20,20 @@ export class RegisterStudentDto {
   @MaxLength(100)
   name: string;
 
-  /** Wajib — dipakai untuk login via HP. */
-  @IsString()
+  /** Wajib bila email kosong — dipakai untuk login via HP + OTP WA. */
+  @ValidateIf((o: RegisterStudentDto) => !o.email?.trim())
+  @IsString({ message: 'Isi nomor HP atau email — minimal salah satu.' })
   @MinLength(9, { message: 'Nomor HP minimal 9 digit.' })
   @MaxLength(30)
-  phone: string;
+  phone?: string;
 
   @IsString()
   @MinLength(8, { message: 'Kata sandi minimal 8 karakter.' })
   @MaxLength(100)
   password: string;
 
-  @ValidateIf((o: RegisterStudentDto) => !!o.email)
+  /** Opsional — divalidasi hanya bila diisi (wajib salah satu ditegakkan field phone). */
+  @ValidateIf((o: RegisterStudentDto) => o.email !== undefined && o.email !== '')
   @IsEmail({}, { message: 'Email tidak valid.' })
   email?: string;
 

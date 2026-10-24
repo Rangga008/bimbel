@@ -78,14 +78,66 @@ export interface ReminderSettings {
   tutorWeeklySchedule: string;
 }
 
+export interface LandingHeroImage {
+  /** URL foto hero (internal /api/media/:id/file atau eksternal). */
+  url: string;
+  /** Link tujuan saat foto diklik — kosong = tidak bisa diklik. */
+  link: string;
+}
+
+export interface LandingTestimonial {
+  name: string;
+  /** Label di bawah nama — mis. sekolah/kampus alumni. */
+  school: string;
+  quote: string;
+}
+
 export interface DisplaySettings {
-  /** URL foto hero landing (foto-foto siswa) — internal /api/media/:id/file
-   *  atau eksternal. Maksimal 10 gambar, ditampilkan sebagai slider. */
-  heroImages: string[];
+  /** Foto-foto hero landing (slider) — tiap foto bisa punya link klik
+   *  sendiri (mis. ke halaman program atau formulir). Maksimal 10. */
+  heroImages: LandingHeroImage[];
   /** Link eksternal formulir info & pendaftaran (buku tamu Google Form) —
    *  tombol Daftar di landing mengarah ke sini. */
   registrationUrl: string;
+  /** Konten teks landing per section — kosong berarti pakai default. */
+  heroBadge: string;
+  heroTitle: string;
+  heroHighlight: string;
+  heroSubtitle: string;
+  aboutParagraph1: string;
+  aboutParagraph2: string;
+  officeAddress: string;
+  officeHours: string;
+  ctaTitle: string;
+  ctaSubtitle: string;
+  testimonials: LandingTestimonial[];
+  /** Lokasi yang ditampilkan di section fasilitas & footer landing —
+   *  kosong = pakai daftar gedung dari data master. */
+  locations: LandingLocationSetting[];
 }
+
+export interface LandingLocationSetting {
+  name: string;
+  address: string;
+}
+
+/** Default konten landing — dipakai saat admin belum mengoverride teks. */
+export const LANDING_DISPLAY_DEFAULTS = {
+  heroBadge: 'Bimbel berkualitas sejak 2011',
+  heroTitle: 'Belajar Lebih Terarah,',
+  heroHighlight: 'Prestasi Lebih Nyata',
+  heroSubtitle:
+    '{appName} mendampingi siswa SD hingga persiapan UTBK dengan jadwal terstruktur, tutor berpengalaman, evaluasi berkala, dan laporan perkembangan yang bisa dipantau orang tua.',
+  aboutParagraph1:
+    'Bimbingan Belajar Great Formula Solution (Bimbel GFS) berdiri sejak tahun 2011 dan telah membimbing lebih dari 3.000 siswa dengan tutor-tutor berpengalaman di bidangnya, sehingga bisa membimbing dan membantu para siswa semakin berprestasi.',
+  aboutParagraph2:
+    'Ditunjang fasilitas belajar yang memadai — multimedia, AC, dan free wifi — siswa nyaman belajar. Dan yang paling penting: dengan biaya yang terjangkau.',
+  officeAddress: 'Jl. Hj. Saodah No. 125, Jatihandap – Cicaheum, Bandung',
+  officeHours: 'Senin–Sabtu, 09.00–18.00',
+  ctaTitle: 'Jadilah siswa GFS berikutnya!',
+  ctaSubtitle:
+    'Sudah lebih dari 3.000 siswa bergabung sejak 2011. Daftar sebagai orang tua, lalu hubungkan anak Anda ke program belajar — jadwal, ujian, latihan, dan pembayaran dalam satu tempat.',
+} as const;
 
 export interface ExamSettings {
   /** Batas pelanggaran proctoring: pelanggaran ke-N memicu auto-submit
@@ -428,6 +480,22 @@ export const SETTING_DEFS: {
     defaults: {
       heroImages: [],
       registrationUrl: 'https://s.id/info-daftarGFS2627',
+      ...LANDING_DISPLAY_DEFAULTS,
+      testimonials: [
+        {
+          name: 'Octaviani Putri',
+          school: 'UPI — Jurusan Pend. Kimia',
+          quote:
+            'Belajar di GFS banyak ilmu dan prestasi juga di sekolah. Menyenangkan gabung di GFS.',
+        },
+        {
+          name: 'Fazri Adnand',
+          school: 'UNPAD — Jurusan Fisika',
+          quote:
+            'Selama di GFS, saya bangga dan senang karena fasilitas yang mendukung pelajaran jadi mudah diterima. Pokoknya GFS bimbel yang recommended.',
+        },
+      ],
+      locations: [],
     },
     validate(raw) {
       const o = (raw ?? {}) as Record<string, unknown>;
@@ -436,14 +504,32 @@ export const SETTING_DEFS: {
           'display.heroImages wajib berupa array URL gambar.',
         );
       }
-      const heroImages = o.heroImages.map((v, i) =>
-        asString(v, `display.heroImages[${i}]`, 500),
-      );
-      if (heroImages.length > 10) {
+      if (o.heroImages.length > 10) {
         throw new BadRequestException(
           'display.heroImages maksimal 10 gambar.',
         );
       }
+      // Terima bentuk lama "url-string" maupun bentuk baru {url, link} —
+      // setting yang tersimpan sebelum fitur link tetap valid.
+      const heroImages = o.heroImages.map((entry, i) => {
+        let rawUrl: unknown = entry;
+        let rawLink: unknown = '';
+        if (typeof entry === 'object' && entry !== null) {
+          rawUrl = (entry as Record<string, unknown>).url;
+          rawLink = (entry as Record<string, unknown>).link;
+        }
+        const url = asString(rawUrl, `display.heroImages[${i}]`, 500);
+        let link = '';
+        if (rawLink !== undefined && rawLink !== null && rawLink !== '') {
+          link = asString(rawLink, `display.heroImages[${i}].link`, 500);
+          if (!/^https?:\/\//.test(link)) {
+            throw new BadRequestException(
+              `Link foto hero ${i + 1} harus URL http(s):// yang valid.`,
+            );
+          }
+        }
+        return { url, link };
+      });
       const registrationUrl = asString(
         o.registrationUrl,
         'display.registrationUrl',
@@ -454,7 +540,72 @@ export const SETTING_DEFS: {
           'display.registrationUrl harus URL http(s):// yang valid.',
         );
       }
-      return { heroImages, registrationUrl };
+      const text = (
+        key: keyof typeof LANDING_DISPLAY_DEFAULTS,
+        label: string,
+        max: number,
+      ) => {
+        const s = asString(o[key], label, max);
+        // Kosong = kembali ke default — teks landing tidak boleh kosong.
+        return s || LANDING_DISPLAY_DEFAULTS[key];
+      };
+      const rawTestimonials = Array.isArray(o.testimonials)
+        ? o.testimonials
+        : [];
+      if (rawTestimonials.length > 12) {
+        throw new BadRequestException(
+          'testimonials maksimal 12 testimoni.',
+        );
+      }
+      const testimonials = rawTestimonials.map((entry, i) => ({
+        name: asString(
+          (entry as Record<string, unknown>)?.name,
+          `Nama testimoni ${i + 1}`,
+          100,
+        ),
+        school: asString(
+          (entry as Record<string, unknown>)?.school,
+          `Asal/kampus testimoni ${i + 1}`,
+          150,
+        ),
+        quote: asString(
+          (entry as Record<string, unknown>)?.quote,
+          `Kutipan testimoni ${i + 1}`,
+          500,
+        ),
+      }));
+      const rawLocations = Array.isArray(o.locations) ? o.locations : [];
+      if (rawLocations.length > 10) {
+        throw new BadRequestException('locations maksimal 10 lokasi.');
+      }
+      const locations = rawLocations.map((entry, i) => ({
+        name: asString(
+          (entry as Record<string, unknown>)?.name,
+          `Nama lokasi ${i + 1}`,
+          120,
+        ),
+        address: asString(
+          (entry as Record<string, unknown>)?.address,
+          `Alamat lokasi ${i + 1}`,
+          250,
+        ),
+      }));
+      return {
+        heroImages,
+        registrationUrl,
+        heroBadge: text('heroBadge', 'Badge hero', 120),
+        heroTitle: text('heroTitle', 'Judul hero', 120),
+        heroHighlight: text('heroHighlight', 'Sorotan judul hero', 120),
+        heroSubtitle: text('heroSubtitle', 'Subjudul hero', 400),
+        aboutParagraph1: text('aboutParagraph1', 'Paragraf tentang 1', 800),
+        aboutParagraph2: text('aboutParagraph2', 'Paragraf tentang 2', 800),
+        officeAddress: text('officeAddress', 'Alamat kantor', 200),
+        officeHours: text('officeHours', 'Jam operasional', 120),
+        ctaTitle: text('ctaTitle', 'Judul ajakan (CTA)', 150),
+        ctaSubtitle: text('ctaSubtitle', 'Subjudul ajakan (CTA)', 400),
+        testimonials,
+        locations,
+      };
     },
   },
   exam: {

@@ -14,6 +14,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import type { MaterialRow, GroupItem } from '@/lib/phase3a-types';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
+import { CategoryChips } from '@/components/shared/category-chips';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { EmptyState } from '@/components/shared/empty-state';
 import { ContentDrilldown, DrillBreadcrumb, useContentCategories, useContentLevels, useDrillState } from '@/components/shared/content-drilldown';
@@ -83,10 +84,31 @@ export function MaterialsManager({ canManage, basePath = '/materi' }: { canManag
   });
 
   const items = listQ.data ?? [];
-  const filtered = applyDrill(items, drill, levels).filter(
-    (i) => !catFilter || i.category === catFilter,
-  );
-  const done = drillDone(drill) || !!debouncedSearch;
+  const [subjectFilter, setSubjectFilter] = useState('');
+  // Siswa: materi sudah di-scope server ke jenjangnya — filter langsung
+  // per mapel/tipe tanpa drill; opsi diturunkan dari materi yang ada.
+  const subjectOptions = [...new Map(
+    items.filter((i) => i.subject).map((i) => [i.subject!.id, i.subject!.name]),
+  ).entries()]
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const typeOptions = [...new Set(items.map((i) => i.category).filter((c): c is string => !!c))]
+    .map((c) => ({
+      value: c,
+      label: categoryLabel(c, catsQ.data),
+      count: items.filter((i) => i.category === c).length,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const filtered = canManage
+    ? applyDrill(items, drill, levels).filter(
+        (i) => !catFilter || i.category === catFilter,
+      )
+    : items.filter(
+        (i) =>
+          (!subjectFilter || i.subject?.id === subjectFilter) &&
+          (!catFilter || i.category === catFilter),
+      );
+  const done = canManage ? drillDone(drill) || !!debouncedSearch : true;
 
   const createUrl = () => {
     const p = new URLSearchParams(drillQuery(drill));
@@ -148,6 +170,19 @@ export function MaterialsManager({ canManage, basePath = '/materi' }: { canManag
       </div>
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex w-full items-end gap-1.5 sm:w-auto">
+          {!canManage && (
+            <div className="w-full sm:w-44">
+              <Phase1aSelectField
+                id="mat-subject"
+                label="Mapel"
+                value={subjectFilter}
+                onChange={setSubjectFilter}
+                options={subjectOptions}
+                placeholder="Semua mapel"
+              />
+            </div>
+          )}
+          {canManage && (
           <div className="w-full sm:w-44">
             <Phase1aSelectField
               id="mat-cat"
@@ -157,6 +192,7 @@ export function MaterialsManager({ canManage, basePath = '/materi' }: { canManag
               options={categoryOptions(catsQ.data)}
             />
           </div>
+          )}
           {canManage && (
             <Button
               type="button"
@@ -192,6 +228,15 @@ export function MaterialsManager({ canManage, basePath = '/materi' }: { canManag
         </div>
         {addButton}
       </div>
+      {/* Siswa: chips tipe — hanya tipe yang memang ada materinya. */}
+      {!canManage && typeOptions.length > 0 ? (
+        <CategoryChips
+          options={typeOptions}
+          value={catFilter}
+          onChange={setCatFilter}
+          total={items.length}
+        />
+      ) : null}
       {listQ.isLoading ? <Skeleton className="h-24 w-full" /> : null}
       {listQ.isError ? <p className="text-sm text-destructive">Gagal memuat materi.</p> : null}
       {!listQ.isLoading && filtered.length === 0 ? (

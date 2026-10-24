@@ -31,10 +31,12 @@ import {
 	findNavItem,
 	ROLE_LABELS,
 	ROLE_NAV,
+	navItemsFor,
 	type NavItem,
 	type RoleKey,
 } from "@/config/role-nav";
 import { NotificationBell, userInitials } from "./shell-shared";
+import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { useBranding } from "@/lib/use-branding";
 
 const COLLAPSED_KEY = "gfs-sidebar-collapsed";
@@ -135,7 +137,7 @@ export function AppShellDesktop({
 	const [openOverrides, setOpenOverrides] = useState<Record<string, boolean>>(
 		() => (typeof window !== "undefined" ? readOpenGroups() : {}),
 	);
-	const groups = groupItems(ROLE_NAV[role]);
+	const groups = groupItems(navItemsFor(role, user));
 	const currentSlug = pathname.split("/")[2] ?? "";
 	const activeGroupName = groups.find((g) =>
 		g.items.some((item) => item.slug === currentSlug),
@@ -329,6 +331,7 @@ export function AppShellDesktop({
 							</BreadcrumbList>
 						</Breadcrumb>
 						<div className="ml-auto flex items-center gap-2">
+							<ThemeToggle variant="ghost" />
 							<NotificationBell role={role} />
 							<div className="hidden text-right xl:block">
 								<p className="text-sm leading-tight font-medium">{user?.name}</p>

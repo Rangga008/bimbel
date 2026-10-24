@@ -561,6 +561,9 @@ model ParentStatement {
   totalAmount       Decimal  @db.Decimal(14, 2)
   /// Tanggal jatuh tempo angsuran tiap bulan (default tanggal invoice pertama).
   dueDay       Int?
+  /// Tanda tangan ortu — data URL PNG dari signature pad (opsional;
+  /// bila kosong, nama cetak pada surat tetap berlaku sebagai tanda tangan).
+  signatureData String?
   /// Versi teks ketentuan yang disetujui (saat ini "v1" — 6 poin kontrak GFS).
   termsVersion String  @default("v1")
   agreedAt     DateTime @default(now())
@@ -1486,6 +1489,9 @@ model Exam {
   /// Kode akses ujian — dimasukkan siswa (terutama peserta luar) untuk
   /// membuka akses ujian tanpa harus jadi anggota kelompok/jenjangnya.
   accessCode       String?   @unique
+  /// Tampilkan di halaman publik /tryout — untuk try out promosi yang bisa
+  /// diikuti peserta luar setelah daftar akun + verifikasi HP.
+  isPublic         Boolean   @default(false)
   notes            String?
   resultsNotifiedAt DateTime?
   createdBy        String

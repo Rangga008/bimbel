@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ComboboxField } from "@/components/shared/combobox-field";
+import { PrintStatementButton } from "./statement-print";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import type { GroupListItem } from "@/lib/phase1b-types";
 import { ENROLLMENT_STATUS_META, type StaffEnrollment } from "./finance-enrollments";
@@ -212,11 +213,14 @@ export function AcademicEnrollments() {
 											<Badge variant={meta.variant}>{meta.label}</Badge>
 										</td>
 										<td className={`${td} whitespace-nowrap`}>
-											{e.status === "ACCEPTED" ? (
-												<Button size="sm" onClick={() => { setPlaceTarget(e); setGroupId(""); }}>
-													<Users /> Tempatkan
-												</Button>
-											) : null}
+											<div className="flex flex-wrap gap-1.5">
+												{e.status === "ACCEPTED" ? (
+													<Button size="sm" onClick={() => { setPlaceTarget(e); setGroupId(""); }}>
+														<Users /> Tempatkan
+													</Button>
+												) : null}
+												<PrintStatementButton enrollmentId={e.id} base="/enrollments" />
+											</div>
 										</td>
 									</tr>
 								);

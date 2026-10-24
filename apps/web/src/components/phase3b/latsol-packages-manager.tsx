@@ -17,6 +17,7 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { ContentDrilldown, DrillBreadcrumb, useContentCategories, useContentLevels, useDrillState } from '@/components/shared/content-drilldown';
 import { ContentCategoriesManager } from '@/components/shared/content-categories-manager';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
+import { CategoryChips } from '@/components/shared/category-chips';
 import {
   applyDrill,
   categoryLabel,
@@ -88,7 +89,11 @@ export function LatsolPackagesManager({
     .map(([value, label]) => ({ value, label }))
     .sort((a, b) => a.label.localeCompare(b.label));
   const typeOptions = [...new Set(items.map((i) => i.category).filter((c): c is string => !!c))]
-    .map((c) => ({ value: c, label: categoryLabel(c, catsQ.data) }))
+    .map((c) => ({
+      value: c,
+      label: categoryLabel(c, catsQ.data),
+      count: items.filter((i) => i.category === c).length,
+    }))
     .sort((a, b) => a.label.localeCompare(b.label));
   const filtered = canManage
     ? applyDrill(items, drill, levels).filter(
@@ -167,16 +172,18 @@ export function LatsolPackagesManager({
               />
             </div>
           )}
-          <div className="w-full sm:w-44">
-            <Phase1aSelectField
-              id="lp-cat"
-              label={canManage ? 'Kategori' : 'Tipe'}
-              value={catFilter}
-              onChange={setCatFilter}
-              options={canManage ? categoryOptions(catsQ.data) : typeOptions}
-              placeholder={canManage ? 'Semua kategori' : 'Semua tipe'}
-            />
-          </div>
+          {canManage && (
+            <div className="w-full sm:w-44">
+              <Phase1aSelectField
+                id="lp-cat"
+                label="Kategori"
+                value={catFilter}
+                onChange={setCatFilter}
+                options={categoryOptions(catsQ.data)}
+                placeholder="Semua kategori"
+              />
+            </div>
+          )}
           {canManage && (
             <Button
               type="button"
@@ -201,6 +208,15 @@ export function LatsolPackagesManager({
         </div>
         {addButton}
       </div>
+      {/* Siswa: chips tipe — hanya tipe yang memang ada paketnya. */}
+      {!canManage && typeOptions.length > 0 ? (
+        <CategoryChips
+          options={typeOptions}
+          value={catFilter}
+          onChange={setCatFilter}
+          total={items.length}
+        />
+      ) : null}
       {listQ.isLoading ? <Skeleton className="h-24 w-full" /> : null}
       {listQ.isError ? <p className="text-sm text-destructive">Gagal memuat paket latsol.</p> : null}
       {!listQ.isLoading && filtered.length === 0 ? (

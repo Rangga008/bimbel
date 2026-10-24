@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiFetch, ApiError, resolveAssetUrl } from "@/lib/api-client";
@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Pencil, Send, Trash2, ChevronRight, ArrowLeft } from "lucide-react";
@@ -84,9 +85,51 @@ interface ReminderTemplates {
 	tutorAbsence: string;
 }
 
+interface HeroImageEntry {
+	url: string;
+	link: string;
+}
+
+interface TestimonialEntry {
+	name: string;
+	school: string;
+	quote: string;
+}
+
+interface LocationEntry {
+	name: string;
+	address: string;
+}
+
 interface DisplaySettings {
-	heroImages: string[];
+	heroImages: HeroImageEntry[];
 	registrationUrl: string;
+	heroBadge: string;
+	heroTitle: string;
+	heroHighlight: string;
+	heroSubtitle: string;
+	aboutParagraph1: string;
+	aboutParagraph2: string;
+	officeAddress: string;
+	officeHours: string;
+	ctaTitle: string;
+	ctaSubtitle: string;
+	testimonials: TestimonialEntry[];
+	locations: LocationEntry[];
+}
+
+/** Setting lama menyimpan heroImages sebagai array string — ubah ke bentuk
+ *  {url, link} supaya form selalu konsisten. */
+function normalizeDisplay(d: DisplaySettings | undefined | null) {
+	if (!d) return null;
+	return {
+		...d,
+		heroImages: ((d.heroImages ?? []) as Array<HeroImageEntry | string>).map(
+			(h) => (typeof h === "string" ? { url: h, link: "" } : h),
+		),
+		testimonials: d.testimonials ?? [],
+		locations: d.locations ?? [],
+	};
 }
 
 interface ExamSettings {
@@ -117,6 +160,41 @@ interface FinancialAccount {
 
 function err(e: unknown, fb: string) {
 	return e instanceof ApiError ? e.message : fb;
+}
+
+/** Sub-bagian di pengaturan landing — judul + field + pratinjau opsional. */
+function LandingSubSection({
+	title,
+	hint,
+	children,
+}: {
+	title: string;
+	hint?: string;
+	children: ReactNode;
+}) {
+	return (
+		<div className="grid gap-3 rounded-lg border p-4">
+			<div>
+				<p className="text-sm font-semibold">{title}</p>
+				{hint ? (
+					<p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>
+				) : null}
+			</div>
+			{children}
+		</div>
+	);
+}
+
+/** Kotak pratinjau kecil — merender tampilan section apa adanya. */
+function LandingPreview({ children }: { children: ReactNode }) {
+	return (
+		<div className="grid gap-1.5">
+			<p className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
+				Pratinjau
+			</p>
+			<div className="overflow-hidden rounded-lg border">{children}</div>
+		</div>
+	);
 }
 
 const WA_TOGGLES: Array<{
@@ -203,7 +281,7 @@ export function FinanceSettings() {
 		() => settingsQ.data?.reminders ?? null,
 	);
 	const [display, setDisplay] = useState<DisplaySettings | null>(
-		() => settingsQ.data?.display ?? null,
+		() => normalizeDisplay(settingsQ.data?.display),
 	);
 	const [exam, setExam] = useState<ExamSettings | null>(
 		() => settingsQ.data?.exam ?? null,
@@ -232,7 +310,7 @@ export function FinanceSettings() {
 			setMail(settingsQ.data.mail);
 			setMidtrans(settingsQ.data.midtrans);
 			setReminders(settingsQ.data.reminders);
-			setDisplay(settingsQ.data.display);
+			setDisplay(normalizeDisplay(settingsQ.data.display));
 			setExam(settingsQ.data.exam);
 		}
 	}
@@ -501,8 +579,9 @@ export function FinanceSettings() {
 				<CardHeader>
 					<CardTitle>Tampilan Landing</CardTitle>
 					<CardDescription>
-						Foto-foto siswa yang tampil sebagai slider di bagian atas halaman
-						awal, dan link formulir info/pendaftaran (buku tamu).
+						Foto hero (bisa diklik per gambar), teks tiap section, testimoni,
+						alamat, dan ajakan akhir di halaman awal — tiap bagian punya
+						pratinjau langsung.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
@@ -514,8 +593,11 @@ export function FinanceSettings() {
 								saveMutation.mutate({ key: "display", value: display });
 							}}
 						>
-							<div className="grid gap-2">
-								<Label>Foto Hero (slider halaman awal)</Label>
+							{/* ---- Foto hero + link per gambar ---- */}
+							<LandingSubSection
+								title="Foto Hero (slider halaman awal)"
+								hint="Tiap foto bisa diberi link klik sendiri — mis. ke formulir pendaftaran atau halaman program. Kosongkan link bila foto tidak perlu bisa diklik."
+							>
 								<div className="rounded-md border border-brand-blue-200 bg-brand-blue-50/60 px-3 py-2 text-xs text-brand-blue-900">
 									<p className="font-medium">Ukuran yang direkomendasikan</p>
 									<p className="mt-0.5">
@@ -530,32 +612,51 @@ export function FinanceSettings() {
 									</p>
 								</div>
 								{display.heroImages.length > 0 ? (
-									<div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-										{display.heroImages.map((url, i) => (
+									<div className="grid gap-3 sm:grid-cols-2">
+										{display.heroImages.map((img, i) => (
 											<div
-												key={`${url}-${i}`}
-												className="group relative overflow-hidden rounded-lg border bg-muted/20"
+												key={`${img.url}-${i}`}
+												className="grid gap-1.5"
 											>
-												<img
-													src={resolveAssetUrl(url)}
-													alt={`Foto hero ${i + 1}`}
-													className="aspect-[21/9] w-full object-cover"
-												/>
-												<button
-													type="button"
-													aria-label={`Hapus foto ${i + 1}`}
-													onClick={() =>
+												<div className="group relative overflow-hidden rounded-lg border bg-muted/20">
+													<img
+														src={resolveAssetUrl(img.url)}
+														alt={`Foto hero ${i + 1}`}
+														className="aspect-[21/9] w-full object-cover"
+													/>
+													<button
+														type="button"
+														aria-label={`Hapus foto ${i + 1}`}
+														onClick={() =>
+															setDisplay({
+																...display,
+																heroImages: display.heroImages.filter(
+																	(_, j) => j !== i,
+																),
+															})
+														}
+														className="absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-md bg-background/90 text-destructive shadow transition-opacity hover:bg-destructive hover:text-white"
+													>
+														<Trash2 className="size-3.5" />
+													</button>
+												</div>
+												<Input
+													type="url"
+													value={img.link}
+													onChange={(e) =>
 														setDisplay({
 															...display,
-															heroImages: display.heroImages.filter(
-																(_, j) => j !== i,
+															heroImages: display.heroImages.map(
+																(h, j) =>
+																	j === i
+																		? { ...h, link: e.target.value }
+																		: h,
 															),
 														})
 													}
-													className="absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-md bg-background/90 text-destructive shadow transition-opacity hover:bg-destructive hover:text-white"
-												>
-													<Trash2 className="size-3.5" />
-												</button>
+													placeholder="Link klik (opsional) https://…"
+													className="h-8 text-xs"
+												/>
 											</div>
 										))}
 									</div>
@@ -564,7 +665,7 @@ export function FinanceSettings() {
 										Belum ada foto — hero landing menampilkan kartu fitur saja.
 									</p>
 								)}
-								<div>
+								<div className="flex items-center gap-3">
 									<Button
 										type="button"
 										variant="outline"
@@ -574,15 +675,18 @@ export function FinanceSettings() {
 									>
 										<Plus className="size-4" /> Tambah Foto
 									</Button>
+									<p className="text-xs text-muted-foreground">
+										Maks. 10 foto — urutan tampil mengikuti urutan di sini.
+									</p>
 								</div>
-								<p className="text-xs text-muted-foreground">
-									Maksimal 10 foto — urutan tampil mengikuti urutan di sini.
-								</p>
-							</div>
-							<div className="grid max-w-md gap-1.5">
-								<Label htmlFor="reg-url">Link Formulir Pendaftaran</Label>
+							</LandingSubSection>
+
+							{/* ---- Link pendaftaran ---- */}
+							<LandingSubSection
+								title="Link Formulir Pendaftaran"
+								hint="Tombol 'Info & Pendaftaran' di header, hero, dan footer mengarah ke link ini — ganti tiap tahun ajaran."
+							>
 								<Input
-									id="reg-url"
 									type="url"
 									value={display.registrationUrl}
 									onChange={(e) =>
@@ -590,11 +694,431 @@ export function FinanceSettings() {
 									}
 									placeholder="https://s.id/info-daftarGFS2627"
 								/>
-								<p className="text-xs text-muted-foreground">
-									Tombol &quot;Info &amp; Pendaftaran&quot; di halaman awal
-									mengarah ke link ini (mis. Google Form buku tamu).
-								</p>
-							</div>
+							</LandingSubSection>
+
+							{/* ---- Teks hero ---- */}
+							<LandingSubSection
+								title="Teks Hero"
+								hint="Judul besar di halaman awal. Tulis {appName} di subjudul untuk menyisipkan nama aplikasi otomatis."
+							>
+								<div className="grid gap-3 sm:grid-cols-2">
+									<div className="grid gap-1.5">
+										<Label>Badge kecil</Label>
+										<Input
+											value={display.heroBadge}
+											onChange={(e) =>
+												setDisplay({ ...display, heroBadge: e.target.value })
+											}
+										/>
+									</div>
+									<div className="grid gap-1.5">
+										<Label>Judul</Label>
+										<Input
+											value={display.heroTitle}
+											onChange={(e) =>
+												setDisplay({ ...display, heroTitle: e.target.value })
+											}
+										/>
+									</div>
+									<div className="grid gap-1.5">
+										<Label>Sorotan judul (warna emas)</Label>
+										<Input
+											value={display.heroHighlight}
+											onChange={(e) =>
+												setDisplay({
+													...display,
+													heroHighlight: e.target.value,
+												})
+											}
+										/>
+									</div>
+									<div className="grid gap-1.5 sm:col-span-2">
+										<Label>Subjudul</Label>
+										<Textarea
+											rows={2}
+											value={display.heroSubtitle}
+											onChange={(e) =>
+												setDisplay({
+													...display,
+													heroSubtitle: e.target.value,
+												})
+											}
+										/>
+									</div>
+								</div>
+								<LandingPreview>
+									<div className="bg-gradient-to-br from-[#032a41] via-[#074c74] to-[#0f77b4] p-5 text-white">
+										<span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-300/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-200">
+											{display.heroBadge || "…"}
+										</span>
+										<p className="mt-3 text-xl font-bold tracking-tight">
+											{display.heroTitle}{" "}
+											<span className="text-amber-400">
+												{display.heroHighlight}
+											</span>
+										</p>
+										<p className="mt-2 max-w-lg text-xs leading-relaxed text-sky-100">
+											{display.heroSubtitle.replace(
+												"{appName}",
+												branding?.appName || "Bimbel GFS",
+											)}
+										</p>
+									</div>
+								</LandingPreview>
+							</LandingSubSection>
+
+							{/* ---- Tentang ---- */}
+							<LandingSubSection
+								title="Tentang Kami"
+								hint="Dua paragraf di section Tentang halaman awal."
+							>
+								<div className="grid gap-3">
+									<div className="grid gap-1.5">
+										<Label>Paragraf 1</Label>
+										<Textarea
+											rows={3}
+											value={display.aboutParagraph1}
+											onChange={(e) =>
+												setDisplay({
+													...display,
+													aboutParagraph1: e.target.value,
+												})
+											}
+										/>
+									</div>
+									<div className="grid gap-1.5">
+										<Label>Paragraf 2</Label>
+										<Textarea
+											rows={3}
+											value={display.aboutParagraph2}
+											onChange={(e) =>
+												setDisplay({
+													...display,
+													aboutParagraph2: e.target.value,
+												})
+											}
+										/>
+									</div>
+								</div>
+								<LandingPreview>
+									<div className="p-4 text-sm leading-relaxed text-muted-foreground">
+										<p>{display.aboutParagraph1}</p>
+										<p className="mt-2">{display.aboutParagraph2}</p>
+									</div>
+								</LandingPreview>
+							</LandingSubSection>
+
+							{/* ---- Alamat & jam ---- */}
+							<LandingSubSection
+								title="Alamat & Jam Kantor"
+								hint="Tampil di kartu 'Mau datang langsung?' dan jam operasional di footer."
+							>
+								<div className="grid gap-3 sm:grid-cols-2">
+									<div className="grid gap-1.5">
+										<Label>Alamat</Label>
+										<Input
+											value={display.officeAddress}
+											onChange={(e) =>
+												setDisplay({
+													...display,
+													officeAddress: e.target.value,
+												})
+											}
+										/>
+									</div>
+									<div className="grid gap-1.5">
+										<Label>Jam operasional</Label>
+										<Input
+											value={display.officeHours}
+											onChange={(e) =>
+												setDisplay({
+													...display,
+													officeHours: e.target.value,
+												})
+											}
+										/>
+									</div>
+								</div>
+								<LandingPreview>
+									<div className="border-amber-300/50 bg-amber-50 p-4 text-sm">
+										<p className="font-medium">Mau datang langsung?</p>
+										<p className="text-muted-foreground">
+											Kantor {branding?.appName || "Bimbel GFS"}:{" "}
+											{display.officeAddress} — {display.officeHours}.
+										</p>
+									</div>
+								</LandingPreview>
+							</LandingSubSection>
+
+							{/* ---- Lokasi footer ---- */}
+							<LandingSubSection
+								title="Lokasi di Footer"
+								hint="Daftar lokasi & jam buka di kolom 'Lokasi & Jam Buka' footer halaman awal. Kosongkan daftar ini untuk memakai data gedung dari menu Gedung. Maksimal 10."
+							>
+								<div className="grid gap-3">
+									{display.locations.map((loc, i) => (
+										<div
+											key={i}
+											className="grid gap-2 rounded-md border p-3 sm:grid-cols-[1fr_1.4fr_auto] sm:items-center"
+										>
+											<Input
+												placeholder="Nama lokasi — mis. Cabang Cicaheum"
+												value={loc.name}
+												onChange={(e) =>
+													setDisplay({
+														...display,
+														locations: display.locations.map(
+															(x, j) =>
+																j === i
+																	? { ...x, name: e.target.value }
+																	: x,
+														),
+													})
+												}
+											/>
+											<Input
+												placeholder="Alamat — mis. Jl. Hj. Saodah No. 125"
+												value={loc.address}
+												onChange={(e) =>
+													setDisplay({
+														...display,
+														locations: display.locations.map(
+															(x, j) =>
+																j === i
+																	? {
+																			...x,
+																			address: e.target.value,
+																		}
+																	: x,
+														),
+													})
+												}
+											/>
+											<Button
+												type="button"
+												variant="ghost"
+												size="sm"
+												className="text-destructive hover:text-destructive"
+												onClick={() =>
+													setDisplay({
+														...display,
+														locations: display.locations.filter(
+															(_, j) => j !== i,
+														),
+													})
+												}
+											>
+												<Trash2 className="size-3.5" /> Hapus
+											</Button>
+										</div>
+									))}
+								</div>
+								<div>
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										disabled={display.locations.length >= 10}
+										onClick={() =>
+											setDisplay({
+												...display,
+												locations: [
+													...display.locations,
+													{ name: "", address: "" },
+												],
+											})
+										}
+									>
+										<Plus className="size-4" /> Tambah Lokasi
+									</Button>
+								</div>
+								{display.locations.length > 0 ? (
+									<LandingPreview>
+										<div className="bg-[#032a41] p-4 text-sm text-sky-100">
+											<p className="mb-2 text-[11px] font-semibold tracking-widest text-amber-300 uppercase">
+												Lokasi &amp; Jam Buka
+											</p>
+											<ul className="grid gap-2">
+												{display.locations.map((loc, i) => (
+													<li key={i}>
+														<p className="font-medium text-white">
+															{loc.name || "Nama lokasi"}
+														</p>
+														<p className="text-xs text-sky-200">
+															{loc.address || "Alamat"}
+														</p>
+													</li>
+												))}
+											</ul>
+										</div>
+									</LandingPreview>
+								) : null}
+							</LandingSubSection>
+
+							{/* ---- Testimoni ---- */}
+							<LandingSubSection
+								title="Testimoni"
+								hint="Kutipan alumni & siswa di section Testimoni — maksimal 12."
+							>
+								<div className="grid gap-3">
+									{display.testimonials.map((t, i) => (
+										<div
+											key={i}
+											className="grid gap-2 rounded-md border p-3"
+										>
+											<div className="grid gap-2 sm:grid-cols-2">
+												<Input
+													placeholder="Nama"
+													value={t.name}
+													onChange={(e) =>
+														setDisplay({
+															...display,
+															testimonials: display.testimonials.map(
+																(x, j) =>
+																	j === i
+																		? { ...x, name: e.target.value }
+																		: x,
+															),
+														})
+													}
+												/>
+												<Input
+													placeholder="Asal / kampus — mis. UNPAD — Fisika"
+													value={t.school}
+													onChange={(e) =>
+														setDisplay({
+															...display,
+															testimonials: display.testimonials.map(
+																(x, j) =>
+																	j === i
+																		? { ...x, school: e.target.value }
+																		: x,
+															),
+														})
+													}
+												/>
+											</div>
+											<Textarea
+												rows={2}
+												placeholder="Kutipan testimoni"
+												value={t.quote}
+												onChange={(e) =>
+													setDisplay({
+														...display,
+														testimonials: display.testimonials.map(
+															(x, j) =>
+																j === i
+																	? { ...x, quote: e.target.value }
+																	: x,
+														),
+													})
+												}
+											/>
+											<div className="flex justify-end">
+												<Button
+													type="button"
+													variant="ghost"
+													size="sm"
+													className="text-destructive hover:text-destructive"
+													onClick={() =>
+														setDisplay({
+															...display,
+															testimonials: display.testimonials.filter(
+																(_, j) => j !== i,
+															),
+														})
+													}
+												>
+													<Trash2 className="size-3.5" /> Hapus
+												</Button>
+											</div>
+										</div>
+									))}
+								</div>
+								<div>
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										disabled={display.testimonials.length >= 12}
+										onClick={() =>
+											setDisplay({
+												...display,
+												testimonials: [
+													...display.testimonials,
+													{ name: "", school: "", quote: "" },
+												],
+											})
+										}
+									>
+										<Plus className="size-4" /> Tambah Testimoni
+									</Button>
+								</div>
+								{display.testimonials.length > 0 ? (
+									<LandingPreview>
+										<div className="grid gap-3 p-4 sm:grid-cols-2">
+											{display.testimonials.map((t, i) => (
+												<div
+													key={i}
+													className="rounded-lg border bg-card p-3"
+												>
+													<p className="text-sm font-semibold">
+														{t.name || "Nama"}
+													</p>
+													<p className="text-xs text-muted-foreground">
+														{t.school || "Asal / kampus"}
+													</p>
+													<p className="mt-2 text-xs leading-relaxed text-muted-foreground italic">
+														&ldquo;{t.quote || "Kutipan…"}&rdquo;
+													</p>
+												</div>
+											))}
+										</div>
+									</LandingPreview>
+								) : null}
+							</LandingSubSection>
+
+							{/* ---- CTA akhir ---- */}
+							<LandingSubSection
+								title="Ajakan Akhir (CTA)"
+								hint="Banner besar di bagian bawah sebelum footer."
+							>
+								<div className="grid gap-3">
+									<div className="grid gap-1.5">
+										<Label>Judul</Label>
+										<Input
+											value={display.ctaTitle}
+											onChange={(e) =>
+												setDisplay({ ...display, ctaTitle: e.target.value })
+											}
+										/>
+									</div>
+									<div className="grid gap-1.5">
+										<Label>Subjudul</Label>
+										<Textarea
+											rows={2}
+											value={display.ctaSubtitle}
+											onChange={(e) =>
+												setDisplay({
+													...display,
+													ctaSubtitle: e.target.value,
+												})
+											}
+										/>
+									</div>
+								</div>
+								<LandingPreview>
+									<div className="bg-gradient-to-br from-[#032a41] via-[#074c74] to-[#0c5d8d] p-6 text-center text-white">
+										<p className="text-lg font-bold tracking-tight">
+											{display.ctaTitle}
+										</p>
+										<p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-sky-100">
+											{display.ctaSubtitle}
+										</p>
+									</div>
+								</LandingPreview>
+							</LandingSubSection>
+
 							<div>
 								<Button type="submit" disabled={saving}>
 									{saving ? "Menyimpan…" : "Simpan Tampilan Landing"}
@@ -610,7 +1134,10 @@ export function FinanceSettings() {
 							if (display) {
 								setDisplay({
 									...display,
-									heroImages: [...display.heroImages, url].slice(0, 10),
+									heroImages: [...display.heroImages, { url, link: "" }].slice(
+										0,
+										10,
+									),
 								});
 							}
 						}}
