@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { SessionsList } from "@/components/phase1c/sessions-list";
 import { NotificationsInbox } from "@/components/phase1d/notifications-inbox";
+import { StudentAttendanceView } from "@/components/phase1d/parent-attendance-view";
 import { MaterialsManager } from "@/components/phase3a/materials-manager";
 import { LatsolPage } from "@/components/phase3b/latsol-page";
 import { ExamListStudent } from "@/components/phase3c/exam-list-student";
@@ -35,6 +36,7 @@ export default async function SiswaMenuPage({
 	if (slug === "latsol")
 		return <LatsolPage canManage={false} basePath="/siswa/latsol" />;
 	if (slug === "performa") return <StudentPerformance />;
+	if (slug === "kehadiran") return <StudentAttendanceView />;
 	if (slug === "feedback") return <FeedbackForm />;
 	if (slug === "ranking") return <StudentRankingPage />;
 	if (slug === "laporan") return <LearningReportPage audience="self" />;

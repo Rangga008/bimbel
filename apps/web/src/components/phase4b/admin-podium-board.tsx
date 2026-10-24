@@ -102,15 +102,19 @@ export function AdminPodiumBoard() {
 						<option key={g.id} value={g.id}>{g.name}</option>
 					))}
 				</select>
-				<select
-					className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-					value={buildingId}
-					onChange={(e) => setBuildingId(e.target.value)}
-				>
-					{buildingsQ.data?.map((b) => (
-						<option key={b.id} value={b.id}>{b.name}</option>
-					))}
-				</select>
+				{/* Kolom gedung hanya untuk role yang boleh lihat daftar gedung
+					(tutor tidak punya building.view → /buildings 403, kolom disembunyikan). */}
+				{!buildingsQ.isError ? (
+					<select
+						className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+						value={buildingId}
+						onChange={(e) => setBuildingId(e.target.value)}
+					>
+						{buildingsQ.data?.map((b) => (
+							<option key={b.id} value={b.id}>{b.name}</option>
+						))}
+					</select>
+				) : null}
 			</div>
 			<PodiumBoard
 				columns={[
@@ -120,12 +124,16 @@ export function AdminPodiumBoard() {
 						entries: groupQ.data?.leaderboard,
 						loading: groupQ.isLoading || !groupId,
 					},
-					{
-						title: "Gedung",
-						subtitle: buildingName,
-						entries: buildingQ.data?.leaderboard,
-						loading: buildingQ.isLoading || !buildingId,
-					},
+					...(buildingsQ.isError
+						? []
+						: [
+							{
+								title: "Gedung",
+								subtitle: buildingName,
+								entries: buildingQ.data?.leaderboard,
+								loading: buildingQ.isLoading || !buildingId,
+							},
+						]),
 					{
 						title: "GFS",
 						subtitle: "seluruh Bimbel GFS",

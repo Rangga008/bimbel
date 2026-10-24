@@ -376,7 +376,7 @@ export function FinanceSettings() {
 			) : null}
 
 			{/* ---- Identitas Aplikasi ---- */}
-			{(!section || section === "branding") ? (
+			{(section === "branding") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Identitas Aplikasi</CardTitle>
@@ -455,7 +455,7 @@ export function FinanceSettings() {
 			) : null}
 
 			{/* ---- Tampilan Landing ---- */}
-			{(!section || section === "display") ? (
+			{(section === "display") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Tampilan Landing</CardTitle>
@@ -566,7 +566,7 @@ export function FinanceSettings() {
 			) : null}
 
 			{/* ---- Ujian & Proctoring ---- */}
-			{(!section || section === "exam") ? (
+			{(section === "exam") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Ujian &amp; Perlindungan</CardTitle>
@@ -620,7 +620,7 @@ export function FinanceSettings() {
 			) : null}
 
 			{/* ---- Identitas Bimbel ---- */}
-			{(!section || section === "company") ? (
+			{(section === "company") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Identitas Bimbel</CardTitle>
@@ -682,7 +682,7 @@ export function FinanceSettings() {
 			) : null}
 
 			{/* ---- Parameter Keuangan ---- */}
-			{(!section || section === "finance") ? (
+			{(section === "finance") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Parameter Keuangan</CardTitle>
@@ -771,7 +771,7 @@ export function FinanceSettings() {
 			) : null}
 
 			{/* ---- Notifikasi WhatsApp ---- */}
-			{(!section || section === "whatsapp") ? (
+			{(section === "whatsapp") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Notifikasi WhatsApp Otomatis</CardTitle>
@@ -938,7 +938,7 @@ export function FinanceSettings() {
 			) : null}
 
 			{/* ---- Template Reminder WhatsApp ---- */}
-			{(!section || section === "reminders") ? (
+			{(section === "reminders") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Template Reminder WhatsApp</CardTitle>
@@ -1012,7 +1012,7 @@ export function FinanceSettings() {
 			) : null}
 
 			{/* ---- Email / SMTP ---- */}
-			{(!section || section === "mail") ? (
+			{(section === "mail") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Email (SMTP)</CardTitle>
@@ -1127,7 +1127,7 @@ export function FinanceSettings() {
 			) : null}
 
 			{/* ---- Payment Gateway (Midtrans) ---- */}
-			{(!section || section === "midtrans") ? (
+			{(section === "midtrans") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Payment Gateway (Midtrans)</CardTitle>
@@ -1231,7 +1231,7 @@ export function FinanceSettings() {
 			) : null}
 
 			{/* ---- Akun Kas / Bank ---- */}
-			{canViewAccounts && (!section || section === "accounts") ? (
+			{canViewAccounts && (section === "accounts") ? (
 			<Card>
 				<CardHeader>
 					<CardTitle>Akun Kas / Bank</CardTitle>

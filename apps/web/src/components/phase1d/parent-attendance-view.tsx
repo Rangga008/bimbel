@@ -38,15 +38,25 @@ function shortName(name: string) {
   return name.split(' ')[0] ?? name;
 }
 
-interface MergedRow extends AttendanceRow {
+export interface MergedRow extends AttendanceRow {
   childName: string;
 }
 
+/** Chip ringkasan status — jumlah per status dengan warna statusnya. */
+function StatusChip({ status, count }: { status: AttendanceStatus; count: number }) {
+  return (
+    <span className={cn('inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs', STATUS_STYLE[status])}>
+      <span className="font-semibold tabular-nums">{count}</span> {ATTENDANCE_LABELS[status]}
+    </span>
+  );
+}
+
 /**
- * Kalender kehadiran gabungan semua anak — satu tanggal menampilkan
- * status tiap anak sekaligus (chip "Nama · Status").
+ * Kalender kehadiran gabungan — satu tanggal menampilkan
+ * status tiap subjek sekaligus (chip "Nama · Status"). Dipakai
+ * halaman ortu (semua anak) maupun siswa (milik sendiri).
  */
-function MergedAttendanceCalendar({ rows }: { rows: MergedRow[] }) {
+export function MergedAttendanceCalendar({ rows }: { rows: MergedRow[] }) {
   const [cursor, setCursor] = useState(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -172,25 +182,109 @@ export function ParentAttendanceView() {
         <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Belum ada data kehadiran untuk anak Anda.</CardContent></Card>
       ) : null}
       {children.length > 0 ? (
-        <Card>
-          <CardContent className="flex flex-col gap-3 py-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+        <>
+          {/* Ringkasan per anak — persentase hadir + jumlah per status. */}
+          <div className={`grid gap-3 ${children.length > 1 ? 'sm:grid-cols-2' : ''}`}>
+            {children.map((c) => {
+              const pct = c.total ? Math.round(((c.byStatus.HADIR ?? 0) / c.total) * 100) : 0;
+              return (
+                <Card key={c.student.id}>
+                  <CardContent className="flex flex-col gap-2 py-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate font-medium">{c.student.user.name}</p>
+                      <Badge variant="secondary">{c.byStatus.HADIR ?? 0}/{c.total} hadir · {pct}%</Badge>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} />
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(Object.keys(STATUS_STYLE) as AttendanceStatus[]).map((s) =>
+                        (c.byStatus[s] ?? 0) > 0 ? <StatusChip key={s} status={s} count={c.byStatus[s]} /> : null,
+                      )}
+                      {c.total === 0 ? <span className="text-xs text-muted-foreground">Belum ada absensi.</span> : null}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+          <Card>
+            <CardContent className="flex flex-col gap-3 py-4">
               <p className="flex items-center gap-2 font-medium">
                 <CalendarCheck className="size-4 text-muted-foreground" />
-                Semua anak
+                Kalender semua anak
               </p>
-              <div className="flex flex-wrap gap-1.5">
-                {children.map((c) => (
-                  <Badge key={c.student.id} variant="outline">
-                    {c.student.user.name}: {c.byStatus.HADIR ?? 0}/{c.total} hadir
-                  </Badge>
+              <MergedAttendanceCalendar rows={mergedRows} />
+              {mergedRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Belum ada absensi tercatat.</p>
+              ) : null}
+              <div className="flex flex-wrap gap-1.5 border-t pt-3">
+                {(Object.keys(STATUS_STYLE) as AttendanceStatus[]).map((s) => (
+                  <span key={s} className={cn('rounded-sm border px-1.5 py-0.5 text-[10px]', STATUS_STYLE[s])}>
+                    {ATTENDANCE_LABELS[s]}
+                  </span>
                 ))}
               </div>
-            </div>
-            <MergedAttendanceCalendar rows={mergedRows} />
-            {mergedRows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Belum ada absensi tercatat.</p>
-            ) : null}
+            </CardContent>
+          </Card>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+interface AttendanceRecapSelf {
+  total: number;
+  byStatus: Partial<Record<AttendanceStatus, number>>;
+  rows: AttendanceRow[];
+}
+
+/** Halaman "Kehadiran" milik Siswa — ringkasan status + kalender sendiri. */
+export function StudentAttendanceView() {
+  const q = useQuery({
+    queryKey: ['attendance-mine'],
+    queryFn: () => apiFetch<AttendanceRecapSelf>('/attendance/mine-student'),
+  });
+
+  if (q.isLoading) return <Skeleton className="h-24 w-full" />;
+  if (q.isError) {
+    return <Card><CardContent className="py-10 text-center text-sm text-destructive">Gagal memuat kehadiran Anda.</CardContent></Card>;
+  }
+  const data = q.data;
+  const rows: MergedRow[] = (data?.rows ?? []).map((r) => ({ ...r, childName: 'Anda' }));
+  const pct = data && data.total ? Math.round(((data.byStatus.HADIR ?? 0) / data.total) * 100) : 0;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Kehadiran</h1>
+        <p className="text-sm text-muted-foreground">Rekap absensi Anda — klik tanggal di kalender untuk detail sesi.</p>
+      </div>
+      <Card>
+        <CardContent className="flex flex-col gap-2 py-4">
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-medium">Ringkasan</p>
+            <Badge variant="secondary">{data?.byStatus.HADIR ?? 0}/{data?.total ?? 0} hadir · {pct}%</Badge>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {(Object.keys(STATUS_STYLE) as AttendanceStatus[]).map((s) =>
+              (data?.byStatus[s] ?? 0) > 0 ? <StatusChip key={s} status={s} count={data!.byStatus[s]!} /> : null,
+            )}
+            {(data?.total ?? 0) === 0 ? <span className="text-xs text-muted-foreground">Belum ada absensi tercatat.</span> : null}
+          </div>
+        </CardContent>
+      </Card>
+      {rows.length > 0 ? (
+        <Card>
+          <CardContent className="flex flex-col gap-3 py-4">
+            <p className="flex items-center gap-2 font-medium">
+              <CalendarCheck className="size-4 text-muted-foreground" />
+              Kalender kehadiran
+            </p>
+            <MergedAttendanceCalendar rows={rows} />
             <div className="flex flex-wrap gap-1.5 border-t pt-3">
               {(Object.keys(STATUS_STYLE) as AttendanceStatus[]).map((s) => (
                 <span key={s} className={cn('rounded-sm border px-1.5 py-0.5 text-[10px]', STATUS_STYLE[s])}>

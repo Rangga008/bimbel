@@ -329,9 +329,31 @@ export function ParentEnrollments() {
 		onError: (e) => toast.error(err(e, "Gagal membuat pendaftaran.")),
 	});
 
+	const [search, setSearch] = useState("");
+	const [enrollStatus, setEnrollStatus] = useState("");
+
 	const enrollments = enrollmentsQ.data ?? [];
-	const children = childrenQ.data ?? [];
+	const childrenAll = childrenQ.data ?? [];
 	const isLoading = enrollmentsQ.isLoading || childrenQ.isLoading;
+	const q = search.trim().toLowerCase();
+	// Filter daftar anak & riwayat pendaftaran — cari nama/no HP/program.
+	const children = q
+		? childrenAll.filter((c) =>
+				c.name.toLowerCase().includes(q) ||
+				(c.phone ?? "").toLowerCase().includes(q) ||
+				(c.email ?? "").toLowerCase().includes(q),
+			)
+		: childrenAll;
+	const visibleEnrollments = enrollments.filter((e) => {
+		if (enrollStatus && e.status !== enrollStatus) return false;
+		if (!q) return true;
+		return (
+			e.childName.toLowerCase().includes(q) ||
+			e.program.name.toLowerCase().includes(q) ||
+			e.level.name.toLowerCase().includes(q) ||
+			(e.group?.name ?? "").toLowerCase().includes(q)
+		);
+	});
 
 	const th = "px-3 py-2 text-left font-medium whitespace-nowrap";
 	const td = "px-3 py-2 align-top";
@@ -350,6 +372,27 @@ export function ParentEnrollments() {
 				</Button>
 			</div>
 
+			{(childrenAll.length > 0 || enrollments.length > 0) && !isLoading ? (
+				<div className="flex flex-wrap gap-2">
+					<Input
+						className="w-full sm:w-64"
+						placeholder="Cari nama anak / program / kelompok…"
+						value={search}
+						onChange={(e) => setSearch(e.target.value)}
+					/>
+					<select
+						className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+						value={enrollStatus}
+						onChange={(e) => setEnrollStatus(e.target.value)}
+						aria-label="Filter status pendaftaran"
+					>
+						<option value="">Semua status</option>
+						{Object.entries(STATUS_META).map(([v, m]) => (
+							<option key={v} value={v}>{m.label}</option>
+						))}
+					</select>
+				</div>
+			) : null}
 			{isLoading ? <Skeleton className="h-40 w-full" /> : null}
 			{enrollmentsQ.isError ? (
 				<Card>
@@ -359,7 +402,7 @@ export function ParentEnrollments() {
 				</Card>
 			) : null}
 
-			{!isLoading && children.length === 0 && enrollments.length === 0 ? (
+			{!isLoading && childrenAll.length === 0 && enrollments.length === 0 ? (
 				<EmptyState
 					icon={Baby}
 					title="Belum ada anak terdaftar"
@@ -454,7 +497,16 @@ export function ParentEnrollments() {
 
 			{enrollments.length > 0 ? (
 				<section className="flex flex-col gap-2">
-					<h2 className="text-lg font-medium">Riwayat Pendaftaran</h2>
+					<h2 className="text-lg font-medium">
+						Riwayat Pendaftaran
+						{visibleEnrollments.length !== enrollments.length ? (
+							<span className="ml-2 text-sm font-normal text-muted-foreground">({visibleEnrollments.length} dari {enrollments.length})</span>
+						) : null}
+					</h2>
+					{visibleEnrollments.length === 0 ? (
+						<Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Tidak ada pendaftaran yang cocok dengan filter.</CardContent></Card>
+					) : null}
+					{visibleEnrollments.length > 0 ? (
 					<div className="overflow-x-auto rounded-md border">
 						<table className="w-full text-sm">
 							<thead>
@@ -516,6 +568,7 @@ export function ParentEnrollments() {
 							</tbody>
 						</table>
 					</div>
+					) : null}
 				</section>
 			) : null}
 

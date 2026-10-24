@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +18,8 @@ interface ExamHistoryItem {
   examId: string;
   examTitle: string;
   examDate: string;
+  subjectName?: string | null;
+  category?: string | null;
   score: number;
   maxScore: number;
   percentage: number;
@@ -38,15 +41,6 @@ interface SubjectDifficulty {
   hard: DifficultyBucket;
 }
 
-interface TopicAnalysis {
-  topicName: string;
-  totalQuestions: number;
-  correctCount: number;
-  accuracy: number;
-  avgScore: number;
-  weaknessLevel: "STRONG" | "AVERAGE" | "WEAK";
-}
-
 interface OverallStats {
   totalExams: number;
   totalQuestionsAttempted: number;
@@ -61,7 +55,6 @@ interface StudentPerformanceData {
   studentId: string;
   studentName: string;
   examHistory: ExamHistoryItem[];
-  topicAnalysis: TopicAnalysis[];
   subjectDifficulty?: SubjectDifficulty[];
   categoryProgress?: CategoryProgressData;
   overallStats: OverallStats;
@@ -73,25 +66,43 @@ const PERIOD_DAYS: Record<string, number | null> = {
   "90": 90,
 };
 
-const WEAKNESS_OPTS = [
-  { value: "", label: "Semua Topik" },
-  { value: "WEAK", label: "Lemah" },
-  { value: "AVERAGE", label: "Cukup" },
-  { value: "STRONG", label: "Kuat" },
-];
+/** Label tipe ujian di filter riwayat — nilai mentah dipakai bila tak dikenal. */
+const CATEGORY_LABELS: Record<string, string> = {
+  HARIAN: "Ulangan Harian",
+  UTS: "UTS",
+  UAS: "UAS",
+  TRY_OUT: "Try Out",
+  BAB: "Ujian Bab",
+  EXAM: "Ujian",
+};
 
-export function StudentPerformance() {
+export function StudentPerformance({
+  endpoint = "/analytics/my-performance",
+  title,
+  subtitle = "Analisis performa akademik Anda",
+  showPoints = true,
+}: {
+  /** Endpoint performa — ortu memakai /analytics/parent/child/:id/performance. */
+  endpoint?: string;
+  title?: string;
+  subtitle?: string;
+  /** Kartu "Poin Saya" hanya untuk siswa sendiri. */
+  showPoints?: boolean;
+}) {
   const [period, setPeriod] = useState("all");
-  const [weakness, setWeakness] = useState("");
   const [examSearch, setExamSearch] = useState("");
+  const [examSubject, setExamSubject] = useState("");
+  const [examCategory, setExamCategory] = useState("");
   const [showAllExams, setShowAllExams] = useState(false);
+  const [expandedSubject, setExpandedSubject] = useState<string | null>(null);
   const performanceQ = useQuery({
-    queryKey: ['analytics-my-performance'],
-    queryFn: () => apiFetch<StudentPerformanceData>('/analytics/my-performance'),
+    queryKey: ['analytics-performance', endpoint],
+    queryFn: () => apiFetch<StudentPerformanceData>(endpoint),
   });
   const pointsQ = useQuery({
     queryKey: ['points-my-total'],
     queryFn: () => apiFetch<{ totalPoints: number }>('/point-transactions/my-total'),
+    enabled: showPoints,
   });
 
   if (performanceQ.isLoading) {
@@ -120,37 +131,31 @@ export function StudentPerformance() {
     );
   }
 
-  const getWeaknessColor = (level: string) => {
-    switch (level) {
-      case "STRONG": return "bg-success-600 text-white";
-      case "AVERAGE": return "bg-warning-500 text-white";
-      case "WEAK": return "bg-destructive text-white";
-      default: return "bg-neutral-500 text-white";
-    }
-  };
-
   const periodDays = PERIOD_DAYS[period] ?? null;
   const cutoff = periodDays ? Date.now() - periodDays * 86400_000 : null;
+  // Filter riwayat: periode + mapel + tipe ujian + cari judul.
   const examHistory = (cutoff
     ? data.examHistory.filter((e) => new Date(e.examDate).getTime() >= cutoff)
     : data.examHistory
-  ).filter((e) =>
-    examSearch
-      ? e.examTitle.toLowerCase().includes(examSearch.trim().toLowerCase())
-      : true,
-  );
+  ).filter((e) => {
+    if (examSubject && (e.subjectName ?? "") !== examSubject) return false;
+    if (examCategory && (e.category ?? "") !== examCategory) return false;
+    if (examSearch && !e.examTitle.toLowerCase().includes(examSearch.trim().toLowerCase())) return false;
+    return true;
+  });
   // Riwayat dibatasi 8 teratas kecuali user minta tampilkan semua.
   const visibleExams = showAllExams ? examHistory : examHistory.slice(0, 8);
-  const topics = weakness
-    ? data.topicAnalysis.filter((t) => t.weaknessLevel === weakness)
-    : data.topicAnalysis;
+  const subjectOptions = [...new Set(data.examHistory.map((e) => e.subjectName).filter(Boolean))] as string[];
+  const categoryOptions = [...new Set(data.examHistory.map((e) => e.category).filter(Boolean))] as string[];
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold">Performa Saya</h1>
-          <p className="text-muted-foreground">Analisis performa akademik Anda</p>
+          <h1 className="text-3xl font-bold">
+            {title ?? (showPoints ? "Performa Saya" : `Performa: ${data.studentName}`)}
+          </h1>
+          <p className="text-muted-foreground">{subtitle}</p>
         </div>
         <select
           value={period}
@@ -165,17 +170,19 @@ export function StudentPerformance() {
       </div>
 
       {/* Overall Statistics */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Poin Saya</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-brand-gold-600">
-              {(pointsQ.data?.totalPoints ?? 0).toLocaleString('id-ID')}
-            </div>
-          </CardContent>
-        </Card>
+      <div className={`grid gap-4 md:grid-cols-2 ${showPoints ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}>
+        {showPoints ? (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Poin Saya</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-brand-gold-600">
+                {(pointsQ.data?.totalPoints ?? 0).toLocaleString('id-ID')}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -223,15 +230,43 @@ export function StudentPerformance() {
             <CardTitle>Riwayat Ujian</CardTitle>
             <CardDescription>Tren nilai Anda dari waktu ke waktu</CardDescription>
           </div>
-          <Input
-            className="h-9 w-full sm:w-56"
-            placeholder="Cari judul ujian…"
-            value={examSearch}
-            onChange={(e) => {
-              setExamSearch(e.target.value);
-              setShowAllExams(false);
-            }}
-          />
+          <div className="flex flex-wrap gap-2">
+            {subjectOptions.length > 1 ? (
+              <select
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                value={examSubject}
+                onChange={(e) => { setExamSubject(e.target.value); setShowAllExams(false); }}
+                aria-label="Filter mapel"
+              >
+                <option value="">Semua mapel</option>
+                {subjectOptions.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            ) : null}
+            {categoryOptions.length > 1 ? (
+              <select
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                value={examCategory}
+                onChange={(e) => { setExamCategory(e.target.value); setShowAllExams(false); }}
+                aria-label="Filter tipe ujian"
+              >
+                <option value="">Semua tipe</option>
+                {categoryOptions.map((c) => (
+                  <option key={c} value={c}>{CATEGORY_LABELS[c] ?? c}</option>
+                ))}
+              </select>
+            ) : null}
+            <Input
+              className="h-9 w-full sm:w-48"
+              placeholder="Cari judul ujian…"
+              value={examSearch}
+              onChange={(e) => {
+                setExamSearch(e.target.value);
+                setShowAllExams(false);
+              }}
+            />
+          </div>
         </CardHeader>
         <CardContent>
           {examHistory.length === 0 ? (
@@ -247,8 +282,10 @@ export function StudentPerformance() {
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="truncate font-medium">{exam.examTitle}</div>
-                      <div className="text-xs text-muted-foreground">
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                         {new Date(exam.examDate).toLocaleDateString("id-ID")}
+                        {exam.subjectName ? <Badge variant="outline">{exam.subjectName}</Badge> : null}
+                        {exam.category ? <Badge variant="secondary">{CATEGORY_LABELS[exam.category] ?? exam.category}</Badge> : null}
                       </div>
                     </div>
                     <div className="shrink-0 text-right">
@@ -288,7 +325,7 @@ export function StudentPerformance() {
         <CardHeader>
           <CardTitle>Pengerjaan Soal per Mapel</CardTitle>
           <CardDescription>
-            Perbandingan soal benar per tingkat kesulitan — dari ujian dan latsol yang sudah dikumpulkan.
+            Perbandingan soal benar per tingkat kesulitan — klik nama mapel untuk rincian Mudah/Sedang/Sulit.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -311,42 +348,85 @@ export function StudentPerformance() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.subjectDifficulty!.map((s) => (
-                    <tr key={s.subjectId ?? 'umum'} className="border-b last:border-0">
-                      <td className="px-3 py-2.5 font-medium">{s.subjectName}</td>
-                      <td className="px-3 py-2.5 tabular-nums">{s.total}</td>
-                      <td className="px-3 py-2.5 tabular-nums">{s.correct}</td>
-                      {(['easy', 'medium', 'hard'] as const).map((d) => (
-                        <td key={d} className="px-3 py-2.5 tabular-nums">
-                          {s[d].total > 0 ? (
-                            <>
-                              <span className="font-medium">{s[d].correct}</span>
-                              <span className="text-muted-foreground">/{s[d].total}</span>
-                            </>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </td>
-                      ))}
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-2">
-                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
-                            <div
-                              className={`h-full rounded-full ${
-                                s.accuracy >= 80
-                                  ? 'bg-emerald-500'
-                                  : s.accuracy >= 50
-                                    ? 'bg-amber-500'
-                                    : 'bg-red-500'
-                              }`}
-                              style={{ width: `${Math.min(100, s.accuracy)}%` }}
-                            />
-                          </div>
-                          <span className="text-xs font-medium tabular-nums">{s.accuracy.toFixed(0)}%</span>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {data.subjectDifficulty!.map((s) => {
+                    const key = s.subjectId ?? 'umum';
+                    const open = expandedSubject === key;
+                    const DIFF_META = [
+                      { key: 'easy' as const, label: 'Soal Mudah', color: 'bg-emerald-500', text: 'text-success-700' },
+                      { key: 'medium' as const, label: 'Soal Sedang', color: 'bg-amber-500', text: 'text-amber-700' },
+                      { key: 'hard' as const, label: 'Soal Sulit', color: 'bg-red-500', text: 'text-destructive' },
+                    ];
+                    return (
+                      <Fragment key={key}>
+                        <tr
+                          className="cursor-pointer border-b hover:bg-accent/40"
+                          onClick={() => setExpandedSubject(open ? null : key)}
+                        >
+                          <td className="px-3 py-2.5 font-medium">
+                            <span className="flex items-center gap-1.5">
+                              <ChevronDown className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+                              {s.subjectName}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums">{s.total}</td>
+                          <td className="px-3 py-2.5 tabular-nums">{s.correct}</td>
+                          {(['easy', 'medium', 'hard'] as const).map((d) => (
+                            <td key={d} className="px-3 py-2.5 tabular-nums">
+                              {s[d].total > 0 ? (
+                                <>
+                                  <span className="font-medium">{s[d].correct}</span>
+                                  <span className="text-muted-foreground">/{s[d].total}</span>
+                                </>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </td>
+                          ))}
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
+                                <div
+                                  className={`h-full rounded-full ${
+                                    s.accuracy >= 80
+                                      ? 'bg-emerald-500'
+                                      : s.accuracy >= 50
+                                        ? 'bg-amber-500'
+                                        : 'bg-red-500'
+                                  }`}
+                                  style={{ width: `${Math.min(100, s.accuracy)}%` }}
+                                />
+                              </div>
+                              <span className="text-xs font-medium tabular-nums">{s.accuracy.toFixed(0)}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                        {open ? (
+                          <tr className="border-b bg-muted/20">
+                            <td colSpan={7} className="px-4 py-3">
+                              <div className="grid gap-2 sm:grid-cols-3">
+                                {DIFF_META.map((m) => {
+                                  const b = s[m.key];
+                                  const acc = b.total ? Math.round((b.correct / b.total) * 100) : 0;
+                                  return (
+                                    <div key={m.key} className="rounded-lg border bg-card p-3">
+                                      <p className={`text-xs font-medium ${m.text}`}>{m.label}</p>
+                                      <p className="mt-1 text-lg font-bold tabular-nums">
+                                        {b.correct}<span className="text-sm font-normal text-muted-foreground"> / {b.total} benar</span>
+                                      </p>
+                                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+                                        <div className={`h-full rounded-full ${m.color}`} style={{ width: `${acc}%` }} />
+                                      </div>
+                                      <p className="mt-1 text-xs text-muted-foreground tabular-nums">{acc}% akurat</p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -369,64 +449,6 @@ export function StudentPerformance() {
         </Card>
       ) : null}
 
-      {/* Topic Analysis */}
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle>Analisis per Mapel</CardTitle>
-            <CardDescription>Akurasi per mata pelajaran dari seluruh ujian &amp; latsol — filter Lemah/Cukup/Kuat.</CardDescription>
-          </div>
-          <select
-            value={weakness}
-            onChange={(e) => setWeakness(e.target.value)}
-            className="h-9 w-full rounded-md border bg-background px-3 text-sm sm:w-44"
-            aria-label="Filter tingkat topik"
-          >
-            {WEAKNESS_OPTS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </CardHeader>
-        <CardContent>
-          {topics.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              {data.topicAnalysis.length === 0
-                ? "Belum ada data analisis topik"
-                : "Tidak ada topik pada tingkat ini"}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {topics.map((topic) => (
-                <div key={topic.topicName} className="rounded-lg border p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium">{topic.topicName}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {topic.totalQuestions} soal • {topic.correctCount} benar • Avg {topic.avgScore.toFixed(1)}
-                      </div>
-                    </div>
-                    <Badge className={getWeaknessColor(topic.weaknessLevel)}>
-                      {topic.accuracy.toFixed(0)}%
-                    </Badge>
-                  </div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className={`h-full rounded-full transition-all ${
-                        topic.weaknessLevel === 'STRONG'
-                          ? 'bg-emerald-500'
-                          : topic.weaknessLevel === 'AVERAGE'
-                            ? 'bg-amber-500'
-                            : 'bg-red-500'
-                      }`}
-                      style={{ width: `${Math.min(100, Math.max(0, topic.accuracy))}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }

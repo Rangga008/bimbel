@@ -88,6 +88,13 @@ export const ROLE_NAV: Record<RoleKey, NavItem[]> = {
 		{ slug: "", label: "Beranda", icon: Home, placement: "nav", group: "Utama" },
 		{ slug: "jadwal", label: "Jadwal", icon: Calendar, placement: "nav", group: "Utama" },
 		{
+			slug: "kehadiran",
+			label: "Kehadiran",
+			icon: ClipboardCheck,
+			placement: "lainnya",
+			group: "Belajar",
+		},
+		{
 			slug: "ujian",
 			label: "Ujian",
 			icon: FileCheck2,

@@ -28,6 +28,10 @@ export function ParentPayments() {
   const [amount, setAmount] = useState('');
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofNote, setProofNote] = useState('');
+  const [invSearch, setInvSearch] = useState('');
+  const [histSearch, setHistSearch] = useState('');
+  const [histStatus, setHistStatus] = useState('');
+  const [histChannel, setHistChannel] = useState('');
   const invQ = useMeInvoices(childId);
   // Opsi filter anak harus dari daftar LENGKAP (tanpa filter) — kalau ikut
   // invQ yang terfilter, setelah pilih satu anak opsi anak lain hilang.
@@ -138,6 +142,36 @@ export function ParentPayments() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const children = [...new Map((allInvQ.data ?? []).map((i) => [i.student.id, i.student])).values()];
+
+  /** Label program/tagihan invoice untuk pencarian. */
+  const invProgramText = (inv: ChildInvoiceRow) => {
+    const enr = inv.enrollmentLink ?? inv.enrollment;
+    return enr
+      ? [enr.program?.name, enr.level?.name, enr.group?.name].filter(Boolean).join(' · ')
+      : (inv.package?.name ?? inv.items?.[0]?.description ?? 'Tagihan');
+  };
+  // Tagihan terfilter pencarian (nomor / program / nama anak).
+  const visibleInvoices = (invQ.data ?? []).filter((inv) => {
+    if (!invSearch.trim()) return true;
+    const q = invSearch.trim().toLowerCase();
+    return (
+      inv.number.toLowerCase().includes(q) ||
+      inv.student.user.name.toLowerCase().includes(q) ||
+      invProgramText(inv).toLowerCase().includes(q)
+    );
+  });
+  // Riwayat terfilter pencarian + status + metode.
+  const visiblePayments = (mineQ.data ?? []).filter((p) => {
+    if (histStatus && p.status !== histStatus) return false;
+    if (histChannel && p.channel !== histChannel) return false;
+    if (!histSearch.trim()) return true;
+    const q = histSearch.trim().toLowerCase();
+    return (
+      (p.allocations ?? []).some((a) => a.invoice.number.toLowerCase().includes(q)) ||
+      (p.proofNote ?? '').toLowerCase().includes(q) ||
+      (p.method ?? '').toLowerCase().includes(q)
+    );
+  });
   const th = 'px-3 py-2 text-left font-medium whitespace-nowrap';
   const thR = 'px-3 py-2 text-right font-medium whitespace-nowrap';
   const td = 'px-3 py-2 align-top';
@@ -155,6 +189,14 @@ export function ParentPayments() {
       {children.length > 1 && !checkout ? (
         <Phase1aSelectField id="pay-child" label="Filter anak" value={childId} onChange={setChildId}
           options={children.map((c) => ({ value: c.id, label: c.user.name }))} placeholder="Semua anak" />
+      ) : null}
+      {!checkout && (invQ.data?.length ?? 0) > 0 ? (
+        <Input
+          className="w-full sm:w-72"
+          placeholder="Cari nomor / program / nama anak…"
+          value={invSearch}
+          onChange={(e) => setInvSearch(e.target.value)}
+        />
       ) : null}
 
       {/* Indikator langkah ala e-commerce */}
@@ -178,9 +220,12 @@ export function ParentPayments() {
       {invQ.data?.length === 0 && !checkout ? (
         <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Tidak ada tagihan aktif. Semua lunas.</CardContent></Card>
       ) : null}
+      {(invQ.data?.length ?? 0) > 0 && visibleInvoices.length === 0 && !checkout ? (
+        <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Tidak ada tagihan yang cocok dengan pencarian.</CardContent></Card>
+      ) : null}
 
       {/* Langkah 1 — pilih tagihan */}
-      {!checkout && (invQ.data?.length ?? 0) > 0 ? (
+      {!checkout && visibleInvoices.length > 0 ? (
         <div className="overflow-x-auto rounded-md border">
           <table className="w-full min-w-[720px] text-sm">
             <thead>
@@ -193,7 +238,7 @@ export function ParentPayments() {
               </tr>
             </thead>
             <tbody>
-              {invQ.data?.map((inv) => {
+              {visibleInvoices.map((inv) => {
                 const enr = inv.enrollmentLink ?? inv.enrollment;
                 const program = enr
                   ? [enr.program?.name, enr.level?.name, enr.group?.name].filter(Boolean).join(' · ')
@@ -338,6 +383,28 @@ export function ParentPayments() {
       ) : null}
       <h2 className="text-lg font-medium">Riwayat saya</h2>
       {(mineQ.data?.length ?? 0) > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          <Input
+            className="w-full sm:w-64"
+            placeholder="Cari nomor invoice / catatan…"
+            value={histSearch}
+            onChange={(e) => setHistSearch(e.target.value)}
+          />
+          <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={histStatus} onChange={(e) => setHistStatus(e.target.value)} aria-label="Filter status pembayaran">
+            <option value="">Semua status</option>
+            <option value="VERIFIED">Terverifikasi</option>
+            <option value="PENDING">Menunggu</option>
+            <option value="REJECTED">Ditolak</option>
+          </select>
+          <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={histChannel} onChange={(e) => setHistChannel(e.target.value)} aria-label="Filter metode pembayaran">
+            <option value="">Semua metode</option>
+            <option value="MANUAL">Transfer manual</option>
+            <option value="GATEWAY">Online</option>
+            <option value="CASH">Tunai</option>
+          </select>
+        </div>
+      ) : null}
+      {visiblePayments.length > 0 ? (
         <div className="overflow-x-auto rounded-md border">
           <table className="w-full min-w-[720px] text-sm">
             <thead>
@@ -351,7 +418,7 @@ export function ParentPayments() {
               </tr>
             </thead>
             <tbody>
-              {mineQ.data?.map((p) => (
+              {visiblePayments.map((p) => (
                 <tr key={p.id} className="border-b last:border-0">
                   <td className={`${td} whitespace-nowrap text-muted-foreground`}>
                     {new Date(p.createdAt).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}
@@ -405,7 +472,11 @@ export function ParentPayments() {
           </table>
         </div>
       ) : (
-        <p className="text-sm text-muted-foreground">Belum ada riwayat pembayaran.</p>
+        <p className="text-sm text-muted-foreground">
+          {(mineQ.data?.length ?? 0) > 0
+            ? 'Tidak ada pembayaran yang cocok dengan filter.'
+            : 'Belum ada riwayat pembayaran.'}
+        </p>
       )}
       <h2 className="text-lg font-medium">Kwitansi</h2>
       {(rcpQ.data?.length ?? 0) > 0 ? (
