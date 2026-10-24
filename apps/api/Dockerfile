@@ -28,6 +28,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PRISMA_SCHEMA_ENGINE_BINARY=/app/prisma-engines/schema-engine-linux-musl-openssl-3.0.x
 COPY --from=build /app/prisma-engines ./prisma-engines
+RUN chmod +x ./prisma-engines/*
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
