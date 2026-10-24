@@ -79,7 +79,10 @@ export default function DaftarPage() {
 				auth: false,
 			});
 			setSession(data.accessToken, data.user);
-			toast.success(`Pendaftaran berhasil — selamat datang, ${data.user.name}!`);
+			toast.success(
+				`Pendaftaran berhasil — selamat datang, ${data.user.name}! Verifikasi nomor HP via WhatsApp dari banner di halaman utama.`,
+				{ duration: 8000 },
+			);
 			router.replace("/orang-tua");
 		} catch (error) {
 			const message =
@@ -234,6 +237,12 @@ export default function DaftarPage() {
 							>
 								Masuk ke Akun Saya
 							</Button>
+							<p className="text-center text-xs text-muted-foreground">
+								Peserta try out/ujian dari luar?{" "}
+								<Link href="/daftar-siswa" className="underline">
+									Daftar sebagai siswa
+								</Link>
+							</p>
 						</div>
 					</form>
 				</CardContent>

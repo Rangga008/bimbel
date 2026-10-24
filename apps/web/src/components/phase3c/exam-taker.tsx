@@ -190,11 +190,14 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
 
   const jumpTo = (index: number) => {
     if (!attempt) return;
-    const clamped = Math.max(0, Math.min(index, attempt.items.length - 1));
+    // Mode subtes: indeks di-clamp ke soal subtes aktif, bukan seluruh ujian.
+    const max = Math.max(0, visibleItemsRef.current.length - 1);
+    const clamped = Math.max(0, Math.min(index, max));
     setCurrentIndex(clamped);
     localStorage.setItem(lastIndexKey(attemptId), String(clamped));
     setNumPadOpen(false);
   };
+  const visibleItemsRef = useRef<{ questionId: string }[]>([]);
 
   // Timer sisi klien: hanya menampilkan hitung mundur. Waktu otoritatif tetap
   // server (scheduled_end_at + auto-submit scheduler) — client hanya menampilkan
@@ -221,6 +224,29 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeLeft, attempt?.status]);
+
+  // Waktu subtes habis → kumpulkan subtes otomatis (sekali per subtes).
+  const subtesTimeUpRef = useRef<string | null>(null);
+  useEffect(() => {
+    const subtesStates = attempt?.subtesStates ?? [];
+    const active = subtesStates.find((s) => s.startedAt && !s.submittedAt);
+    if (!attempt || attempt.status !== 'IN_PROGRESS' || !active) {
+      subtesTimeUpRef.current = null;
+      return;
+    }
+    const subtes = (attempt.exam.subtes ?? []).find((s) => s.id === active.subtesId);
+    if (!subtes || !active.startedAt) return;
+    const left = new Date(active.startedAt).getTime() + subtes.durationMinutes * 60_000 - now;
+    if (left <= 0 && subtesTimeUpRef.current !== active.subtesId) {
+      subtesTimeUpRef.current = active.subtesId;
+      void apiFetch(`/exam-attempts/${attemptId}/subtes/${active.subtesId}/submit`, {
+        method: 'POST',
+      })
+        .catch(() => undefined)
+        .finally(() => attemptQ.refetch());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [now, attempt?.status, attempt?.subtesStates]);
 
   const handleViolation = useCallback(
     (result: ReportViolationResult, type: ProctoringViolationType) => {
@@ -317,6 +343,43 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
     }
   };
 
+  const [subtesConfirmOpen, setSubtesConfirmOpen] = useState(false);
+  const [subtesBusy, setSubtesBusy] = useState(false);
+
+  /** Mulai subtes — timer subtes berjalan sejak server menerima request. */
+  const doStartSubtes = async (subtesId: string) => {
+    setSubtesBusy(true);
+    try {
+      await apiFetch(`/exam-attempts/${attemptId}/subtes/${subtesId}/start`, {
+        method: 'POST',
+      });
+      setCurrentIndex(0);
+      await attemptQ.refetch();
+    } catch (e) {
+      setError(err(e, 'Gagal memulai subtes'));
+    } finally {
+      setSubtesBusy(false);
+    }
+  };
+
+  /** Kumpulkan subtes aktif — terkunci permanen, lanjut ke subtes berikutnya. */
+  const doSubmitSubtes = async () => {
+    if (!activeSubtesId) return;
+    setSubtesBusy(true);
+    setSubtesConfirmOpen(false);
+    try {
+      await apiFetch(`/exam-attempts/${attemptId}/subtes/${activeSubtesId}/submit`, {
+        method: 'POST',
+      });
+      setCurrentIndex(0);
+      await attemptQ.refetch();
+    } catch (e) {
+      setError(err(e, 'Gagal mengumpulkan subtes'));
+    } finally {
+      setSubtesBusy(false);
+    }
+  };
+
   /** Keluar halaman saat ujian terproteksi → attempt dikunci server-side. */
   const handleBack = async () => {
     if (!attempt) return;
@@ -375,17 +438,42 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
   const isLocked = attempt.status === 'LOCKED';
   const isInProgress = attempt.status === 'IN_PROGRESS';
 
+  // Mode multi-subtes (Try Out/UTBK): soal dikerjakan per subtes berurutan —
+  // subtes aktif = yang sudah dimulai tapi belum dikumpulkan.
+  const subtesList = attempt.exam.subtes ?? [];
+  const hasSubtes = subtesList.length > 0;
+  const subtesStates = attempt.subtesStates ?? [];
+  const activeSubtesId =
+    subtesStates.find((s) => s.startedAt && !s.submittedAt)?.subtesId ?? null;
+  const activeSubtes = subtesList.find((s) => s.id === activeSubtesId) ?? null;
+  const activeState = subtesStates.find((s) => s.subtesId === activeSubtesId);
+  const subtesEnd = activeSubtes && activeState?.startedAt
+    ? new Date(activeState.startedAt).getTime() + activeSubtes.durationMinutes * 60_000
+    : 0;
+  const subtesLeft = activeSubtes ? Math.max(0, subtesEnd - now) : 0;
+  // Subtes berikutnya yang bisa dimulai = subtes pertama yang belum dikumpulkan.
+  const nextSubtesId =
+    subtesList.find((s) => !subtesStates.some((st) => st.subtesId === s.id && st.submittedAt))?.id ??
+    null;
+  const allSubtesDone = hasSubtes && !nextSubtesId;
+
+  const visibleItems = hasSubtes
+    ? attempt.items.filter((it) => it.subtesId === activeSubtesId)
+    : attempt.items;
+  visibleItemsRef.current = visibleItems;
+
   const isAnswered = (questionId: string) => {
     const a = answers[questionId];
     return (a?.selectedOptionIds?.length ?? 0) > 0 || !!a?.textAnswer?.trim();
   };
-  const answeredCount = attempt.items.filter((it) => isAnswered(it.questionId)).length;
+  const answeredCount = visibleItems.filter((it) => isAnswered(it.questionId)).length;
 
-  const numStates: NumberMapState[] = attempt.items.map((it) =>
+  const numStates: NumberMapState[] = visibleItems.map((it) =>
     isAnswered(it.questionId) ? 'answered' : 'idle',
   );
 
-  const item = attempt.items[currentIndex];
+  const item = visibleItems[currentIndex] ?? null;
+  const isLastVisible = currentIndex >= visibleItems.length - 1;
   const showFsGate =
     isInProgress && proctoringOn && !proctoring.isFullscreen && !fsDismissed && item;
 
@@ -396,7 +484,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
           <span>
             Soal {currentIndex + 1}
             <span className="ml-2 text-sm font-normal text-muted-foreground">
-              dari {attempt.items.length} · {item.points} poin
+              dari {visibleItems.length} · {item.points} poin
             </span>
           </span>
         </CardTitle>
@@ -489,9 +577,12 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
       >
         <ChevronLeft /> Sebelumnya
       </Button>
-      {currentIndex === attempt.items.length - 1 ? (
-        <Button onClick={submitExam} disabled={!isInProgress || timeLeft <= 0}>
-          Kumpulkan
+      {isLastVisible ? (
+        <Button
+          onClick={() => (hasSubtes ? setSubtesConfirmOpen(true) : submitExam())}
+          disabled={!isInProgress || timeLeft <= 0 || subtesBusy}
+        >
+          {hasSubtes ? 'Kumpulkan Subtes' : 'Kumpulkan'}
         </Button>
       ) : (
         <Button onClick={() => jumpTo(currentIndex + 1)}>
@@ -524,9 +615,14 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
               >
                 {isSubmitted ? 'Selesai' : isLocked ? 'Dikunci (Proctoring)' : 'Sedang Mengerjakan'}
               </Badge>
+              {isInProgress && hasSubtes && (
+                <span className="font-medium text-primary">
+                  {activeSubtes ? `Subtes: ${activeSubtes.name}` : 'Pilih subtes'}
+                </span>
+              )}
               {isInProgress && (
                 <span>
-                  {answeredCount}/{attempt.items.length} terjawab
+                  {answeredCount}/{visibleItems.length} terjawab
                 </span>
               )}
               {isInProgress && (
@@ -538,16 +634,28 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
               )}
             </div>
           </div>
+          {isInProgress && activeSubtes && (
+            <div
+              className={`shrink-0 rounded-md px-2.5 py-1 font-mono text-sm font-bold tabular-nums ${
+                subtesLeft < 60000 ? 'bg-destructive/10 text-destructive' : 'bg-brand-blue-50 text-brand-blue-800'
+              }`}
+              title="Sisa waktu subtes aktif"
+            >
+              {formatTime(subtesLeft)}
+            </div>
+          )}
           {isInProgress && (
             <div
               className={`shrink-0 rounded-md px-2.5 py-1 font-mono text-sm font-bold tabular-nums ${
                 timeLeft < 60000 ? 'bg-destructive/10 text-destructive' : 'bg-muted'
               }`}
+              title="Sisa waktu ujian"
             >
+              {hasSubtes && <span className="mr-1 text-[10px] font-normal">UJIAN</span>}
               {formatTime(timeLeft)}
             </div>
           )}
-          {isInProgress && (
+          {isInProgress && !hasSubtes && (
             <Button size="sm" onClick={submitExam} disabled={timeLeft <= 0} className="shrink-0">
               Kumpulkan
             </Button>
@@ -586,6 +694,79 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
         </Card>
       )}
 
+      {/* Lobi subtes — ujian multi-subtes (Try Out/UTBK): siswa memulai
+          subtes satu per satu secara berurutan; subtes yang dikumpulkan
+          terkunci permanen. */}
+      {hasSubtes && isInProgress && !activeSubtesId && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              {allSubtesDone ? 'Semua subtes selesai' : 'Pilih subtes berikutnya'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            <p className="text-xs text-muted-foreground">
+              Subtes dikerjakan berurutan — subtes yang sudah dikumpulkan tidak
+              bisa dibuka lagi. Waktu subtes berjalan sejak tombol Mulai ditekan.
+            </p>
+            {subtesList.map((s, idx) => {
+              const st = subtesStates.find((x) => x.subtesId === s.id);
+              const done = !!st?.submittedAt;
+              const count = attempt.items.filter((it) => it.subtesId === s.id).length;
+              const canStart = s.id === nextSubtesId;
+              return (
+                <div
+                  key={s.id}
+                  className={`flex items-center gap-3 rounded-lg border p-3 ${
+                    done ? 'opacity-60' : canStart ? 'border-primary/50 bg-primary/5' : ''
+                  }`}
+                >
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">
+                    {idx + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{s.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {count} soal · {s.durationMinutes} menit
+                    </p>
+                  </div>
+                  {done ? (
+                    <Badge variant="secondary" className="shrink-0">Selesai</Badge>
+                  ) : canStart ? (
+                    <Button
+                      size="sm"
+                      className="shrink-0"
+                      disabled={subtesBusy}
+                      onClick={() => doStartSubtes(s.id)}
+                    >
+                      {subtesBusy ? 'Memulai…' : 'Mulai Subtes'}
+                    </Button>
+                  ) : (
+                    <Badge variant="outline" className="shrink-0">Terkunci</Badge>
+                  )}
+                </div>
+              );
+            })}
+            <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-dashed p-3">
+              <p className="text-xs text-muted-foreground">
+                {allSubtesDone
+                  ? 'Semua subtes sudah dikumpulkan — kumpulkan ujian untuk mengakhiri.'
+                  : 'Selesaikan semua subtes dulu, atau kumpulkan ujian sekarang (subtes yang belum selesai ditutup).'}
+              </p>
+              <Button
+                size="sm"
+                variant={allSubtesDone ? 'default' : 'outline'}
+                onClick={submitExam}
+                disabled={timeLeft <= 0 || subtesBusy}
+                className="shrink-0"
+              >
+                Kumpulkan Ujian
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Layout TKA: soal di kiri, peta nomor di kanan (desktop). */}
       {(isInProgress || isLocked) && item && (
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_260px] lg:items-start lg:gap-6">
@@ -602,7 +783,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 <QuestionNumberMap
-                  count={attempt.items.length}
+                  count={visibleItems.length}
                   current={currentIndex}
                   states={numStates}
                   onJump={jumpTo}
@@ -625,7 +806,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
           {numPadOpen && (
             <div className="max-h-[50svh] overflow-y-auto border-b p-4">
               <QuestionNumberMap
-                count={attempt.items.length}
+                count={visibleItems.length}
                 current={currentIndex}
                 states={numStates}
                 onJump={jumpTo}
@@ -652,11 +833,15 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
             <button
               type="button"
               onClick={() =>
-                currentIndex === attempt.items.length - 1 ? submitExam() : jumpTo(currentIndex + 1)
+                isLastVisible
+                  ? hasSubtes
+                    ? setSubtesConfirmOpen(true)
+                    : submitExam()
+                  : jumpTo(currentIndex + 1)
               }
               className="flex min-h-14 items-center justify-center gap-1 text-sm font-medium"
             >
-              {currentIndex === attempt.items.length - 1 ? 'Kumpulkan' : 'Selanjutnya'}{' '}
+              {isLastVisible ? (hasSubtes ? 'Kumpulkan' : 'Kumpulkan') : 'Selanjutnya'}{' '}
               <ChevronRight className="size-5" />
             </button>
           </div>
@@ -713,17 +898,72 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
           </CardHeader>
           <CardContent>
             {attempt.resultReleased ? (
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="text-sm text-muted-foreground">Skor Anda</div>
-                  <div className="text-2xl font-bold">
-                    {attempt.score} / {attempt.maxScore}
+              <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div>
+                    <div className="text-sm text-muted-foreground">Skor Anda</div>
+                    <div className="text-2xl font-bold">
+                      {attempt.score} / {attempt.maxScore}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-muted-foreground">Benar / Salah</div>
+                    <div className="text-2xl font-bold">
+                      <span className="text-emerald-700">
+                        {attempt.items.filter((i) => i.answer?.isCorrect === true).length}
+                      </span>
+                      {' / '}
+                      <span className="text-destructive">
+                        {attempt.items.filter((i) => i.answer?.isCorrect === false).length}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="col-span-2">
+                    <div className="text-sm text-muted-foreground">Waktu Submit</div>
+                    <div>{new Date(attempt.submittedAt!).toLocaleString('id-ID')}</div>
                   </div>
                 </div>
-                <div>
-                  <div className="text-sm text-muted-foreground">Waktu Submit</div>
-                  <div>{new Date(attempt.submittedAt!).toLocaleString('id-ID')}</div>
-                </div>
+
+                {/* Rekap per subtes — try out multi-mapel. */}
+                {(attempt.subtesResults?.length ?? 0) > 0 && (
+                  <div className="overflow-x-auto rounded-md border">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
+                          <th className="px-3 py-2 font-medium">Subtes</th>
+                          <th className="px-3 py-2 text-right font-medium">Benar</th>
+                          <th className="px-3 py-2 text-right font-medium">Skor</th>
+                          <th className="px-3 py-2 font-medium">Akurasi</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {attempt.subtesResults!.map((r) => (
+                          <tr key={r.subtesId} className="border-b last:border-0">
+                            <td className="px-3 py-2 font-medium">{r.name}</td>
+                            <td className="px-3 py-2 text-right">
+                              <span className="text-emerald-700">{r.correct}</span>
+                              <span className="text-muted-foreground"> / {r.total}</span>
+                            </td>
+                            <td className="px-3 py-2 text-right font-semibold">
+                              {r.score}
+                              <span className="font-normal text-muted-foreground"> / {r.maxScore}</span>
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="h-2 w-full min-w-24 overflow-hidden rounded-full bg-muted">
+                                <div
+                                  className="h-full rounded-full bg-emerald-600"
+                                  style={{
+                                    width: `${r.maxScore ? Math.round((r.score / r.maxScore) * 100) : 0}%`,
+                                  }}
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-4">
@@ -747,8 +987,19 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
           {attempt.items.map((it, index) => {
             const question = it.question;
             const answer = it.answer;
+            const prevSubtes = index > 0 ? attempt.items[index - 1].subtesId : undefined;
+            const showSubtesHeader = hasSubtes && it.subtesId !== prevSubtes;
             return (
-              <Card key={it.questionId}>
+              <div key={it.questionId} className="space-y-4">
+              {showSubtesHeader && (
+                <div className="flex items-center gap-2 pt-2">
+                  <Badge variant="default" className="text-xs">
+                    Subtes {subtesList.findIndex((s) => s.id === it.subtesId) + 1}
+                  </Badge>
+                  <h3 className="text-sm font-semibold">{it.subtesName ?? 'Subtes'}</h3>
+                </div>
+              )}
+              <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <span>Soal {index + 1} ({it.points} poin)</span>
@@ -808,6 +1059,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                   )}
                 </CardContent>
               </Card>
+              </div>
             );
           })}
         </div>
@@ -825,6 +1077,17 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
         description="Jawaban yang sudah terisi akan dikirim dan tidak bisa diubah lagi."
         confirmLabel="Ya, kumpulkan"
         onConfirm={doSubmitExam}
+      />
+
+      <ConfirmDialog
+        open={subtesConfirmOpen}
+        onOpenChange={setSubtesConfirmOpen}
+        tone="primary"
+        title={`Kumpulkan subtes "${activeSubtes?.name ?? ''}"?`}
+        description="Jawaban subtes ini akan dikunci dan tidak bisa diubah lagi. Anda akan lanjut ke subtes berikutnya."
+        confirmLabel="Ya, kumpulkan subtes"
+        pending={subtesBusy}
+        onConfirm={doSubmitSubtes}
       />
 
       <ConfirmDialog

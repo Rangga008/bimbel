@@ -1,4 +1,5 @@
 import {
+  ValidateIf,
   IsBoolean,
   IsEmail,
   IsOptional,
@@ -14,7 +15,7 @@ export class UpdateParentDto {
   @MaxLength(100)
   name?: string;
 
-  @IsOptional()
+  @ValidateIf((o) => !!o.email)
   @IsEmail({}, { message: 'Email tidak valid.' })
   email?: string;
 

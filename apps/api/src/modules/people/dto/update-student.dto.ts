@@ -1,4 +1,5 @@
 import {
+  ValidateIf,
   IsBoolean,
   IsDateString,
   IsEmail,
@@ -16,7 +17,7 @@ export class UpdateStudentDto {
   @MaxLength(100)
   name?: string;
 
-  @IsOptional()
+  @ValidateIf((o) => !!o.email)
   @IsEmail({}, { message: 'Email tidak valid.' })
   email?: string;
 

@@ -19,6 +19,10 @@ model User {
   passwordHash String
   name         String
   phone        String?
+  /// No HP sudah diverifikasi lewat OTP WhatsApp — wajib untuk akun
+  /// daftar-mandiri (siswa luar/ortu) sebelum bisa ujian/daftar/bayar.
+  /// Akun yang dibuat admin/ortu dianggap terpercaya (otomatis terisi).
+  phoneVerifiedAt DateTime?
   avatarUrl    String?
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
@@ -34,6 +38,7 @@ model User {
   notificationPreference NotificationPreference?
   whatsAppOutbox WhatsAppOutbox[]
   reportSnapshots ReportSnapshot[] @relation("ReportSnapshotCreator")
+  phoneVerifications PhoneVerification[]
   appSettingsUpdated AppSetting[] @relation("AppSettingUpdater")
   mediaAssets   MediaAsset[] @relation("MediaAssetUploader")
   passwordResetTokens PasswordResetToken[]
@@ -157,6 +162,9 @@ model Student {
   majorChoice2 String?
   gender    Gender?
   isActive  Boolean  @default(true)
+  /// Siswa luar — daftar mandiri via kode kelompok (promosi/tes eksternal),
+  /// hanya untuk mengerjakan ujian; tidak menunggu penempatan admin.
+  isExternal Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -168,9 +176,11 @@ model Student {
   invoices       Invoice[]
   latsolAttempts LatsolAttempt[]
   examAttempts   ExamAttempt[]
+  examParticipations ExamParticipant[]
   pointTransactions PointTransaction[]
   enrollments    Enrollment[]
   feedbackEntries FeedbackEntry[]
+  statements     ParentStatement[]
 
   @@index([userId])
   @@map("students")
@@ -188,6 +198,7 @@ model Parent {
   parentStudents ParentStudent[]
   enrollments    Enrollment[]
   feedbackEntries FeedbackEntry[] @relation("FeedbackParent")
+  statements     ParentStatement[]
 
   @@index([userId])
   @@map("parents")
@@ -249,6 +260,7 @@ model Subject {
   latsolPackages LatsolPackage[]
   materials      Material[]
   exams          Exam[]
+  examSubtes     ExamSubtes[]
   schedules      Schedule[]
   sessions       Session[]     @relation("SessionSubject")
   feedbackEntries FeedbackEntry[]
@@ -423,6 +435,9 @@ model LearningGroup {
   id        String   @id @default(uuid())
   name      String
   code      String?  @unique
+  /// Kode gabung untuk siswa luar — pendaftar mandiri yang memasukkan
+  /// kode ini otomatis jadi anggota kelompok (promosi/tes eksternal).
+  joinCode  String?  @unique
   programId String
   levelId   String?
   packageId String?
@@ -442,6 +457,7 @@ model LearningGroup {
   materials Material[]
   enrollments Enrollment[]
   feedbackEntries FeedbackEntry[]
+  examLinks ExamGroup[]
 
   @@index([programId])
   @@index([levelId])
@@ -509,11 +525,74 @@ model Enrollment {
   invoices   Invoice[]      @relation("EnrollmentInvoices")
   group      LearningGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   reviewedBy User?          @relation("EnrollmentReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  statement  ParentStatement?
 
   @@index([parentId])
   @@index([studentId])
   @@index([status])
   @@map("enrollments")
+}
+
+/// Surat pernyataan/kontrak belajar ortu — diisi setelah anak didaftarkan.
+/// Semua nilai biaya disimpan sebagai SNAPSHOT saat ortu menyetujui supaya
+/// perubahan harga/data program tidak menulis ulang kesepakatan yang sudah
+/// ditandatangani.
+model ParentStatement {
+  id           String   @id @default(uuid())
+  /// Satu surat pernyataan per pendaftaran.
+  enrollmentId String   @unique
+  parentId     String
+  studentId    String
+  /// Data ortu saat menandatangani (alamat diisi di form, belum ada di profil).
+  parentName   String
+  address      String?
+  phone        String?
+  /// Snapshot data anak & program.
+  studentName  String
+  levelName    String
+  schoolOrigin String?
+  programName  String
+  /// Sistem pembayaran: "Tunai (lunas di awal)", "Angsuran 2x", "Angsuran 10x bulanan", dst.
+  paymentLabel String
+  /// Rincian angsuran 1..N + total — snapshot dari billingPlan/invoice.
+  installments      Json
+  installmentAmount Decimal? @db.Decimal(14, 2)
+  installmentCount  Int?
+  totalAmount       Decimal  @db.Decimal(14, 2)
+  /// Tanggal jatuh tempo angsuran tiap bulan (default tanggal invoice pertama).
+  dueDay       Int?
+  /// Versi teks ketentuan yang disetujui (saat ini "v1" — 6 poin kontrak GFS).
+  termsVersion String  @default("v1")
+  agreedAt     DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  parent     Parent     @relation(fields: [parentId], references: [id], onDelete: Restrict)
+  student    Student    @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@index([parentId])
+  @@index([studentId])
+  @@map("parent_statements")
+}
+
+/// Kode OTP verifikasi nomor HP via WhatsApp — dipakai akun daftar-mandiri
+/// (siswa luar / ortu) untuk membuktikan nomor yang didaftarkan benar miliknya.
+model PhoneVerification {
+  id         String    @id @default(uuid())
+  userId     String
+  /// Nomor HP saat kode dikirim — ganti nomor berarti harus verifikasi ulang.
+  phone      String
+  /// bcrypt hash kode 6 digit — plaintext tidak pernah disimpan.
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consumedAt])
+  @@map("phone_verifications")
 }
 
 /// Keanggotaan siswa di kelompok (many-to-many Student <-> LearningGroup).
@@ -749,6 +828,11 @@ model FinancialAccount {
   name      String
   code      String?  @unique
   type      String   @default("CASH")
+  /// Nomor rekening/akun tujuan transfer — ditampilkan ke orang tua saat
+  /// memilih tujuan pembayaran manual.
+  accountNumber String?
+  /// Nama pemilik rekening (a.n.) — ditampilkan ke orang tua.
+  holderName String?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1396,6 +1480,12 @@ model Exam {
   /// aplikasi/halaman. Mati = siswa bebas keluar masuk, hanya auto-submit
   /// saat waktu habis yang tetap berlaku.
   proctoringEnabled Boolean  @default(true)
+  /// true = siswa langsung melihat nilai+kunci setelah submit;
+  /// false = hasil baru dirilis setelah waktu ujian berakhir / diakhiri pengawas.
+  showResultImmediately Boolean @default(false)
+  /// Kode akses ujian — dimasukkan siswa (terutama peserta luar) untuk
+  /// membuka akses ujian tanpa harus jadi anggota kelompok/jenjangnya.
+  accessCode       String?   @unique
   notes            String?
   resultsNotifiedAt DateTime?
   createdBy        String
@@ -1408,6 +1498,9 @@ model Exam {
   items       ExamItem[]
   attempts    ExamAttempt[]
   materials   Material[]
+  subtes      ExamSubtes[]
+  groups      ExamGroup[]
+  participants ExamParticipant[]
 
   @@index([status])
   @@index([scheduledStartAt])
@@ -1427,14 +1520,73 @@ model ExamItem {
   questionId String
   sortOrder  Int    @default(0)
   points     Int    @default(1) // Poin soal dalam ujian ini (bisa override dari question.points)
+  /// Subtes bagian soal ini (try out multi-mapel ala UTBK). Null = soal umum.
+  subtesId   String?
 
   exam     Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
   question Question @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  subtes   ExamSubtes? @relation(fields: [subtesId], references: [id], onDelete: SetNull)
 
   @@unique([examId, questionId])
   @@index([examId])
   @@index([questionId])
+  @@index([subtesId])
   @@map("exam_items")
+}
+
+/// Subtes dalam ujian — pembagian per mapel ala UTBK/TKA. Siswa mengerjakan
+/// berurutan: subtes sebelumnya harus selesai sebelum subtes berikutnya
+/// dibuka, masing-masing dengan durasi sendiri.
+model ExamSubtes {
+  id              String   @id @default(uuid())
+  examId          String
+  name            String
+  subjectId       String?
+  sortOrder       Int      @default(0)
+  /// Durasi pengerjaan subtes ini (menit) — timer mulai saat siswa
+  /// menekan "Mulai Subtes", subtes terkunci otomatis saat habis.
+  durationMinutes Int      @default(0)
+
+  exam    Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  items   ExamItem[]
+  attemptStates ExamAttemptSubtes[]
+
+  @@index([examId])
+  @@map("exam_subtes")
+}
+
+/// Penugasan ujian ke kelompok — ujian bisa ditargetkan ke beberapa
+/// kelompok sekaligus. Tanpa baris = ujian terbuka untuk semua siswa
+/// (mengikuti scope jenjang/mapel seperti sebelumnya).
+model ExamGroup {
+  id      String @id @default(uuid())
+  examId  String
+  groupId String
+
+  exam  Exam          @relation(fields: [examId], references: [id], onDelete: Cascade)
+  group LearningGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([examId, groupId])
+  @@index([groupId])
+  @@map("exam_groups")
+}
+
+/// Siswa yang membuka akses ujian via kode akses (Exam.accessCode) —
+/// terutama peserta luar yang tidak terikat jenjang/kelompok. Baris ini
+/// mem-bypass scope jenjang/mapel/kelompok pada listAvailableForStudent
+/// dan getForStudent.
+model ExamParticipant {
+  examId    String
+  studentId String
+  createdAt DateTime @default(now())
+
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@id([examId, studentId])
+  @@index([studentId])
+  @@map("exam_participants")
 }
 
 /// Attempt ujian siswa. Status IN_PROGRESS sampai SUBMITTED (manual atau auto-submit).
@@ -1461,12 +1613,30 @@ model ExamAttempt {
   exam     Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
   student  Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   answers  ExamAnswer[]
+  subtesStates ExamAttemptSubtes[]
 
   @@index([examId])
   @@index([studentId])
   @@index([status])
   @@index([startedAt])
   @@map("exam_attempts")
+}
+
+/// Progres per-subtes dalam attempt — timer per subtes dimulai saat
+/// `startedAt` tercatat; subtes terkunci saat `submittedAt` terisi.
+model ExamAttemptSubtes {
+  id          String    @id @default(uuid())
+  attemptId   String
+  subtesId    String
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
+
+  attempt ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  subtes  ExamSubtes  @relation(fields: [subtesId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, subtesId])
+  @@index([subtesId])
+  @@map("exam_attempt_subtes")
 }
 
 /// Jawaban siswa per soal dalam attempt ujian.

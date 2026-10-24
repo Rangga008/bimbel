@@ -11,10 +11,61 @@ import {
   tingkatCode,
   type HierarchyLevel,
 } from '@/lib/content-taxonomy';
-import { ExamForm, emptyExamForm } from './exam-form';
+import { ExamForm, emptyExamForm, type ExamFormState } from './exam-form';
 
 function err(e: unknown, fb: string) {
   return e instanceof ApiError ? e.message : fb;
+}
+
+/** Susun payload create/update dari state form — mode subtes vs mode biasa. */
+export function buildExamPayload(form: ExamFormState) {
+  const subtesMode = form.subtes.length > 0;
+  return {
+    programId: form.pickerFilters.programId || undefined,
+    levelId: form.pickerFilters.levelId || undefined,
+    subjectId: subtesMode ? undefined : form.pickerFilters.subjectId || undefined,
+    category: form.category || undefined,
+    title: form.title,
+    description: form.description || undefined,
+    scheduledStartAt: form.scheduledStartAt,
+    scheduledEndAt: form.scheduledEndAt,
+    durationMinutes: form.durationMinutes,
+    proctoringEnabled: form.proctoringEnabled,
+    showResultImmediately: form.showResultImmediately,
+    notes: form.notes || undefined,
+    groupIds: form.groupIds,
+    // Selalu kirim `subtes` — array kosong membersihkan subtes lama saat
+    // ujian yang tadinya multi-subtes diubah jadi ujian biasa.
+    subtes: form.subtes.map((s) => ({
+      name: s.name.trim(),
+      subjectId: s.subjectId || s.pickerFilters.subjectId || undefined,
+      durationMinutes: Number(s.durationMinutes) || 1,
+    })),
+    ...(subtesMode
+      ? {
+          items: form.subtes.flatMap((s, idx) =>
+            s.questionIds.map((questionId) => ({ questionId, subtesIdx: idx })),
+          ),
+        }
+      : { questionIds: form.questionIds }),
+  };
+}
+
+/** Validasi form — subtes wajib nama + durasi + minimal 1 soal. */
+export function examFormValid(form: ExamFormState): boolean {
+  const baseOk =
+    !!form.title.trim() &&
+    !!form.pickerFilters.levelId &&
+    !!form.category &&
+    !!form.scheduledStartAt &&
+    !!form.scheduledEndAt;
+  if (!baseOk) return false;
+  if (form.subtes.length > 0) {
+    return form.subtes.every(
+      (s) => s.name.trim() && Number(s.durationMinutes) > 0 && s.questionIds.length > 0,
+    );
+  }
+  return !!form.pickerFilters.subjectId && form.questionIds.length > 0;
 }
 
 /** Halaman "Buat Ujian" — halaman terpisah (bukan modal). */
@@ -64,20 +115,7 @@ export function ExamCreatePage({
     mutationFn: () =>
       apiFetch('/exams', {
         method: 'POST',
-        body: {
-          programId: form.pickerFilters.programId || undefined,
-          levelId: form.pickerFilters.levelId || undefined,
-          subjectId: form.pickerFilters.subjectId || undefined,
-          category: form.category || undefined,
-          title: form.title,
-          description: form.description || undefined,
-          scheduledStartAt: form.scheduledStartAt,
-          scheduledEndAt: form.scheduledEndAt,
-          durationMinutes: form.durationMinutes,
-          proctoringEnabled: form.proctoringEnabled,
-          notes: form.notes || undefined,
-          questionIds: form.questionIds,
-        },
+        body: buildExamPayload(form),
       }),
     onSuccess: () => {
       toast.success('Ujian berhasil dibuat.');
@@ -94,15 +132,9 @@ export function ExamCreatePage({
     onError: (e) => toast.error(err(e, 'Gagal membuat ujian.')),
   });
 
-  // Jenjang + mapel + tipe wajib — ujian dikategorikan per jenjang.
-  const isValid =
-    !!form.title.trim() &&
-    !!form.pickerFilters.levelId &&
-    !!form.pickerFilters.subjectId &&
-    !!form.category &&
-    !!form.scheduledStartAt &&
-    !!form.scheduledEndAt &&
-    form.questionIds.length > 0;
+  // Jenjang + tipe wajib — ujian dikategorikan per jenjang; mapel wajib
+  // hanya di mode biasa (mode subtes punya mapel per subtes).
+  const isValid = examFormValid(form);
 
   return (
     <div className="flex flex-col gap-4">

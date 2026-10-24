@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Baby, Pencil, Plus, Trash2 } from "lucide-react";
+import { Baby, FileSignature, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,6 +22,7 @@ import {
 import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { ComboboxField } from "@/components/shared/combobox-field";
+import { ParentStatementDialog } from "@/components/enrollments/parent-statement-dialog";
 import { apiFetch, ApiError } from "@/lib/api-client";
 
 interface CatalogLevel {
@@ -85,6 +86,8 @@ interface EnrollmentItem {
 		amountPaid: string | number;
 		dueDate: string | null;
 	}[];
+	/** Surat pernyataan ortu — null berarti formulir belum diisi. */
+	statement?: { id: string; agreedAt: string } | null;
 }
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -190,6 +193,10 @@ export function ParentEnrollments() {
 		name: string;
 		login: StudentLogin;
 	} | null>(null);
+	/** Pendaftaran yang sedang dibuka surat pernyataannya. */
+	const [statementFor, setStatementFor] = useState<string | null>(null);
+	/** Surat pernyataan yang dibuka setelah dialog login anak ditutup. */
+	const [pendingStatement, setPendingStatement] = useState<string | null>(null);
 
 	const enrollmentsQ = useQuery({
 		queryKey: ["my-enrollments"],
@@ -324,6 +331,10 @@ export function ParentEnrollments() {
 					name: created.childName,
 					login: created.studentLogin,
 				});
+				// Surat pernyataan dibuka setelah dialog login anak ditutup.
+				setPendingStatement(created.id);
+			} else {
+				setStatementFor(created.id);
 			}
 		},
 		onError: (e) => toast.error(err(e, "Gagal membuat pendaftaran.")),
@@ -354,6 +365,10 @@ export function ParentEnrollments() {
 			(e.group?.name ?? "").toLowerCase().includes(q)
 		);
 	});
+	// Pendaftaran aktif yang surat pernyataannya belum diisi ortu.
+	const missingStatements = enrollments.filter(
+		(e) => e.status !== "REJECTED" && !e.statement,
+	);
 
 	const th = "px-3 py-2 text-left font-medium whitespace-nowrap";
 	const td = "px-3 py-2 align-top";
@@ -371,6 +386,22 @@ export function ParentEnrollments() {
 					<Plus /> Daftarkan Anak
 				</Button>
 			</div>
+
+			{missingStatements.length > 0 ? (
+				<div className="flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400">
+					<TriangleAlert className="mt-0.5 size-4 shrink-0" />
+					<div>
+						<p className="font-medium">Verifikasi anak: surat pernyataan belum diisi</p>
+						<p className="text-xs">
+							{missingStatements.length} pendaftaran (
+							{missingStatements.map((e) => e.childName).join(", ")}) belum memiliki
+							surat pernyataan kontrak belajar. Klik tombol{" "}
+							<FileSignature className="inline size-3.5 align-text-bottom" />{" "}
+							<strong>Pernyataan</strong> di tabel untuk mengisi formulir persetujuan.
+						</p>
+					</div>
+				</div>
+			) : null}
 
 			{(childrenAll.length > 0 || enrollments.length > 0) && !isLoading ? (
 				<div className="flex flex-wrap gap-2">
@@ -516,11 +547,12 @@ export function ParentEnrollments() {
 									<th className={th}>Pembayaran</th>
 									<th className={th}>Tagihan</th>
 									<th className={th}>Status</th>
+									<th className={th}>Pernyataan</th>
 									<th className={th}></th>
 								</tr>
 							</thead>
 							<tbody>
-								{enrollments.map((e) => {
+								{visibleEnrollments.map((e) => {
 									const meta = STATUS_META[e.status];
 									const paid = (e.invoices ?? []).filter((i) => i.status === "PAID").length;
 									return (
@@ -554,6 +586,31 @@ export function ParentEnrollments() {
 											</td>
 											<td className={`${td} whitespace-nowrap`}>
 												<Badge variant={meta.variant}>{meta.label}</Badge>
+											</td>
+											<td className={`${td} whitespace-nowrap`}>
+												{e.status === "REJECTED" ? (
+													<span className="text-xs text-muted-foreground">—</span>
+												) : e.statement ? (
+													<Button
+														size="sm"
+														variant="ghost"
+														className="h-7 gap-1 px-2 text-emerald-600"
+														onClick={() => setStatementFor(e.id)}
+													>
+														<FileSignature className="size-3.5" />
+														Ditandatangani
+													</Button>
+												) : (
+													<Button
+														size="sm"
+														variant="outline"
+														className="h-7 gap-1 border-amber-400 px-2 text-amber-700 hover:text-amber-800 dark:text-amber-400"
+														onClick={() => setStatementFor(e.id)}
+													>
+														<FileSignature className="size-3.5" />
+														Isi Pernyataan
+													</Button>
+												)}
 											</td>
 											<td className={`${td} text-right whitespace-nowrap`}>
 												{e.status === "PENDING_PAYMENT" ? (
@@ -877,7 +934,18 @@ export function ParentEnrollments() {
 			</Dialog>
 
 			{/* Info login anak — ditampilkan sekali setelah pendaftaran dibuat. */}
-			<Dialog open={createdLogin !== null} onOpenChange={(o) => !o && setCreatedLogin(null)}>
+			<Dialog
+				open={createdLogin !== null}
+				onOpenChange={(o) => {
+					if (o) return;
+					setCreatedLogin(null);
+					// Lanjut ke formulir surat pernyataan setelah ortu menyimpan info login.
+					if (pendingStatement) {
+						setStatementFor(pendingStatement);
+						setPendingStatement(null);
+					}
+				}}
+			>
 				<DialogContent>
 					<DialogHeader>
 						<DialogTitle>Akun {createdLogin?.name ?? "Anak"} Dibuat</DialogTitle>
@@ -909,10 +977,24 @@ export function ParentEnrollments() {
 						</div>
 					) : null}
 					<DialogFooter>
-						<Button onClick={() => setCreatedLogin(null)}>Mengerti</Button>
+						<Button onClick={() => {
+							setCreatedLogin(null);
+							if (pendingStatement) {
+								setStatementFor(pendingStatement);
+								setPendingStatement(null);
+							}
+						}}>
+							Mengerti
+						</Button>
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+
+			<ParentStatementDialog
+				enrollmentId={statementFor}
+				open={statementFor !== null}
+				onOpenChange={(o) => { if (!o) setStatementFor(null); }}
+			/>
 
 			{/* Edit data & akun login anak */}
 			<Dialog open={editChild !== null} onOpenChange={(o) => { if (!o) setEditChild(null); }}>

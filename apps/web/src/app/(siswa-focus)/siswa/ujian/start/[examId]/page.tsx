@@ -130,6 +130,30 @@ export default function ExamStartPage() {
 									</div>
 								</div>
 
+								{/* Daftar subtes — ujian multi-subtes dikerjakan berurutan. */}
+								{(exam.subtes?.length ?? 0) > 0 && (
+									<div className="flex flex-col gap-1.5 rounded-md border p-3">
+										<p className="text-xs font-medium text-muted-foreground">
+											Ujian ini terdiri dari {exam.subtes!.length} subtes — dikerjakan
+											berurutan dengan durasi masing-masing:
+										</p>
+										{exam.subtes!.map((s, i) => (
+											<div key={s.id} className="flex items-center gap-2 text-sm">
+												<span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-bold">
+													{i + 1}
+												</span>
+												<span className="min-w-0 flex-1 truncate">
+													{s.name}
+													{s.subject?.name ? ` · ${s.subject.name}` : ""}
+												</span>
+												<span className="text-xs text-muted-foreground">
+													{s.durationMinutes} mnt
+												</span>
+											</div>
+										))}
+									</div>
+								)}
+
 								<div className="flex flex-wrap gap-2">
 									{status === "NOT_STARTED" && <Button disabled>Belum Dimulai</Button>}
 									{(status === "ENDED" || status === "EXPIRED") && !attempt && (

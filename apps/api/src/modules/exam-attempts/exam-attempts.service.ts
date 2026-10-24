@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { PhoneVerificationService } from '../../common/phone-verification/phone-verification.service';
 import { ExamsService } from '../exams/exams.service';
 import { PointTransactionsService } from '../point-transactions/point-transactions.service';
 import { SaveExamAnswerDto, SubmitExamDto } from './dto/exam-attempt.dto';
@@ -23,6 +24,7 @@ export class ExamAttemptsService {
     private readonly exams: ExamsService,
     private readonly pointTransactions: PointTransactionsService,
     private readonly audit: AuditService,
+    private readonly phoneVerification: PhoneVerificationService,
   ) {}
 
   async requireStudent(userId: string) {
@@ -38,6 +40,9 @@ export class ExamAttemptsService {
    */
   async start(userId: string, examId: string, actor?: AuthenticatedUser) {
     const student = await this.requireStudent(userId);
+    // Mulai ujian butuh nomor HP terverifikasi — akun daftar-mandiri
+    // (mis. siswa luar via kode/token) harus membuktikan nomornya dulu.
+    await this.phoneVerification.assertVerified(userId);
 
     // Get exam with validation (throw bila tidak valid untuk siswa)
     await this.exams.getForStudent(examId, actor);
@@ -115,7 +120,15 @@ export class ExamAttemptsService {
             scheduledStartAt: true,
             scheduledEndAt: true,
             proctoringEnabled: true,
+            showResultImmediately: true,
+            subtes: {
+              orderBy: { sortOrder: 'asc' as const },
+              select: { id: true, name: true, durationMinutes: true, sortOrder: true },
+            },
           },
+        },
+        subtesStates: {
+          select: { subtesId: true, startedAt: true, submittedAt: true },
         },
       },
     });
@@ -123,11 +136,12 @@ export class ExamAttemptsService {
       throw new NotFoundException('Attempt tidak ditemukan.');
     }
 
-    // Fase 3e: hasil dirilis saat jadwal berakhir ATAU pengawas mengakhiri
-    // ujian lebih awal (status ENDED).
+    // Hasil: mode "langsung lihat" → rilis segera setelah submit; mode
+    // default → tunggu jadwal berakhir ATAU pengawas mengakhiri (ENDED).
     const now = new Date();
-    const isResultReleased =
-      attempt.exam.status === 'ENDED' || now >= attempt.exam.scheduledEndAt;
+    const isResultReleased = attempt.exam.showResultImmediately
+      ? attempt.status === 'SUBMITTED'
+      : attempt.exam.status === 'ENDED' || now >= attempt.exam.scheduledEndAt;
     const reveal = attempt.status === 'SUBMITTED' && isResultReleased;
 
     // Sudah terkumpul tapi hasil belum dirilis: soal & jawaban disembunyikan
@@ -178,15 +192,43 @@ export class ExamAttemptsService {
 
     const answersMap = new Map(answers.map((a) => [a.questionId, a]));
 
+    // Rekap per subtes (try out multi-mapel) — dihitung saat hasil dirilis.
+    // Selagi mengerjakan, subtesResults berisi progres jawaban saja.
+    const subtesName = new Map(attempt.exam.subtes.map((s) => [s.id, s.name]));
+    const subtesAgg = new Map<string, { subtesId: string; name: string; total: number; correct: number; score: number; maxScore: number }>();
+    for (const it of items) {
+      if (!it.subtesId) continue;
+      const agg = subtesAgg.get(it.subtesId) ?? {
+        subtesId: it.subtesId,
+        name: subtesName.get(it.subtesId) ?? 'Subtes',
+        total: 0,
+        correct: 0,
+        score: 0,
+        maxScore: 0,
+      };
+      agg.total += 1;
+      agg.maxScore += it.points;
+      const ans = answersMap.get(it.questionId);
+      if (ans) {
+        if (ans.isCorrect === true) agg.correct += 1;
+        agg.score += ans.score ?? 0;
+      }
+      subtesAgg.set(it.subtesId, agg);
+    }
+
     return {
       ...attempt,
       resultReleased: isResultReleased,
+      subtesStates: attempt.subtesStates,
+      subtesResults: reveal ? [...subtesAgg.values()] : [],
       items: items.map((item) => {
         const answer = answersMap.get(item.questionId);
         return {
           questionId: item.questionId,
           sortOrder: item.sortOrder,
           points: item.points,
+          subtesId: item.subtesId,
+          subtesName: item.subtesId ? (subtesName.get(item.subtesId) ?? null) : null,
           question: item.question,
           answer: answer
             ? {
@@ -256,6 +298,12 @@ export class ExamAttemptsService {
       );
     }
 
+    // Ujian ber-subtes: jawaban hanya diterima selama subtes aktif
+    // (sudah dimulai, belum dikumpulkan, durasi belum habis).
+    if (item.subtesId) {
+      await this.assertSubtesWritable(attemptId, item.subtesId);
+    }
+
     // Upsert answer (grading will be done on submit)
     return this.prisma.examAnswer.upsert({
       where: {
@@ -278,6 +326,117 @@ export class ExamAttemptsService {
   }
 
   /**
+   * Pastikan subtes boleh ditulis — state ada, belum dikumpulkan,
+   * durasi belum habis. Durasi lewat → subtes otomatis ditandai
+   * selesai dan jawaban baru ditolak.
+   */
+  private async assertSubtesWritable(attemptId: string, subtesId: string) {
+    const st = await this.prisma.examAttemptSubtes.findUnique({
+      where: { attemptId_subtesId: { attemptId, subtesId } },
+      include: { subtes: { select: { name: true, durationMinutes: true } } },
+    });
+    if (!st) {
+      throw new BadRequestException('Subtes belum dimulai — tekan "Mulai Subtes" dulu.');
+    }
+    if (st.submittedAt) {
+      throw new BadRequestException('Subtes ini sudah dikumpulkan.');
+    }
+    if (
+      st.subtes.durationMinutes > 0 &&
+      Date.now() > st.startedAt.getTime() + st.subtes.durationMinutes * 60_000
+    ) {
+      await this.prisma.examAttemptSubtes.update({
+        where: { id: st.id },
+        data: { submittedAt: new Date() },
+      });
+      throw new BadRequestException(
+        `Waktu subtes "${st.subtes.name}" sudah habis — jawaban tidak lagi disimpan.`,
+      );
+    }
+  }
+
+  /**
+   * Mulai subtes dalam attempt — menandai timer subtes berjalan.
+   * Urutan: semua subtes sebelumnya (sortOrder lebih kecil) harus sudah
+   * dikumpulkan; subtes yang sama tidak bisa dimulai ulang.
+   */
+  async startSubtes(userId: string, attemptId: string, subtesId: string) {
+    const student = await this.requireStudent(userId);
+    const attempt = await this.prisma.examAttempt.findUnique({
+      where: { id: attemptId },
+      include: {
+        exam: {
+          select: {
+            status: true,
+            scheduledEndAt: true,
+            subtes: { orderBy: { sortOrder: 'asc' as const }, select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+    if (!attempt || attempt.studentId !== student.id) {
+      throw new NotFoundException('Attempt tidak ditemukan.');
+    }
+    if (attempt.status !== 'IN_PROGRESS') {
+      throw new BadRequestException('Attempt ini sudah dikumpulkan.');
+    }
+    if (attempt.exam.status === 'ENDED' || new Date() > attempt.exam.scheduledEndAt) {
+      throw new BadRequestException('Waktu ujian sudah habis.');
+    }
+    const order = attempt.exam.subtes.map((s) => s.id);
+    const idx = order.indexOf(subtesId);
+    if (idx === -1) throw new BadRequestException('Subtes bukan bagian ujian ini.');
+    // Urutan wajib — subtes sebelumnya harus submitted.
+    const prevIds = order.slice(0, idx);
+    if (prevIds.length) {
+      const done = await this.prisma.examAttemptSubtes.findMany({
+        where: { attemptId, subtesId: { in: prevIds }, submittedAt: { not: null } },
+        select: { subtesId: true },
+      });
+      if (done.length !== prevIds.length) {
+        throw new BadRequestException('Selesaikan subtes sebelumnya dulu.');
+      }
+    }
+    const existing = await this.prisma.examAttemptSubtes.findUnique({
+      where: { attemptId_subtesId: { attemptId, subtesId } },
+    });
+    if (existing?.submittedAt) {
+      throw new BadRequestException('Subtes ini sudah dikumpulkan.');
+    }
+    if (existing) return existing; // idempotent — refresh tak mereset timer
+    return this.prisma.examAttemptSubtes.create({
+      data: { attemptId, subtesId },
+    });
+  }
+
+  /**
+   * Kumpulkan subtes — mengunci jawaban subtes dan membuka subtes berikutnya.
+   * Belum tentu mengakhiri attempt; submit ujian tetap terpisah.
+   */
+  async submitSubtes(userId: string, attemptId: string, subtesId: string) {
+    const student = await this.requireStudent(userId);
+    const attempt = await this.prisma.examAttempt.findUnique({
+      where: { id: attemptId },
+      select: { studentId: true, status: true },
+    });
+    if (!attempt || attempt.studentId !== student.id) {
+      throw new NotFoundException('Attempt tidak ditemukan.');
+    }
+    if (attempt.status !== 'IN_PROGRESS') {
+      throw new BadRequestException('Attempt ini sudah dikumpulkan.');
+    }
+    const st = await this.prisma.examAttemptSubtes.findUnique({
+      where: { attemptId_subtesId: { attemptId, subtesId } },
+    });
+    if (!st) throw new BadRequestException('Subtes belum dimulai.');
+    if (st.submittedAt) return st; // idempotent
+    return this.prisma.examAttemptSubtes.update({
+      where: { id: st.id },
+      data: { submittedAt: new Date() },
+    });
+  }
+
+  /**
    * Manual submit oleh siswa.
    * Validasi: attempt IN_PROGRESS milik siswa, tolak bila LOCKED.
    * Submit terlambat tetap diterima (dicatat lateByMs) — hasil tetap
@@ -293,6 +452,7 @@ export class ExamAttemptsService {
           select: {
             status: true,
             scheduledEndAt: true,
+            subtes: { select: { id: true } },
           },
         },
       },
@@ -312,6 +472,15 @@ export class ExamAttemptsService {
       throw new BadRequestException(
         'Ujian sudah diakhiri pengawas. Hubungi pengawas bila perlu klarifikasi.',
       );
+    }
+
+    // Ujian bersubtes: subtes yang masih terbuka ikut ditutup saat
+    // siswa menekan "Kumpulkan Ujian".
+    if (attempt.exam.subtes.length) {
+      await this.prisma.examAttemptSubtes.updateMany({
+        where: { attemptId, submittedAt: null },
+        data: { submittedAt: new Date() },
+      });
     }
 
     const now = new Date();
@@ -597,19 +766,20 @@ export class ExamAttemptsService {
             title: true,
             status: true,
             scheduledEndAt: true,
+            showResultImmediately: true,
           },
         },
       },
       orderBy: { startedAt: 'desc' },
     });
 
-    // Fase 3e: Cek result release untuk setiap attempt. Ujian yang
-    // diakhiri manual pengawas (ENDED) langsung merilis hasil — tidak
-    // menunggu scheduledEndAt.
+    // Rilis hasil: mode langsung → skor terlihat begitu SUBMITTED;
+    // mode default → tunggu jadwal berakhir / ujian diakhiri pengawas.
     const now = new Date();
     return attempts.map((attempt) => {
-      const released =
-        attempt.exam.status === 'ENDED' || now >= attempt.exam.scheduledEndAt;
+      const released = attempt.exam.showResultImmediately
+        ? attempt.status === 'SUBMITTED'
+        : attempt.exam.status === 'ENDED' || now >= attempt.exam.scheduledEndAt;
       return {
         ...attempt,
         resultReleased: released,

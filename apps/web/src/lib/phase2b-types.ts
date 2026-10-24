@@ -1,3 +1,12 @@
+/** Rekening tujuan transfer yang tampil ke orang tua (GET /me/payment-accounts). */
+export interface PaymentAccount {
+  id: string;
+  name: string;
+  type: string;
+  accountNumber: string | null;
+  holderName: string | null;
+}
+
 export interface PaymentListItem {
   id: string;
   invoiceId: string | null;
@@ -16,7 +25,14 @@ export interface PaymentListItem {
   rejectReason: string | null;
   paidAt: string | null;
   createdAt: string;
-  account: { id: string; name: string; code: string | null; type: string } | null;
+  account: {
+    id: string;
+    name: string;
+    code: string | null;
+    type: string;
+    accountNumber?: string | null;
+    holderName?: string | null;
+  } | null;
   allocations: Array<{
     id: string;
     amount: string | number;

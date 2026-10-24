@@ -434,7 +434,13 @@ export class InvoicesService {
   }
 
   /** Tambah akun kas/bank (Pengaturan > Akun Kas/Bank). */
-  async createAccount(dto: { name: string; code?: string; type?: string }) {
+  async createAccount(dto: {
+    name: string;
+    code?: string;
+    type?: string;
+    accountNumber?: string | null;
+    holderName?: string | null;
+  }) {
     const name = dto.name?.trim();
     if (!name) throw new BadRequestException('Nama akun wajib diisi.');
     const type = (dto.type ?? 'CASH').toUpperCase();
@@ -449,20 +455,39 @@ export class InvoicesService {
       if (clash) throw new BadRequestException(`Kode ${code} sudah dipakai.`);
     }
     return this.prisma.financialAccount.create({
-      data: { name, code, type },
+      data: {
+        name,
+        code,
+        type,
+        accountNumber: dto.accountNumber?.trim() || null,
+        holderName: dto.holderName?.trim() || null,
+      },
     });
   }
 
   /** Ubah akun kas/bank (nama/kode/tipe/status aktif). */
   async updateAccount(
     id: string,
-    dto: { name?: string; code?: string | null; type?: string; isActive?: boolean },
+    dto: {
+      name?: string;
+      code?: string | null;
+      type?: string;
+      isActive?: boolean;
+      accountNumber?: string | null;
+      holderName?: string | null;
+    },
   ) {
     const account = await this.prisma.financialAccount.findUnique({
       where: { id },
     });
     if (!account) throw new NotFoundException('Akun kas/bank tidak ditemukan.');
     const data: Record<string, unknown> = {};
+    if (dto.accountNumber !== undefined) {
+      data.accountNumber = dto.accountNumber?.trim() || null;
+    }
+    if (dto.holderName !== undefined) {
+      data.holderName = dto.holderName?.trim() || null;
+    }
     if (dto.name !== undefined) {
       const name = dto.name.trim();
       if (!name) throw new BadRequestException('Nama akun tidak boleh kosong.');

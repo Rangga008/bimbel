@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { FormField, SubmitButton } from '@/components/shared/form-field';
 import { apiFetch } from '@/lib/api-client';
 import { rupiah } from '@/components/phase2a/invoices-manager';
-import type { PaymentListItem, ReceiptItem } from '@/lib/phase2b-types';
+import type { PaymentAccount, PaymentListItem, ReceiptItem } from '@/lib/phase2b-types';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
 import { err2b } from '@/components/phase2b/payment-shared';
 import { PrintReceiptButton } from '@/components/phase2b/receipt-print';
@@ -32,7 +32,15 @@ export function ParentPayments() {
   const [histSearch, setHistSearch] = useState('');
   const [histStatus, setHistStatus] = useState('');
   const [histChannel, setHistChannel] = useState('');
+  const [accountId, setAccountId] = useState('');
   const invQ = useMeInvoices(childId);
+  // Rekening tujuan transfer — ditampilkan ke ortu saat memilih metode manual.
+  const accountsQ = useQuery({
+    queryKey: ['me-payment-accounts'],
+    queryFn: () => apiFetch<PaymentAccount[]>('/me/payment-accounts'),
+    staleTime: 5 * 60 * 1000,
+  });
+  const payAccounts = accountsQ.data ?? [];
   // Opsi filter anak harus dari daftar LENGKAP (tanpa filter) — kalau ikut
   // invQ yang terfilter, setelah pilih satu anak opsi anak lain hilang.
   const allInvQ = useMeInvoices('');
@@ -51,6 +59,7 @@ export function ParentPayments() {
     setAmount('');
     setProofFile(null);
     setProofNote('');
+    setAccountId('');
   };
   // Ganti filter anak → batalkan checkout invoice anak sebelumnya supaya
   // bukti/nominal tidak nyangkut ke invoice yang salah.
@@ -63,6 +72,9 @@ export function ParentPayments() {
       if (!checkout) throw new Error('Pilih invoice dulu.');
       if (mode === 'MANUAL') {
         if (!proofFile) throw new Error('Pilih file bukti transfer dulu.');
+        if (payAccounts.length > 0 && !accountId) {
+          throw new Error('Pilih rekening tujuan transfer dulu.');
+        }
         const fd = new FormData();
         fd.append('file', proofFile);
         const up = await apiFetch<{ proofUrl: string }>('/me/payments/proof-upload', {
@@ -76,6 +88,7 @@ export function ParentPayments() {
             amount: Number(amount),
             proofUrl: up.proofUrl,
             proofNote: proofNote.trim() || undefined,
+            accountId: accountId || undefined,
           },
         });
       }
@@ -345,6 +358,55 @@ export function ParentPayments() {
               </FormField>
               {mode === 'MANUAL' ? (
                 <>
+                  {payAccounts.length > 0 ? (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="text-sm font-medium">
+                        Transfer ke rekening <span className="text-destructive">*</span>
+                      </p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {payAccounts.map((acc) => (
+                          <button
+                            key={acc.id}
+                            type="button"
+                            onClick={() => setAccountId(acc.id)}
+                            className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                              accountId === acc.id
+                                ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                                : 'hover:border-primary/50'
+                            }`}
+                          >
+                            <p className="text-sm font-medium">{acc.name}</p>
+                            {acc.accountNumber ? (
+                              <p className="mt-0.5 font-mono text-sm tracking-wide">
+                                {acc.accountNumber}
+                                <span
+                                  role="button"
+                                  tabIndex={0}
+                                  className="ml-2 cursor-pointer text-xs font-normal text-primary underline-offset-2 hover:underline"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    navigator.clipboard?.writeText(acc.accountNumber ?? '');
+                                    toast.success('Nomor rekening disalin.');
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') e.stopPropagation();
+                                  }}
+                                >
+                                  salin
+                                </span>
+                              </p>
+                            ) : null}
+                            {acc.holderName ? (
+                              <p className="text-xs text-muted-foreground">a.n. {acc.holderName}</p>
+                            ) : null}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Pilih rekening yang Anda tuju saat transfer — membantu admin mencocokkan bukti Anda.
+                      </p>
+                    </div>
+                  ) : null}
                   <FormField
                     htmlFor="pay-proof"
                     label="File bukti transfer"

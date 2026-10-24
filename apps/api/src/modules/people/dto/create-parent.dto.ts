@@ -1,4 +1,5 @@
 import {
+  ValidateIf,
   IsEmail,
   IsOptional,
   IsString,
@@ -8,8 +9,10 @@ import {
 } from 'class-validator';
 
 export class CreateParentDto {
+  /** Opsional — kosong → email placeholder digenerate dari nomor HP. */
+  @ValidateIf((o: CreateParentDto) => !!o.email)
   @IsEmail({}, { message: 'Email orang tua tidak valid.' })
-  email: string;
+  email?: string;
 
   @IsString()
   @MinLength(3, { message: 'Nama minimal 3 karakter.' })

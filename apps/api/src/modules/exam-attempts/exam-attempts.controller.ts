@@ -51,6 +51,28 @@ export class ExamAttemptsController {
     return this.attempts.getAttemptDetail(user.id, id);
   }
 
+  /** Mulai subtes — timer subtes berjalan mulai request ini. */
+  @Post('exam-attempts/:id/subtes/:subtesId/start')
+  @RequirePermissions(PERMISSION_CODES.EXAM_ATTEMPT)
+  startSubtes(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') attemptId: string,
+    @Param('subtesId') subtesId: string,
+  ) {
+    return this.attempts.startSubtes(user.id, attemptId, subtesId);
+  }
+
+  /** Kumpulkan subtes — terkunci & membuka subtes berikutnya. */
+  @Post('exam-attempts/:id/subtes/:subtesId/submit')
+  @RequirePermissions(PERMISSION_CODES.EXAM_ATTEMPT)
+  submitSubtes(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') attemptId: string,
+    @Param('subtesId') subtesId: string,
+  ) {
+    return this.attempts.submitSubtes(user.id, attemptId, subtesId);
+  }
+
   @Put('exam-attempts/:id/answers/:questionId')
   @RequirePermissions(PERMISSION_CODES.EXAM_ATTEMPT)
   saveAnswer(

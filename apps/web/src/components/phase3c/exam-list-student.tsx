@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Search } from 'lucide-react';
+import { KeyRound, Layers, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,18 +11,9 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
-import {
-  ContentDrilldown,
-  DrillBreadcrumb,
-  useContentCategories,
-  useContentLevels,
-  useDrillState,
-} from '@/components/shared/content-drilldown';
-import {
-  applyDrill,
-  drillBackUrl,
-  drillDone,
-} from '@/lib/content-taxonomy';
+import { useContentCategories } from '@/components/shared/content-drilldown';
+import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
+import { categoryLabel } from '@/lib/content-taxonomy';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { ExamAttempt, ExamRow, ExamStatus } from '@/lib/phase3c-types';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -54,30 +45,55 @@ export function ExamListStudent() {
   const qc = useQueryClient();
   const router = useRouter();
   const searchParams = useSearchParams();
-  // Drill Tingkat → Jenjang → Mapel → Tipe, sama seperti halaman konten lain.
-  // Posisi drill disimpan di URL supaya tombol kembali tidak me-reset langkah.
-  const [drill, setDrill] = useDrillState();
-  // URL halaman attempt membawa posisi drill — dipakai exam-taker untuk
-  // tombol kembali ke daftar pada posisi yang sama.
-  const attemptUrl = (attemptId: string) =>
-    drillBackUrl(`/siswa/ujian/${attemptId}`, {
-      tingkat: drill.gradeLevelId,
-      levelId: drill.levelId,
-      subjectId: drill.subjectId,
-      category: drill.category,
-    });
+  // Daftar ujian siswa tanpa drill jenjang — ujian sudah di-scope server
+  // ke jenjang/mapel/kelompok siswa, jadi cukup filter langsung per mapel
+  // dan tipe. attemptUrl polos (tanpa ?g/l/s/c lagi).
+  const attemptUrl = (attemptId: string) => `/siswa/ujian/${attemptId}`;
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
+  const [subjectFilter, setSubjectFilter] = useState('');
+  const [catFilter, setCatFilter] = useState('');
+  const [accessCode, setAccessCode] = useState('');
 
   const dataQ = useQuery({
     queryKey: ['exams-with-my-attempts'],
     queryFn: fetchExamsWithAttempts,
   });
 
-  const levelsQ = useContentLevels();
   const catsQ = useContentCategories();
 
   const [startTarget, setStartTarget] = useState<ExamRow | null>(null);
+
+  const startM = useMutation({
+    mutationFn: (examId: string) => apiFetch<{ id: string }>('/exam-attempts/start', { method: 'POST', body: { examId } }),
+    onSuccess: (data) => {
+      setStartTarget(null);
+      router.push(attemptUrl(data.id));
+    },
+    onError: (e) => toast.error(err(e, 'Gagal memulai ujian')),
+  });
+
+  /** Tukar kode ujian — khususnya peserta luar: akses terbuka, ujian
+   *  langsung muncul di daftar dan dialog mulai terbuka. */
+  const redeemM = useMutation({
+    mutationFn: (code: string) =>
+      apiFetch<{ exam: ExamRow; joined: boolean }>('/exams/redeem', {
+        method: 'POST',
+        body: { code },
+      }),
+    onSuccess: async (data) => {
+      setAccessCode('');
+      toast.success(`Akses "${data.exam.title}" dibuka.`);
+      await qc.invalidateQueries({ queryKey: ['exams-with-my-attempts'] });
+      const fresh = await qc.fetchQuery({
+        queryKey: ['exams-with-my-attempts'],
+        queryFn: fetchExamsWithAttempts,
+      });
+      const exam = fresh.exams.find((e) => e.id === data.exam.id);
+      if (exam) setStartTarget(exam);
+    },
+    onError: (e) => toast.error(err(e, 'Kode ujian tidak dikenali.')),
+  });
 
   // Deep-link dari materi: /siswa/ujian?exam=<id> → langsung buka ujian itu
   // (dialog mulai bila belum ada attempt, halaman attempt bila sudah ada).
@@ -113,15 +129,6 @@ export function ExamListStudent() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusId, dataQ.data]);
-
-  const startM = useMutation({
-    mutationFn: (examId: string) => apiFetch<{ id: string }>('/exam-attempts/start', { method: 'POST', body: { examId } }),
-    onSuccess: (data) => {
-      setStartTarget(null);
-      router.push(attemptUrl(data.id));
-    },
-    onError: (e) => toast.error(err(e, 'Gagal memulai ujian')),
-  });
 
   const continueExam = (attemptId: string) => {
     router.push(attemptUrl(attemptId));
@@ -159,6 +166,58 @@ export function ExamListStudent() {
     return 'ACTIVE';
   };
 
+  const exams = dataQ.data?.exams ?? [];
+  const myAttempts = dataQ.data?.attemptsMap ?? {};
+  // Ujian PUBLISHED selalu tampil; ujian ENDED hanya tampil bila siswa
+  // punya attempt (untuk melihat hasil yang sudah dirilis).
+  const visibleExams = exams.filter(
+    (exam) => exam.status === 'PUBLISHED' || (exam.status === 'ENDED' && myAttempts[exam.id]),
+  );
+
+  // Opsi filter diturunkan dari ujian yang benar-benar tersedia untuk
+  // siswa ini — hanya mapel/tipe yang memang ada, jadi langsung menjurus.
+  const subjectOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of visibleExams) {
+      if (e.subject) map.set(e.subject.id, e.subject.name);
+      // Ujian multi-subtes: tiap subtes ber-mapel sendiri.
+      for (const s of e.subtes ?? []) {
+        if (s.subject) map.set(s.subject.id, s.subject.name);
+      }
+    }
+    return [...map.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [visibleExams]);
+
+  const typeOptions = useMemo(() => {
+    const codes = [...new Set(visibleExams.map((e) => e.category).filter((c): c is string => !!c))];
+    return codes
+      .map((c) => ({ value: c, label: categoryLabel(c, catsQ.data) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [visibleExams, catsQ.data]);
+
+  const list = visibleExams.filter((e) => {
+    if (subjectFilter) {
+      const matchSubject =
+        e.subject?.id === subjectFilter ||
+        (e.subtes ?? []).some((s) => s.subject?.id === subjectFilter);
+      if (!matchSubject) return false;
+    }
+    if (catFilter && e.category !== catFilter) return false;
+    if (
+      debouncedSearch &&
+      !e.title.toLowerCase().includes(debouncedSearch.toLowerCase())
+    )
+      return false;
+    return true;
+  });
+
+  const startExam = (examId: string) => {
+    qc.invalidateQueries({ queryKey: ['exams-with-my-attempts'] });
+    startM.mutate(examId);
+  };
+
   if (dataQ.isLoading) {
     return <Skeleton className="h-24 w-full" />;
   }
@@ -167,100 +226,110 @@ export function ExamListStudent() {
     return <div className="text-sm text-destructive">{err(dataQ.error, 'Gagal memuat daftar ujian.')}</div>;
   }
 
-  const exams = dataQ.data?.exams ?? [];
-  const myAttempts = dataQ.data?.attemptsMap ?? {};
-  // Ujian PUBLISHED selalu tampil; ujian ENDED hanya tampil bila siswa
-  // punya attempt (untuk melihat hasil yang sudah dirilis).
-  const visibleExams = exams.filter(
-    (exam) => exam.status === 'PUBLISHED' || (exam.status === 'ENDED' && myAttempts[exam.id]),
-  );
-  const levels = levelsQ.data;
-  const drilled = applyDrill(visibleExams, drill, levels);
-  const list = debouncedSearch
-    ? drilled.filter((e) =>
-        e.title.toLowerCase().includes(debouncedSearch.toLowerCase()),
-      )
-    : drilled;
-  const done = drillDone(drill) || !!debouncedSearch;
-
-  const startExam = (examId: string) => {
-    qc.invalidateQueries({ queryKey: ['exams-with-my-attempts'] });
-    startM.mutate(examId);
-  };
-
-  // Landing drill-down: Tingkat → Jenjang → Mapel → Tipe — untuk siswa/tutor
-  // jenjang & mapel sudah dibatasi scope program yang mereka ikuti/ampu.
-  if (!done) {
-    return (
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Ujian</h1>
-            <p className="text-sm text-muted-foreground">
-              Ujian dikelompokkan per jenjang → mapel → tipe.
-            </p>
-          </div>
-          <div className="relative w-full sm:w-64">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Cari ujian..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-        </div>
-        <ContentDrilldown
-          items={visibleExams}
-          levels={levels}
-          categories={catsQ.data}
-          value={drill}
-          onChange={setDrill}
-          itemNoun="Ujian"
-          loading={dataQ.isLoading || levelsQ.isLoading}
-        />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <div>
-        {!debouncedSearch && (
-          <DrillBreadcrumb
-            items={visibleExams}
-            levels={levels}
-            categories={catsQ.data}
-            value={drill}
-            onChange={setDrill}
-          />
-        )}
-        <h1 className="mt-1 text-2xl font-bold">Ujian Tersedia</h1>
+        <h1 className="text-2xl font-bold">Ujian</h1>
+        <p className="text-sm text-muted-foreground">
+          Daftar ujian untuk jenjang &amp; kelompokmu — saring per mapel atau tipe.
+        </p>
       </div>
-      <div className="relative w-full sm:w-64">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Cari ujian..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
+
+      {/* Masuk lewat kode ujian — jalur utama peserta luar/try out umum. */}
+      <Card>
+        <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-end">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand-gold-100 text-brand-gold-700">
+            <KeyRound className="size-5" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium">Punya kode ujian?</p>
+            <p className="text-xs text-muted-foreground">
+              Masukkan kode dari pengajar/panitia — ujian langsung terbuka tanpa perlu terdaftar di kelompoknya.
+            </p>
+          </div>
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const code = accessCode.trim();
+              if (code) redeemM.mutate(code);
+            }}
+          >
+            <Input
+              placeholder="cth: K7P4QX"
+              value={accessCode}
+              onChange={(e) => setAccessCode(e.target.value.toUpperCase())}
+              className="w-36 uppercase tracking-widest"
+              maxLength={8}
+            />
+            <Button type="submit" disabled={redeemM.isPending || !accessCode.trim()}>
+              {redeemM.isPending ? 'Memeriksa…' : 'Masuk'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="w-full sm:w-44">
+          <Phase1aSelectField
+            id="ex-subject"
+            label="Mapel"
+            value={subjectFilter}
+            onChange={setSubjectFilter}
+            options={subjectOptions}
+            placeholder="Semua mapel"
+          />
+        </div>
+        <div className="w-full sm:w-44">
+          <Phase1aSelectField
+            id="ex-type"
+            label="Tipe"
+            value={catFilter}
+            onChange={setCatFilter}
+            options={typeOptions}
+            placeholder="Semua tipe"
+          />
+        </div>
+        <div className="relative w-full sm:w-56">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Cari ujian..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
       </div>
 
       <div className="grid gap-4">
         {list.map((exam) => {
           const examStatus = getExamStatus(exam);
           const attempt = myAttempts[exam.id];
+          const subtesNames = (exam.subtes ?? [])
+            .map((s) => s.subject?.name ?? s.name)
+            .filter(Boolean);
 
           return (
             <Card key={exam.id} id={`exam-${exam.id}`} className={exam.id === focusId ? 'ring-2 ring-primary' : undefined}>
               <CardHeader>
                 <div className="flex justify-between items-start">
                   <div className="space-y-1">
-                    <CardTitle className="flex items-center gap-2">
+                    <CardTitle className="flex flex-wrap items-center gap-2">
                       {exam.title}
                       {getStatusBadge(exam.status)}
+                      {exam.category && (
+                        <Badge variant="outline">{categoryLabel(exam.category, catsQ.data)}</Badge>
+                      )}
+                      {exam.subject && <Badge variant="secondary">{exam.subject.name}</Badge>}
+                      {(exam.subtes?.length ?? 0) > 0 && (
+                        <Badge variant="secondary">
+                          <Layers className="size-3" /> {exam.subtes!.length} subtes
+                        </Badge>
+                      )}
                     </CardTitle>
+                    {subtesNames.length > 0 && (
+                      <p className="text-xs text-muted-foreground">{subtesNames.join(' · ')}</p>
+                    )}
                     {exam.description && (
                       <p className="text-sm text-muted-foreground">{exam.description}</p>
                     )}
@@ -344,7 +413,7 @@ export function ExamListStudent() {
         <Card>
           <CardContent className="pt-6">
             <p className="text-center text-muted-foreground">
-              Tidak ada ujian di kategori ini — coba pilihan lain.
+              Tidak ada ujian untuk filter ini — coba pilihan lain.
             </p>
           </CardContent>
         </Card>
@@ -361,6 +430,9 @@ export function ExamListStudent() {
           startTarget
             ? `${startTarget.items.length} soal · nilai maks ${startTarget.maxScore}` +
               `${startTarget.durationMinutes ? ` · durasi ${startTarget.durationMinutes} menit` : ''}. ` +
+              ((startTarget.subtes?.length ?? 0) > 0
+                ? 'Ujian ini terdiri dari beberapa subtes yang dikerjakan berurutan — timer tiap subtes dimulai saat kamu menekan "Mulai Subtes". '
+                : '') +
               (startTarget.proctoringEnabled === false
                 ? 'Ujian ini tanpa proteksi — Anda bebas keluar-masuk halaman; jawaban tersimpan otomatis.'
                 : 'Ujian ini diproteksi: berjalan layar penuh, dan keluar halaman/aplikasi akan mengunci attempt Anda sampai dibuka pengawas.')

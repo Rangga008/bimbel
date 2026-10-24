@@ -125,7 +125,14 @@ export class InvoicesController {
   @Post('financial-accounts')
   @RequirePermissions(PERMISSION_CODES.SETTINGS_MANAGE)
   async createAccount(
-    @Body() dto: { name: string; code?: string; type?: string },
+    @Body()
+    dto: {
+      name: string;
+      code?: string;
+      type?: string;
+      accountNumber?: string | null;
+      holderName?: string | null;
+    },
     @CurrentUser() actor: AuthenticatedUser,
     @Req() req: Request,
   ) {
@@ -142,7 +149,15 @@ export class InvoicesController {
   @RequirePermissions(PERMISSION_CODES.SETTINGS_MANAGE)
   async updateAccount(
     @Param('id') id: string,
-    @Body() dto: { name?: string; code?: string | null; type?: string; isActive?: boolean },
+    @Body()
+    dto: {
+      name?: string;
+      code?: string | null;
+      type?: string;
+      isActive?: boolean;
+      accountNumber?: string | null;
+      holderName?: string | null;
+    },
     @CurrentUser() actor: AuthenticatedUser,
     @Req() req: Request,
   ) {

@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/tooltip";
 import { apiFetch, resolveAssetUrl } from "@/lib/api-client";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { PhoneVerificationBanner } from "@/components/shared/phone-verification-banner";
 import { useAuthStore } from "@/stores/auth-store";
 import {
 	findNavItem,
@@ -345,7 +346,10 @@ export function AppShellDesktop({
 							</Avatar>
 						</div>
 					</header>
-					<main className="min-w-0 flex-1 overflow-y-auto p-6">{children}</main>
+					<main className="min-w-0 flex-1 overflow-y-auto p-6">
+						<PhoneVerificationBanner />
+						{children}
+					</main>
 				</div>
 			</div>
 			<ConfirmDialog

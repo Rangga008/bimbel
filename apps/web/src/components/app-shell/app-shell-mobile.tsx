@@ -17,6 +17,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { apiFetch, resolveAssetUrl } from "@/lib/api-client";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { PhoneVerificationBanner } from "@/components/shared/phone-verification-banner";
 import { useAuthStore } from "@/stores/auth-store";
 import { ROLE_LABELS, ROLE_NAV, type RoleKey } from "@/config/role-nav";
 import { NotificationBell, userInitials } from "./shell-shared";
@@ -94,7 +95,10 @@ export function AppShellMobile({
 				</div>
 			</header>
 
-			<main className="flex-1 overflow-y-auto p-4 pb-24">{children}</main>
+			<main className="flex-1 overflow-y-auto p-4 pb-24">
+				<PhoneVerificationBanner />
+				{children}
+			</main>
 
 			<nav
 				className="fixed inset-x-0 bottom-0 z-40 grid border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur"

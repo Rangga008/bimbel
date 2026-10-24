@@ -59,7 +59,7 @@ const GENDER_OPTIONS = [
 
 const EDIT_FIELDS: Phase1aField[] = [
   { name: 'name', label: 'Nama lengkap', required: true },
-  { name: 'email', label: 'Email (login)', type: 'email', required: true },
+  { name: 'email', label: 'Email (login — opsional)', type: 'email' },
   { name: 'phone', label: 'No. HP', placeholder: '08...' },
   { name: 'dateOfBirth', label: 'Tanggal lahir', type: 'date' },
   { name: 'address', label: 'Alamat', placeholder: 'Jl. ...' },
@@ -186,7 +186,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
     if (!s) return;
     setEditForm({
       name: s.user.name,
-      email: s.user.email,
+      email: s.user.email?.endsWith('@hp.bimbel.local') ? '' : s.user.email,
       phone: s.user.phone ?? '',
       dateOfBirth: s.dateOfBirth ? String(s.dateOfBirth).slice(0, 10) : '',
       gender: s.gender ?? '',

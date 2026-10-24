@@ -47,8 +47,9 @@ export class UsersController {
     @Query('search') search?: string,
     @Query('isActive') isActive?: string,
     @Query('role') role?: string,
+    @Query('phoneVerified') phoneVerified?: string,
   ) {
-    return this.usersService.listUsers({ search, isActive, role });
+    return this.usersService.listUsers({ search, isActive, role, phoneVerified });
   }
 
   @Get('roles')

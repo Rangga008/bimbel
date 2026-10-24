@@ -26,6 +26,7 @@ import {
   CreateEnrollmentDto,
   PlaceEnrollmentDto,
   ReviewEnrollmentDto,
+  SubmitStatementDto,
   UpdateChildDto,
 } from './dto/enrollment.dto';
 
@@ -74,6 +75,41 @@ export class EnrollmentsController {
   @RequirePermissions(PERMISSION_CODES.ENROLLMENT_VIEW)
   mine(@CurrentUser() actor: AuthenticatedUser) {
     return this.enrollments.mine(actor);
+  }
+
+  /** Ortu: surat pernyataan tersimpan + data prefill untuk satu pendaftaran. */
+  @Get('me/enrollments/:enrollmentId/statement')
+  @RequirePermissions(PERMISSION_CODES.ENROLLMENT_VIEW)
+  statementForm(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('enrollmentId') enrollmentId: string,
+  ) {
+    return this.enrollments.statementForm(actor, enrollmentId);
+  }
+
+  /**
+   * Ortu: isi & setujui surat pernyataan anak — snapshot data ortu/anak/
+   * program/pembayaran disimpan server-side; boleh diperbarui untuk koreksi.
+   */
+  @Post('me/enrollments/:enrollmentId/statement')
+  @RequirePermissions(PERMISSION_CODES.ENROLLMENT_CREATE)
+  async submitStatement(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('enrollmentId') enrollmentId: string,
+    @Body() dto: SubmitStatementDto,
+    @Req() req: Request,
+  ) {
+    const saved = await this.enrollments.submitStatement(actor, enrollmentId, dto);
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'PARENT_STATEMENT_SIGNED',
+      entity: 'ParentStatement',
+      entityId: saved.id,
+      newData: { enrollmentId, agreedAt: saved.agreedAt },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return saved;
   }
 
   /** Daftar anak milik ortu — untuk mendaftarkan anak yang sama ke program lain. */

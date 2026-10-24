@@ -13,6 +13,7 @@ import { createHmac, randomUUID } from 'node:crypto';
 import { access, mkdir, writeFile } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PhoneVerificationService } from '../../common/phone-verification/phone-verification.service';
 import { NotificationEventsService } from '../notifications/notification-events.service';
 import { PERMISSION_CODES } from '../rbac/permissions.constants';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
@@ -35,7 +36,9 @@ import {
 export { receiptDetailInclude };
 
 export const paymentDetailInclude = {
-  account: { select: { id: true, name: true, code: true, type: true } },
+  account: {
+    select: { id: true, name: true, code: true, type: true, accountNumber: true, holderName: true },
+  },
   allocations: {
     include: {
       invoice: {
@@ -99,6 +102,7 @@ export class PaymentsService {
     private readonly events: NotificationEventsService,
     private readonly settings: SettingsService,
     private readonly enrollments: EnrollmentsService,
+    private readonly phoneVerification: PhoneVerificationService,
   ) {
     this.dummyGateway = new DummyGatewayProvider(
       this.config.get<string>('PAYMENT_WEBHOOK_SECRET', 'dev-webhook-secret'),
@@ -467,9 +471,28 @@ export class PaymentsService {
     return result;
   }
 
+  /** Rekening tujuan transfer yang ditampilkan ke orang tua — hanya akun
+   *  aktif bertipe BANK/CASH, field publik (nama bank, no rekening, a.n.). */
+  listPaymentAccounts() {
+    return this.prisma.financialAccount.findMany({
+      where: { isActive: true },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        accountNumber: true,
+        holderName: true,
+      },
+    });
+  }
+
   // 2. Manual upload bukti (Ortu) — selalu PENDING; Fase 5b: notif admin via
   // NotificationEventsService.paymentProofSubmitted (bukan di controller).
   async submitManualProof(userId: string, dto: CreateManualProofDto) {
+    // Bayar butuh nomor HP terverifikasi — akun daftar-mandiri harus
+    // membuktikan nomornya dulu lewat OTP WhatsApp.
+    await this.phoneVerification.assertVerified(userId);
     const invoice = await this.requireIssuedInvoice(dto.invoiceId);
     const allowed = await this.allowedStudentIds(userId);
     if (!allowed.includes(invoice.studentId)) {
@@ -481,10 +504,22 @@ export class PaymentsService {
         `Nominal melebihi sisa tagihan (sisa ${Math.round(sisa).toLocaleString('id-ID')}).`,
       );
     }
+    // Rekening tujuan transfer yang dipilih ortu — dicatat agar admin tahu
+    // dana masuk ke akun mana.
+    if (dto.accountId) {
+      const acc = await this.prisma.financialAccount.findUnique({
+        where: { id: dto.accountId },
+        select: { id: true, isActive: true },
+      });
+      if (!acc || !acc.isActive) {
+        throw new BadRequestException('Rekening tujuan tidak ditemukan / nonaktif.');
+      }
+    }
     const created = await this.prisma.payment.create({
       data: {
         invoiceId: invoice.id,
         studentId: invoice.studentId,
+        accountId: dto.accountId ?? null,
         amount: new Prisma.Decimal(String(dto.amount)),
         method: 'TRANSFER_MANUAL',
         channel: 'MANUAL',
@@ -671,6 +706,10 @@ export class PaymentsService {
     dto: InitiateGatewayDto,
     scopeStudentIds?: string[],
   ) {
+    // Jalur ortu (scopeStudentIds terisi) butuh nomor HP terverifikasi.
+    if (scopeStudentIds) {
+      await this.phoneVerification.assertVerified(userId);
+    }
     const invoice = await this.requireIssuedInvoice(dto.invoiceId);
     if (scopeStudentIds && !scopeStudentIds.includes(invoice.studentId)) {
       throw new ForbiddenException('Invoice tersebut bukan milik anak Anda.');

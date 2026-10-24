@@ -22,6 +22,10 @@ export interface CreateUserForPersonInput {
   roleName: RoleName;
   /** Boleh override password (dipakai test); default generate aman. */
   tempPassword?: string;
+  /** false = akun daftar-mandiri — wajib verifikasi no HP via OTP WhatsApp
+   *  sebelum bisa melakukan aksi bernilai. Default true (dibuat admin/ortu
+   *  dianggap terpercaya). */
+  phoneVerified?: boolean;
 }
 
 export interface CreatedUserForPerson {
@@ -190,19 +194,29 @@ export class UsersService {
       phone: user.phone,
       avatarUrl: user.avatarUrl,
       isActive: user.isActive,
+      phoneVerifiedAt: user.phoneVerifiedAt,
       createdAt: user.createdAt,
       roles,
       permissions,
     };
   }
 
-  async listUsers(query: { search?: string; isActive?: string; role?: string }) {
+  async listUsers(query: {
+    search?: string;
+    isActive?: string;
+    role?: string;
+    phoneVerified?: string;
+  }) {
     const where: Record<string, unknown> = {
       // Akun yang sudah dihapus (dianonimkan) tidak tampil di daftar.
       NOT: { email: { endsWith: '@deleted.local' } },
     };
     if (query.isActive === 'true') where.isActive = true;
     if (query.isActive === 'false') where.isActive = false;
+    // Filter verifikasi no HP — untuk menyaring akun daftar-mandiri yang
+    // belum membuktikan nomornya (kandidat akun "bodong").
+    if (query.phoneVerified === 'true') where.phoneVerifiedAt = { not: null };
+    if (query.phoneVerified === 'false') where.phoneVerifiedAt = null;
     if (query.search) {
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
@@ -273,6 +287,8 @@ export class UsersService {
           name: dto.name,
           phone: dto.phone,
           passwordHash,
+          // Dibuat admin — dianggap terpercaya, tanpa verifikasi OTP.
+          phoneVerifiedAt: new Date(),
         },
       });
       if (roleIds.length > 0) {
@@ -333,11 +349,17 @@ export class UsersService {
         );
       }
     }
+    // Email dikosongkan saat edit → pakai placeholder dari nomor HP agar
+    // kolom unik `users.email` tetap terisi (bukan string kosong).
+    const resolvedEmail =
+      dto.email === ''
+        ? `wa.${(dto.phone ?? user.phone ?? '').replace(/\D/g, '') || user.id}@hp.bimbel.local`
+        : dto.email;
     const updated = await this.prisma.user.update({
       where: { id },
       data: {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(dto.email !== undefined ? { email: dto.email } : {}),
+        ...(resolvedEmail !== undefined ? { email: resolvedEmail } : {}),
         ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },
@@ -478,6 +500,10 @@ export class UsersService {
         name: input.name,
         phone: input.phone,
         passwordHash,
+        // Akun yang dibuat dari jalur terpercaya (admin/ortu) langsung
+        // dianggap terverifikasi; daftar-mandiri lewat OTP WhatsApp.
+        phoneVerifiedAt:
+          input.phoneVerified === false ? null : new Date(),
       },
     });
     await tx.userRole.create({ data: { userId: user.id, roleId: role.id } });

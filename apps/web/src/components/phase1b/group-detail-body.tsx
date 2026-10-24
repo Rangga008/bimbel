@@ -54,6 +54,16 @@ export function GroupDetailBody({ groupId, canManage, onChanged }: { groupId: st
     },
     onError: (e) => toast.error(err(e, 'Gagal menugaskan tutor.')),
   });
+  const joinCodeM = useMutation({
+    mutationFn: () =>
+      apiFetch<GroupDetail>(`/groups/${groupId}/join-code`, { method: 'POST' }),
+    onSuccess: (g) => {
+      toast.success(`Kode gabung baru: ${g.joinCode}`);
+      qc.invalidateQueries({ queryKey: ['groups', groupId] });
+      onChanged();
+    },
+    onError: (e) => toast.error(err(e, 'Gagal membuat kode gabung.')),
+  });
   const delM = useMutation({
     mutationFn: ({ kind, id }: { kind: string; id: string }) =>
       apiFetch(`/groups/${groupId}/${kind}/${id}`, { method: 'DELETE' }),
@@ -78,6 +88,42 @@ export function GroupDetailBody({ groupId, canManage, onChanged }: { groupId: st
     .map((t) => ({ value: t.id, label: t.user.name, imageUrl: t.user.avatarUrl }));
   return (
     <div className="flex flex-col gap-4">
+      {canManage ? (
+        <div className="flex flex-col gap-1.5 rounded-md border border-dashed p-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Kode Gabung Kelompok</h3>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={joinCodeM.isPending}
+              onClick={() => joinCodeM.mutate()}
+            >
+              {d.joinCode ? 'Buat Ulang' : 'Buat Kode'}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Siswa dari luar bimbel bisa mendaftar sendiri di halaman Daftar Siswa
+            dengan kode ini — langsung jadi anggota kelompok dan bisa mengerjakan
+            ujiannya (mis. try out/promosi). Kode lama langsung tidak berlaku
+            setelah dibuat ulang.
+          </p>
+          {d.joinCode ? (
+            <button
+              type="button"
+              title="Klik untuk menyalin"
+              onClick={() => {
+                void navigator.clipboard?.writeText(d.joinCode!);
+                toast.success('Kode disalin.');
+              }}
+              className="w-fit rounded-md bg-muted px-3 py-1.5 font-mono text-lg font-bold tracking-[0.3em]"
+            >
+              {d.joinCode}
+            </button>
+          ) : (
+            <p className="text-xs text-muted-foreground">Belum ada kode.</p>
+          )}
+        </div>
+      ) : null}
       <div>
         <h3 className="text-sm font-semibold">Siswa ({d.members.length})</h3>
         <div className="mt-2 flex flex-col gap-1.5">

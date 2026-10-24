@@ -4,13 +4,15 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
+import { KeyRound, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { ExamRow, UpdateExamDto } from '@/lib/phase3c-types';
 import { drillBackFromUrl, tingkatCode } from '@/lib/content-taxonomy';
 import { useContentLevels } from '@/components/shared/content-drilldown';
-import { ExamForm, emptyExamForm, type ExamFormState } from './exam-form';
+import { ExamForm, emptyExamForm, emptySubtes, type ExamFormState } from './exam-form';
+import { buildExamPayload, examFormValid } from './exam-create-page';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 
 function err(e: unknown, fb: string) {
@@ -18,24 +20,43 @@ function err(e: unknown, fb: string) {
 }
 
 function toForm(exam: ExamRow): ExamFormState {
+  const hasSubtes = (exam.subtes?.length ?? 0) > 0;
+  const basePicker = {
+    tingkat: '',
+    category: exam.category ?? '',
+    programId: exam.programId ?? '',
+    levelId: exam.levelId ?? '',
+  };
   return {
     ...emptyExamForm(),
     category: exam.category ?? '',
-    pickerFilters: {
-      tingkat: '',
-      category: exam.category ?? '',
-      programId: exam.programId ?? '',
-      levelId: exam.levelId ?? '',
-      subjectId: exam.subjectId ?? '',
-    },
+    pickerFilters: { ...basePicker, subjectId: exam.subjectId ?? '' },
     title: exam.title,
     description: exam.description || '',
     scheduledStartAt: exam.scheduledStartAt.slice(0, 16),
     scheduledEndAt: exam.scheduledEndAt.slice(0, 16),
     durationMinutes: exam.durationMinutes || undefined,
     proctoringEnabled: exam.proctoringEnabled ?? true,
+    showResultImmediately: exam.showResultImmediately ?? false,
     notes: exam.notes || '',
-    questionIds: exam.items.map((item) => item.questionId),
+    // Mode subtes → soal dipetakan per subtesId; mode biasa → semua item.
+    subtes: hasSubtes
+      ? (exam.subtes ?? []).map((s) => ({
+          ...emptySubtes({ ...basePicker, subjectId: s.subjectId ?? '' }),
+          name: s.name,
+          durationMinutes: String(s.durationMinutes),
+          subjectId: s.subjectId ?? '',
+          questionIds: exam.items
+            .filter((it) => it.subtesId === s.id)
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+            .map((it) => it.questionId),
+        }))
+      : [],
+    questionIds: exam.items
+      .filter((it) => !it.subtesId)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((item) => item.questionId),
+    groupIds: (exam.groups ?? []).map((g) => g.groupId ?? g.group?.id).filter(Boolean) as string[],
     status: exam.status,
   };
 }
@@ -77,18 +98,7 @@ function ExamEditForm({
   const saveM = useMutation({
     mutationFn: () => {
       const body: UpdateExamDto = {
-        programId: form.pickerFilters.programId || undefined,
-        levelId: form.pickerFilters.levelId || undefined,
-        subjectId: form.pickerFilters.subjectId || undefined,
-        category: form.category || undefined,
-        title: form.title,
-        description: form.description || undefined,
-        scheduledStartAt: form.scheduledStartAt,
-        scheduledEndAt: form.scheduledEndAt,
-        durationMinutes: form.durationMinutes,
-        proctoringEnabled: form.proctoringEnabled,
-        notes: form.notes || undefined,
-        questionIds: form.questionIds,
+        ...buildExamPayload(form),
         // Status dikirim hanya bila berubah — mengirim status ENDED/LOCKED
         // apa adanya memicu validasi transisi di server.
         status: form.status !== initial.status ? form.status : undefined,
@@ -113,15 +123,23 @@ function ExamEditForm({
     onError: (e) => toast.error(err(e, 'Gagal menghapus ujian.')),
   });
 
-  // Jenjang + mapel + tipe wajib — ujian dikategorikan per jenjang.
-  const isValid =
-    !!form.title.trim() &&
-    !!form.pickerFilters.levelId &&
-    !!form.pickerFilters.subjectId &&
-    !!form.category &&
-    !!form.scheduledStartAt &&
-    !!form.scheduledEndAt &&
-    form.questionIds.length > 0;
+  const regenCodeM = useMutation({
+    mutationFn: () =>
+      apiFetch<{ accessCode: string }>(`/exams/${examId}/access-code/regenerate`, {
+        method: 'POST',
+      }),
+    onSuccess: (d) => {
+      toast.success(`Kode akses baru: ${d.accessCode}`);
+      qc.setQueryData(['exam', examId], (old: ExamRow | undefined) =>
+        old ? { ...old, accessCode: d.accessCode } : old,
+      );
+      qc.invalidateQueries({ queryKey: ['exams'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal membuat ulang kode akses.')),
+  });
+
+  // Jenjang + tipe wajib; mapel hanya wajib di mode biasa.
+  const isValid = examFormValid(form);
 
   return (
     <div className="flex flex-col gap-4">
@@ -134,6 +152,40 @@ function ExamEditForm({
         </div>
         <Button variant="outline" onClick={() => router.push(backUrl)}>
           Batal
+        </Button>
+      </div>
+
+      {/* Kode akses — dibagikan ke peserta luar; mereka memasukkannya di
+          halaman Ujian untuk membuka akses tanpa jadi anggota kelompok. */}
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+        <KeyRound className="size-5 shrink-0 text-brand-gold-700" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">Kode Akses Ujian</p>
+          <p className="text-xs text-muted-foreground">
+            Bagikan ke peserta luar — mereka memasukkannya di halaman Ujian untuk ikut mengerjakan.
+          </p>
+        </div>
+        <button
+          type="button"
+          title="Klik untuk menyalin"
+          onClick={() => {
+            if (initial.accessCode) {
+              navigator.clipboard?.writeText(initial.accessCode);
+              toast.success('Kode akses disalin.');
+            }
+          }}
+          className="rounded-md border bg-background px-3 py-1.5 font-mono text-lg font-semibold tracking-[0.3em] hover:bg-muted"
+        >
+          {initial.accessCode ?? '—'}
+        </button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={regenCodeM.isPending}
+          onClick={() => regenCodeM.mutate()}
+        >
+          <RefreshCw className="size-4" /> Buat Ulang
         </Button>
       </div>
 

@@ -5,6 +5,8 @@ export interface ManagedUser {
   phone: string | null;
   avatarUrl: string | null;
   isActive: boolean;
+  /** ISO date — null = no HP belum diverifikasi (akun daftar-mandiri). */
+  phoneVerifiedAt?: string | null;
   createdAt: string;
   roles: string[];
   permissions: string[];

@@ -107,6 +107,25 @@ export class GroupsController {
     return updated;
   }
 
+  /** Buat ulang kode gabung kelompok — dipakai siswa mandiri saat mendaftar. */
+  @Post('groups/:id/join-code')
+  @RequirePermissions(PERMISSION_CODES.GROUP_MANAGE)
+  async regenerateJoinCode(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const updated = await this.groups.regenerateJoinCode(id);
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'GROUP_JOIN_CODE_REGENERATED',
+      entity: 'LearningGroup',
+      entityId: id,
+      ...this.auditCtx(req),
+    });
+    return updated;
+  }
+
   @Delete('groups/:id')
   @RequirePermissions(PERMISSION_CODES.GROUP_MANAGE)
   async remove(

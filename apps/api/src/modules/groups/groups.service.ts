@@ -201,6 +201,26 @@ export class GroupsService {
     });
   }
 
+  /** Generate ulang kode gabung kelompok (untuk pendaftaran siswa mandiri). */
+  async regenerateJoinCode(id: string) {
+    const existing = await this.prisma.learningGroup.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Kelompok tidak ditemukan.');
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // tanpa O/0/I/1 — mudah dibaca/ditulis
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      let code = '';
+      for (let i = 0; i < 6; i += 1) code += chars[Math.floor(Math.random() * chars.length)];
+      const clash = await this.prisma.learningGroup.findUnique({ where: { joinCode: code } });
+      if (!clash) {
+        return this.prisma.learningGroup.update({
+          where: { id },
+          data: { joinCode: code },
+          include: groupListInclude,
+        });
+      }
+    }
+    throw new BadRequestException('Gagal membuat kode gabung — coba lagi.');
+  }
+
   /**
    * Hapus kelompok. Anggota, tutor, jadwal, sesi, dan referensi materi/enrollment
    * ikut terhapus/terlepas lewat FK. Ditolak bila ada sesi yang sudah berisi

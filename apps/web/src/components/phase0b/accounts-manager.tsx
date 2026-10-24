@@ -56,6 +56,7 @@ export function AccountsManager({ basePath }: { basePath: string }) {
   const debouncedSearch = useDebouncedValue(search);
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [verifiedFilter, setVerifiedFilter] = useState("");
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
   const [createOpen, setCreateOpen] = useState(false);
@@ -70,12 +71,13 @@ export function AccountsManager({ basePath }: { basePath: string }) {
   const [roleUser, setRoleUser] = useState<ManagedUser | null>(null);
 
   const usersQuery = useQuery({
-    queryKey: ["users", debouncedSearch, roleFilter, statusFilter],
+    queryKey: ["users", debouncedSearch, roleFilter, statusFilter, verifiedFilter],
     queryFn: () => {
       const params = new URLSearchParams();
       if (debouncedSearch) params.set("search", debouncedSearch);
       if (roleFilter) params.set("role", roleFilter);
       if (statusFilter) params.set("isActive", statusFilter === "aktif" ? "true" : "false");
+      if (verifiedFilter) params.set("phoneVerified", verifiedFilter);
       const qs = params.toString();
       return apiFetch<ManagedUser[]>(`/users${qs ? `?${qs}` : ""}`);
     },
@@ -223,6 +225,20 @@ export function AccountsManager({ basePath }: { basePath: string }) {
             placeholder="Semua status"
           />
         </div>
+        <div className="w-full sm:w-44">
+          <ComboboxField
+            id="filter-verified"
+            label=""
+            value={verifiedFilter}
+            onChange={(v) => { setVerifiedFilter(v); setPage(0); }}
+            options={[
+              { value: "", label: "Semua verifikasi" },
+              { value: "true", label: "HP terverifikasi" },
+              { value: "false", label: "HP belum terverifikasi" },
+            ]}
+            placeholder="Semua verifikasi"
+          />
+        </div>
       </div>
 
       {usersQuery.isLoading ? (
@@ -288,6 +304,15 @@ export function AccountsManager({ basePath }: { basePath: string }) {
                           <Badge variant={u.isActive ? "secondary" : "outline"}>
                             {u.isActive ? "Aktif" : "Nonaktif"}
                           </Badge>
+                          {u.phoneVerifiedAt === null ? (
+                            <Badge
+                              variant="outline"
+                              className="ml-1 border-amber-400 text-amber-700 dark:text-amber-400"
+                              title="Nomor HP belum diverifikasi lewat WhatsApp"
+                            >
+                              HP belum verifikasi
+                            </Badge>
+                          ) : null}
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap text-right">
                           <span className="inline-flex items-center gap-1">

@@ -25,7 +25,7 @@ import {
 
 const CREATE_FIELDS: Phase1aField[] = [
   { name: 'name', label: 'Nama lengkap', placeholder: 'Nama siswa', required: true },
-  { name: 'email', label: 'Email', type: 'email', placeholder: 'siswa@contoh.id', required: true },
+  { name: 'email', label: 'Email (opsional — kosong = dibuat dari no HP)', type: 'email', placeholder: 'siswa@contoh.id' },
   { name: 'password', label: 'Kata sandi awal (opsional — kosong = auto-generate)', type: 'password' },
   { name: 'phone', label: 'No. HP (opsional)', placeholder: '08...' },
   { name: 'dateOfBirth', label: 'Tanggal lahir (opsional)', type: 'date' },
@@ -97,7 +97,7 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
         method: 'POST',
         body: {
           name: form.name,
-          email: form.email,
+          email: form.email?.trim() || undefined,
           password: form.password || undefined,
           phone: form.phone || undefined,
           dateOfBirth: form.dateOfBirth || undefined,
@@ -269,7 +269,9 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
                             setEditTarget(student);
                             setEditForm({
                               name: student.user.name,
-                              email: student.user.email,
+                              email: student.user.email?.endsWith('@hp.bimbel.local')
+                                ? ''
+                                : student.user.email,
                               phone: student.user.phone ?? '',
                               dateOfBirth: student.dateOfBirth ? String(student.dateOfBirth).slice(0, 10) : '',
                               gender: student.gender ?? '',

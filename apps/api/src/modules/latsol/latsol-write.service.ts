@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ContentCategoriesService } from '../content-categories/content-categories.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PhoneVerificationService } from '../../common/phone-verification/phone-verification.service';
 import { PointTransactionsService } from '../point-transactions/point-transactions.service';
 import { gradeLatsolQuestion } from './latsol-grading';
 import { sanitizeQuestion, toFeedbackAnswer } from './latsol-feedback.service';
@@ -27,6 +28,7 @@ export class LatsolWriteService {
     private readonly read: LatsolService,
     private readonly pointTransactions: PointTransactionsService,
     private readonly contentCategories: ContentCategoriesService,
+    private readonly phoneVerification: PhoneVerificationService,
   ) {}
 
   async createPackage(actor: AuthenticatedUser, dto: CreateLatsolPackageDto) {
@@ -154,6 +156,8 @@ export class LatsolWriteService {
 
   async start(userId: string, packageId: string) {
     const student = await this.requireStudent(userId);
+    // Mulai mengerjakan latsol butuh nomor HP terverifikasi.
+    await this.phoneVerification.assertVerified(userId);
     const pkg = await this.prisma.latsolPackage.findUnique({
       where: { id: packageId },
       include: {

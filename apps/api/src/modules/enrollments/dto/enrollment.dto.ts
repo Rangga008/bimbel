@@ -1,4 +1,6 @@
 import {
+  Equals,
+  IsBoolean,
   IsDateString,
   IsEmail,
   IsIn,
@@ -140,4 +142,46 @@ export class ReviewEnrollmentDto {
 export class PlaceEnrollmentDto {
   @IsUUID('4', { message: 'groupId tidak valid.' })
   groupId: string;
+}
+
+/**
+ * Ortu menandatangani surat pernyataan/kontrak belajar anak.
+ * Data anak/program/biaya TIDAK dikirim klien — disusun ulang sebagai
+ * snapshot di server dari data pendaftaran supaya tidak bisa dimanipulasi.
+ */
+export class SubmitStatementDto {
+  /** Nama ortu/wali penandatangan — prefill dari nama akun, boleh dikoreksi. */
+  @IsString()
+  @MinLength(3, { message: 'Nama orang tua minimal 3 karakter.' })
+  @MaxLength(100)
+  parentName: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(9, { message: 'Nomor HP minimal 9 digit.' })
+  @MaxLength(30)
+  phone?: string;
+
+  /** Asal sekolah anak — prefill dari data anak, boleh dikoreksi. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  schoolOrigin?: string;
+
+  /** Tanggal jatuh tempo angsuran tiap bulan (mis. 10 = tanggal 10). */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(31)
+  dueDay?: number;
+
+  /** Ortu wajib menyetujui seluruh ketentuan administrasi sebelum menyimpan. */
+  @IsBoolean()
+  @Equals(true, { message: 'Ketentuan administrasi harus disetujui.' })
+  agreed: boolean;
 }

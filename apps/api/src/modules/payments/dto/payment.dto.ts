@@ -57,6 +57,11 @@ export class CreateManualProofDto {
   @IsString()
   @MaxLength(500, { message: 'Catatan maksimal 500 karakter.' })
   proofNote?: string;
+
+  /** Rekening bimbel tujuan transfer — dipilih ortu dari daftar yang aktif. */
+  @IsOptional()
+  @IsUUID('4', { message: 'accountId tidak valid.' })
+  accountId?: string;
 }
 
 /** Verifikasi / tolak bukti PENDING oleh admin (permission payment.verify). */

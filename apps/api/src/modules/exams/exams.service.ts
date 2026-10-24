@@ -16,6 +16,17 @@ const TAXONOMY_INCLUDE = {
   subject: { select: { id: true, name: true, code: true } },
 };
 
+/** Include subtes (urut) + kelompok target — dipakai semua endpoint baca ujian. */
+const SUBTES_GROUPS_INCLUDE = {
+  subtes: {
+    orderBy: { sortOrder: 'asc' as const },
+    include: { subject: { select: { id: true, name: true } } },
+  },
+  groups: {
+    include: { group: { select: { id: true, name: true, code: true } } },
+  },
+};
+
 @Injectable()
 export class ExamsService {
   constructor(
@@ -75,6 +86,7 @@ export class ExamsService {
       where,
       include: {
         ...TAXONOMY_INCLUDE,
+        ...SUBTES_GROUPS_INCLUDE,
         items: {
           include: {
             question: {
@@ -97,6 +109,7 @@ export class ExamsService {
       where: { id },
       include: {
         ...TAXONOMY_INCLUDE,
+        ...SUBTES_GROUPS_INCLUDE,
         items: {
           include: {
             question: {
@@ -135,6 +148,125 @@ export class ExamsService {
     return exam;
   }
 
+  /**
+   * Normalisasi item soal — `items` (ber-subtes) menang bila dikirim,
+   * fallback ke questionIds+points lama. Mengembalikan daftar
+   * {questionId, points, subtesIdx} tervalidasi + total maxScore.
+   */
+  private async prepareItems(dto: {
+    questionIds?: string[];
+    items?: { questionId: string; points?: number; subtesIdx?: number | null }[];
+    points?: number[];
+  }) {
+    const effective: { questionId: string; points?: number; subtesIdx?: number | null }[] =
+      dto.items && dto.items.length
+        ? dto.items
+        : (dto.questionIds ?? []).map((questionId, i) => ({
+            questionId,
+            points: dto.points?.[i],
+            subtesIdx: null,
+          }));
+    if (!effective.length) {
+      throw new BadRequestException('Ujian minimal berisi 1 soal.');
+    }
+    const qids = [...new Set(effective.map((i) => i.questionId))];
+    const found = await this.prisma.question.findMany({
+      where: { id: { in: qids }, isActive: true },
+      select: { id: true, points: true },
+    });
+    if (found.length !== qids.length) {
+      throw new BadRequestException('Salah satu soal tidak ditemukan atau nonaktif.');
+    }
+    const qPoints = new Map(found.map((q) => [q.id, q.points || 1]));
+    const items = effective.map((it, idx) => ({
+      questionId: it.questionId,
+      sortOrder: idx,
+      points: it.points ?? qPoints.get(it.questionId) ?? 1,
+      subtesIdx: it.subtesIdx ?? null,
+    }));
+    const maxScore = items.reduce((s, i) => s + i.points, 0);
+    return { items, maxScore };
+  }
+
+  /**
+   * Tulis ulang subtes + item + kelompok ujian dalam satu transaksi.
+   * `subtesIdx` pada item dipetakan ke id subtes yang baru dibuat.
+   * Bagian yang tidak dikirim dibiarkan utuh (null = jangan sentuh).
+   */
+  private async replaceStructure(
+    tx: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
+    examId: string,
+    dto: {
+      items?: { questionId: string; sortOrder: number; points: number; subtesIdx: number | null }[];
+      subtes?: { name: string; subjectId?: string; sortOrder?: number; durationMinutes: number }[];
+      groupIds?: string[];
+      maxScore?: number;
+    },
+  ) {
+    if (dto.subtes) {
+      // Item lama menunjuk subtes lama — subtes dihapus (SetNull) lalu dibuat ulang.
+      await tx.examSubtes.deleteMany({ where: { examId } });
+      for (const [idx, s] of dto.subtes.entries()) {
+        await tx.examSubtes.create({
+          data: {
+            examId,
+            name: s.name.trim(),
+            subjectId: s.subjectId || null,
+            sortOrder: s.sortOrder ?? idx,
+            durationMinutes: s.durationMinutes,
+          },
+        });
+      }
+    }
+    const subtesRows = await tx.examSubtes.findMany({
+      where: { examId },
+      orderBy: { sortOrder: 'asc' },
+      select: { id: true },
+    });
+    if (dto.items) {
+      await tx.examItem.deleteMany({ where: { examId } });
+      await tx.examItem.createMany({
+        data: dto.items.map((it) => ({
+          examId,
+          questionId: it.questionId,
+          sortOrder: it.sortOrder,
+          points: it.points,
+          subtesId:
+            it.subtesIdx !== null && it.subtesIdx !== undefined
+              ? subtesRows[it.subtesIdx]?.id ?? null
+              : null,
+        })),
+      });
+      if (dto.maxScore !== undefined) {
+        await tx.exam.update({ where: { id: examId }, data: { maxScore: dto.maxScore } });
+      }
+    }
+    if (dto.groupIds) {
+      await tx.examGroup.deleteMany({ where: { examId } });
+      if (dto.groupIds.length) {
+        await tx.examGroup.createMany({
+          data: dto.groupIds.map((groupId) => ({ examId, groupId })),
+          skipDuplicates: true,
+        });
+      }
+    }
+  }
+
+  /** Kode akses ujian 6 karakter (tanpa O/0/I/1) — dipakai peserta luar. */
+  private async newAccessCode(tx?: {
+    exam: { findUnique: (a: { where: { accessCode: string } }) => Promise<unknown> };
+  }) {
+    const db = tx ?? this.prisma;
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      let code = '';
+      for (let i = 0; i < 6; i += 1) code += chars[Math.floor(Math.random() * chars.length)];
+      const clash = await db.exam.findUnique({ where: { accessCode: code } });
+      if (!clash) return code;
+    }
+    throw new BadRequestException('Gagal membuat kode akses — coba lagi.');
+  }
+
   /** Validasi referensi jenjang/mapel/program ujian bila diisi. */
   private async assertRefs(dto: { programId?: string; levelId?: string; subjectId?: string }) {
     if (dto.programId) {
@@ -166,32 +298,12 @@ export class ExamsService {
       this.tutorScope.assertContentRef(scope, dto.programId, dto.levelId, dto.subjectId);
     }
 
-    // Validasi questionIds
-    if (!dto.questionIds.length) {
-      throw new BadRequestException('Ujian minimal berisi 1 soal.');
-    }
-
-    const uniq = [...new Set(dto.questionIds)];
-    const found = await this.prisma.question.findMany({
-      where: { id: { in: uniq }, isActive: true },
-      select: { id: true, points: true },
-    });
-    if (found.length !== uniq.length) {
-      throw new BadRequestException('Salah satu soal tidak ditemukan atau nonaktif.');
-    }
-
-    // Calculate maxScore
-    const pointsMap = new Map<string, number>();
-    if (dto.points && dto.points.length === uniq.length) {
-      uniq.forEach((qid, idx) => pointsMap.set(qid, dto.points![idx] || 1));
-    } else {
-      found.forEach((q) => pointsMap.set(q.id, q.points || 1));
-    }
-    const maxScore = Array.from(pointsMap.values()).reduce((sum, p) => sum + p, 0);
+    const { items, maxScore } = await this.prepareItems(dto);
 
     return this.prisma.$transaction(async (tx) => {
       const exam = await tx.exam.create({
         data: {
+          accessCode: await this.newAccessCode(tx),
           programId: dto.programId,
           levelId: dto.levelId,
           subjectId: dto.subjectId,
@@ -204,25 +316,22 @@ export class ExamsService {
           maxScore,
           durationMinutes: dto.durationMinutes,
           proctoringEnabled: dto.proctoringEnabled ?? true,
+          showResultImmediately: dto.showResultImmediately ?? false,
           notes: dto.notes?.trim(),
           createdBy: actor.id,
         },
       });
 
-      // Create exam items
-      await tx.examItem.createMany({
-        data: uniq.map((questionId, idx) => ({
-          examId: exam.id,
-          questionId,
-          sortOrder: idx,
-          points: pointsMap.get(questionId) || 1,
-        })),
-        skipDuplicates: true,
+      await this.replaceStructure(tx, exam.id, {
+        items,
+        subtes: dto.subtes,
+        groupIds: dto.groupIds,
       });
 
       return tx.exam.findUniqueOrThrow({
         where: { id: exam.id },
         include: {
+          ...SUBTES_GROUPS_INCLUDE,
           items: {
             include: {
               question: {
@@ -306,45 +415,22 @@ export class ExamsService {
       }
     }
 
-    // Validasi questionIds jika berubah
-    if (dto.questionIds) {
-      if (!dto.questionIds.length) {
-        throw new BadRequestException('Ujian minimal berisi 1 soal.');
-      }
-
-      const uniq = [...new Set(dto.questionIds)];
-      const found = await this.prisma.question.findMany({
-        where: { id: { in: uniq }, isActive: true },
-        select: { id: true, points: true },
-      });
-      if (found.length !== uniq.length) {
-        throw new BadRequestException('Salah satu soal tidak ditemukan atau nonaktif.');
-      }
-
-      // Calculate new maxScore
-      const pointsMap = new Map<string, number>();
-      if (dto.points && dto.points.length === uniq.length) {
-        uniq.forEach((qid, idx) => pointsMap.set(qid, dto.points![idx] || 1));
-      } else {
-        found.forEach((q) => pointsMap.set(q.id, q.points || 1));
-      }
-      const maxScore = Array.from(pointsMap.values()).reduce((sum, p) => sum + p, 0);
+    // Item/subtes/kelompok diubah → tulis ulang struktur dalam transaksi.
+    const structureChanged = !!(dto.questionIds || dto.items || dto.subtes || dto.groupIds);
+    if (structureChanged) {
+      const prep =
+        dto.questionIds || dto.items
+          ? await this.prepareItems(dto)
+          : { items: undefined, maxScore: undefined };
 
       return this.prisma.$transaction(async (tx) => {
-        // Delete existing items
-        await tx.examItem.deleteMany({ where: { examId: id } });
-
-        // Create new items
-        await tx.examItem.createMany({
-          data: uniq.map((questionId, idx) => ({
-            examId: id,
-            questionId,
-            sortOrder: idx,
-            points: pointsMap.get(questionId) || 1,
-          })),
+        await this.replaceStructure(tx, id, {
+          items: prep.items,
+          subtes: dto.subtes,
+          groupIds: dto.groupIds,
+          maxScore: prep.maxScore,
         });
 
-        // Update exam
         const updated = await tx.exam.update({
           where: { id },
           data: {
@@ -357,12 +443,13 @@ export class ExamsService {
             scheduledStartAt: dto.scheduledStartAt ? new Date(dto.scheduledStartAt) : undefined,
             scheduledEndAt: dto.scheduledEndAt ? new Date(dto.scheduledEndAt) : undefined,
             status: dto.status,
-            maxScore,
             durationMinutes: dto.durationMinutes,
             proctoringEnabled: dto.proctoringEnabled,
+            showResultImmediately: dto.showResultImmediately,
             notes: dto.notes?.trim(),
           },
           include: {
+            ...SUBTES_GROUPS_INCLUDE,
             items: {
               include: {
                 question: {
@@ -378,7 +465,7 @@ export class ExamsService {
       });
     }
 
-    // Update without changing questions
+    // Update tanpa mengubah struktur soal/subtes/kelompok
     return this.prisma.exam.update({
       where: { id },
       data: {
@@ -393,9 +480,11 @@ export class ExamsService {
         status: dto.status,
         durationMinutes: dto.durationMinutes,
         proctoringEnabled: dto.proctoringEnabled,
+        showResultImmediately: dto.showResultImmediately,
         notes: dto.notes?.trim(),
       },
       include: {
+        ...SUBTES_GROUPS_INCLUDE,
         items: {
           include: {
             question: {
@@ -428,6 +517,7 @@ export class ExamsService {
     const exam = await this.prisma.exam.findUnique({
       where: { id: examId },
       include: {
+        ...SUBTES_GROUPS_INCLUDE,
         items: {
           include: {
             question: {
@@ -468,19 +558,90 @@ export class ExamsService {
     if (now > exam.scheduledEndAt) {
       throw new BadRequestException('Ujian sudah selesai.');
     }
-    // Siswa hanya boleh mengerjakan ujian jenjang/mapel/kelompoknya.
+    // Siswa hanya boleh mengerjakan ujian jenjang/mapel/kelompoknya —
+    // kecuali dia membuka akses lewat kode ujian (ExamParticipant).
     if (actor) {
       const sScope = await this.tutorScope.forStudent(actor);
       if (sScope) {
-        try {
-          this.tutorScope.assertStudentRef(sScope, exam);
-        } catch {
-          throw new NotFoundException('Ujian tidak ditemukan.');
+        const student = await this.prisma.student.findUnique({
+          where: { userId: actor.id },
+          select: { id: true },
+        });
+        const isParticipant = student
+          ? await this.prisma.examParticipant.findUnique({
+              where: { examId_studentId: { examId: exam.id, studentId: student.id } },
+            })
+          : null;
+        if (!isParticipant) {
+          // Ujian yang ditargetkan ke kelompok tertentu hanya untuk anggotanya.
+          if (
+            exam.groups.length > 0 &&
+            !exam.groups.some((g) => sScope.groupIds.includes(g.groupId))
+          ) {
+            throw new NotFoundException('Ujian tidak ditemukan.');
+          }
+          try {
+            this.tutorScope.assertStudentRef(sScope, exam);
+          } catch {
+            throw new NotFoundException('Ujian tidak ditemukan.');
+          }
         }
       }
     }
 
     return exam;
+  }
+
+  /**
+   * Tukar kode akses ujian menjadi hak ikut (ExamParticipant) — dipakai
+   * siswa luar/mandiri: daftar akun → masukkan kode → kerjakan ujian.
+   * Mengembalikan ringkasan ujian supaya UI bisa langsung membukanya.
+   */
+  async redeemAccessCode(actor: AuthenticatedUser, rawCode: string) {
+    const student = await this.prisma.student.findUnique({
+      where: { userId: actor.id },
+      select: { id: true },
+    });
+    if (!student) throw new NotFoundException('Profil siswa tidak ditemukan.');
+    const code = rawCode.trim().toUpperCase();
+    if (!code) throw new BadRequestException('Kode ujian wajib diisi.');
+    const exam = await this.prisma.exam.findUnique({
+      where: { accessCode: code },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        scheduledStartAt: true,
+        scheduledEndAt: true,
+      },
+    });
+    if (!exam) throw new NotFoundException('Kode ujian tidak dikenali.');
+    if (exam.status === 'DRAFT') {
+      throw new BadRequestException('Ujian belum dipublikasikan.');
+    }
+    await this.prisma.examParticipant.upsert({
+      where: { examId_studentId: { examId: exam.id, studentId: student.id } },
+      create: { examId: exam.id, studentId: student.id },
+      update: {},
+    });
+    return { exam, joined: true };
+  }
+
+  /** Buat ulang kode akses ujian (admin/tutor pengelola ujian). */
+  async regenerateAccessCode(id: string, actor?: AuthenticatedUser) {
+    const exam = await this.prisma.exam.findUnique({ where: { id } });
+    if (!exam) throw new NotFoundException('Ujian tidak ditemukan.');
+    if (actor) {
+      const scope = await this.tutorScope.for(actor);
+      if (scope)
+        this.tutorScope.assertContentRef(scope, exam.programId, exam.levelId, exam.subjectId);
+    }
+    const accessCode = await this.newAccessCode();
+    return this.prisma.exam.update({
+      where: { id },
+      data: { accessCode },
+      include: { ...SUBTES_GROUPS_INCLUDE, ...TAXONOMY_INCLUDE },
+    });
   }
 
   /**
@@ -547,16 +708,24 @@ export class ExamsService {
       });
       studentId = s?.id;
     }
+    const statusOr: Record<string, unknown>[] = [
+      { status: 'PUBLISHED' },
+      ...(studentId
+        ? [{ status: 'ENDED', attempts: { some: { studentId } } }]
+        : []),
+    ];
+    // Ujian yang dibuka via kode akses mem-bypass seluruh scope
+    // jenjang/mapel/kelompok — itulah jalur peserta luar.
     const where: Record<string, unknown> = {
       OR: [
-        { status: 'PUBLISHED' },
+        { OR: statusOr },
         ...(studentId
-          ? [{ status: 'ENDED', attempts: { some: { studentId } } }]
+          ? [{ AND: [{ OR: statusOr }, { participants: { some: { studentId } } }] }]
           : []),
       ],
     };
     if (sScope) {
-      where.AND = [
+      const scopeAnd = [
         {
           OR: [
             { programId: { in: sScope.programIds } },
@@ -565,7 +734,22 @@ export class ExamsService {
             { AND: [{ programId: null }, { levelId: null }, { subjectId: null }] },
           ],
         },
+        // Ujian bertarget kelompok hanya tampil untuk anggota kelompok tsb;
+        // tanpa target = terbuka sesuai scope taksonomi.
+        {
+          OR: [
+            { groups: { none: {} } },
+            { groups: { some: { groupId: { in: sScope.groupIds } } } },
+          ],
+        },
       ];
+      // Gabungkan scope ke cabang pertama (status umum); cabang
+      // participant sengaja tanpa scope.
+      (where.OR as Record<string, unknown>[])[0] = {
+        AND: [{ OR: statusOr }, ...scopeAnd],
+      };
+    } else {
+      (where.OR as Record<string, unknown>[])[0] = { OR: statusOr };
     }
     return this.prisma.exam.findMany({
       where,
@@ -574,6 +758,20 @@ export class ExamsService {
         category: true,
         level: { select: { id: true, name: true } },
         subject: { select: { id: true, name: true } },
+        showResultImmediately: true,
+        groups: {
+          select: { groupId: true, group: { select: { id: true, name: true } } },
+        },
+        subtes: {
+          orderBy: { sortOrder: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            sortOrder: true,
+            durationMinutes: true,
+            subject: { select: { id: true, name: true } },
+          },
+        },
         title: true,
         description: true,
         scheduledStartAt: true,

@@ -18,7 +18,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Send, Trash2, ChevronRight, ArrowLeft } from "lucide-react";
+import { Plus, Pencil, Send, Trash2, ChevronRight, ArrowLeft } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
@@ -110,6 +110,8 @@ interface FinancialAccount {
 	name: string;
 	code: string | null;
 	type: string;
+	accountNumber?: string | null;
+	holderName?: string | null;
 	isActive: boolean;
 }
 
@@ -206,7 +208,14 @@ export function FinanceSettings() {
 	const [exam, setExam] = useState<ExamSettings | null>(
 		() => settingsQ.data?.exam ?? null,
 	);
-	const [newAcc, setNewAcc] = useState({ name: "", code: "", type: "CASH" });
+	const [newAcc, setNewAcc] = useState({
+		name: "",
+		code: "",
+		type: "CASH",
+		accountNumber: "",
+		holderName: "",
+	});
+	const [editingAcc, setEditingAcc] = useState<FinancialAccount | null>(null);
 	const [accToDelete, setAccToDelete] = useState<FinancialAccount | null>(null);
 	const [heroPickerOpen, setHeroPickerOpen] = useState(false);
 
@@ -262,15 +271,47 @@ export function FinanceSettings() {
 	});
 
 	const createAccMutation = useMutation({
-		mutationFn: (body: { name: string; code?: string; type: string }) =>
-			apiFetch("/financial-accounts", { method: "POST", body }),
+		mutationFn: (body: {
+			name: string;
+			code?: string;
+			type: string;
+			accountNumber?: string;
+			holderName?: string;
+		}) => apiFetch("/financial-accounts", { method: "POST", body }),
 		onSuccess: () => {
 			qc.invalidateQueries({ queryKey: ["financial-accounts"] });
 			qc.invalidateQueries({ queryKey: ["ledger-accounts"] });
-			setNewAcc({ name: "", code: "", type: "CASH" });
+			setNewAcc({
+				name: "",
+				code: "",
+				type: "CASH",
+				accountNumber: "",
+				holderName: "",
+			});
 			toast.success("Akun kas/bank ditambahkan.");
 		},
 		onError: (e) => toast.error(err(e, "Gagal menambah akun.")),
+	});
+
+	const editAccMutation = useMutation({
+		mutationFn: (args: {
+			id: string;
+			accountNumber: string | null;
+			holderName: string | null;
+		}) =>
+			apiFetch(`/financial-accounts/${args.id}`, {
+				method: "PATCH",
+				body: {
+					accountNumber: args.accountNumber,
+					holderName: args.holderName,
+				},
+			}),
+		onSuccess: () => {
+			qc.invalidateQueries({ queryKey: ["financial-accounts"] });
+			setEditingAcc(null);
+			toast.success("Rekening diperbarui.");
+		},
+		onError: (e) => toast.error(err(e, "Gagal memperbarui rekening.")),
 	});
 
 	const deleteAccMutation = useMutation({
@@ -424,7 +465,7 @@ export function FinanceSettings() {
 								value={branding.logoUrl}
 								onChange={(url) => setBranding({ ...branding, logoUrl: url })}
 								category="BRANDING"
-								hint="Upload baru atau pilih dari pustaka branding. Kosongkan untuk logo default."
+								hint="Ukuran ideal: persegi 1:1, minimal 512×512 px — PNG/WebP latar transparan paling bagus (logo tampil kecil di sidebar, login, dan landing). Upload baru atau pilih dari pustaka branding. Kosongkan untuk logo default."
 							/>
 							<div className="grid max-w-md gap-1.5">
 								<Label htmlFor="app-url">URL Aplikasi (Publik)</Label>
@@ -475,6 +516,19 @@ export function FinanceSettings() {
 						>
 							<div className="grid gap-2">
 								<Label>Foto Hero (slider halaman awal)</Label>
+								<div className="rounded-md border border-brand-blue-200 bg-brand-blue-50/60 px-3 py-2 text-xs text-brand-blue-900">
+									<p className="font-medium">Ukuran yang direkomendasikan</p>
+									<p className="mt-0.5">
+										Rasio <strong>21:9</strong> (landscape lebar) — ideal{" "}
+										<strong>2100&nbsp;×&nbsp;900&nbsp;px</strong>, minimal
+										1600&nbsp;×&nbsp;700&nbsp;px. Format JPG/PNG/WebP.
+									</p>
+									<p className="mt-0.5">
+										Gambar tampil crop-tengah: di layar HP rasio berubah ke
+										16:10 sehingga tepi kiri-kanan terpotong — posisikan
+										subjek utama di tengah foto.
+									</p>
+								</div>
 								{display.heroImages.length > 0 ? (
 									<div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
 										{display.heroImages.map((url, i) => (
@@ -485,7 +539,7 @@ export function FinanceSettings() {
 												<img
 													src={resolveAssetUrl(url)}
 													alt={`Foto hero ${i + 1}`}
-													className="aspect-[4/3] w-full object-cover"
+													className="aspect-[21/9] w-full object-cover"
 												/>
 												<button
 													type="button"
@@ -1251,23 +1305,95 @@ export function FinanceSettings() {
 							Belum ada akun kas/bank terdaftar.
 						</p>
 					) : null}
+					<p className="text-xs text-muted-foreground">
+						Nomor rekening &amp; atas nama yang diisi di sini ditampilkan ke orang
+						tua saat mereka memilih tujuan transfer.
+					</p>
 					<div className="grid gap-2 md:grid-cols-2">
 						{accountsQ.data?.map((acc) => (
 							<div
 								key={acc.id}
-								className="flex items-center justify-between rounded-lg border p-3"
+								className="rounded-lg border p-3"
 							>
-								<div>
-									<p className="text-sm font-medium">{acc.name}</p>
-									{acc.code ? (
-										<p className="text-xs text-muted-foreground">{acc.code}</p>
-									) : null}
+								<div className="flex items-start justify-between gap-2">
+									<div className="min-w-0">
+										<p className="text-sm font-medium">{acc.name}</p>
+										{acc.code ? (
+											<p className="text-xs text-muted-foreground">{acc.code}</p>
+										) : null}
+										{acc.accountNumber ? (
+											<p className="mt-0.5 font-mono text-xs">
+												{acc.accountNumber}
+												{acc.holderName ? ` — a.n. ${acc.holderName}` : ""}
+											</p>
+										) : (
+											<p className="mt-0.5 text-xs text-muted-foreground">
+												Nomor rekening belum diisi
+											</p>
+										)}
+									</div>
+									<div className="flex shrink-0 items-center gap-1">
+										<Badge variant="outline">{acc.type}</Badge>
+										{acc.isActive ? null : (
+											<Badge variant="destructive">Nonaktif</Badge>
+										)}
+									</div>
 								</div>
-								<div className="flex items-center gap-1">
-									<Badge variant="outline">{acc.type}</Badge>
-									{acc.isActive ? null : (
-										<Badge variant="destructive">Nonaktif</Badge>
-									)}
+								{editingAcc?.id === acc.id ? (
+									<form
+										className="mt-2 flex flex-wrap items-end gap-2 border-t pt-2"
+										onSubmit={(e) => {
+											e.preventDefault();
+											editAccMutation.mutate({
+												id: acc.id,
+												accountNumber: editingAcc.accountNumber || null,
+												holderName: editingAcc.holderName || null,
+											});
+										}}
+									>
+										<Input
+											className="h-8 w-40 text-xs"
+											placeholder="Nomor rekening"
+											value={editingAcc.accountNumber ?? ""}
+											onChange={(e) =>
+												setEditingAcc({
+													...editingAcc,
+													accountNumber: e.target.value,
+												})
+											}
+										/>
+										<Input
+											className="h-8 w-40 text-xs"
+											placeholder="Atas nama"
+											value={editingAcc.holderName ?? ""}
+											onChange={(e) =>
+												setEditingAcc({ ...editingAcc, holderName: e.target.value })
+											}
+										/>
+										<Button type="submit" size="sm" disabled={editAccMutation.isPending}>
+											Simpan
+										</Button>
+										<Button
+											type="button"
+											size="sm"
+											variant="ghost"
+											onClick={() => setEditingAcc(null)}
+										>
+											Batal
+										</Button>
+									</form>
+								) : null}
+								<div className="mt-2 flex items-center gap-1">
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										onClick={() =>
+											setEditingAcc(editingAcc?.id === acc.id ? null : acc)
+										}
+									>
+										<Pencil className="size-3.5" /> Rekening
+									</Button>
 									<Button
 										type="button"
 										variant="ghost"
@@ -1304,6 +1430,8 @@ export function FinanceSettings() {
 								name: newAcc.name,
 								code: newAcc.code || undefined,
 								type: newAcc.type,
+								accountNumber: newAcc.accountNumber || undefined,
+								holderName: newAcc.holderName || undefined,
 							});
 						}}
 					>
@@ -1337,6 +1465,30 @@ export function FinanceSettings() {
 								<option value="CASH">CASH</option>
 								<option value="BANK">BANK</option>
 							</select>
+						</div>
+						<div className="grid gap-1.5">
+							<Label htmlFor="acc-number">No. Rekening</Label>
+							<Input
+								id="acc-number"
+								className="w-44"
+								value={newAcc.accountNumber}
+								onChange={(e) =>
+									setNewAcc({ ...newAcc, accountNumber: e.target.value })
+								}
+								placeholder="cth: 1234567890"
+							/>
+						</div>
+						<div className="grid gap-1.5">
+							<Label htmlFor="acc-holder">Atas Nama</Label>
+							<Input
+								id="acc-holder"
+								className="w-44"
+								value={newAcc.holderName}
+								onChange={(e) =>
+									setNewAcc({ ...newAcc, holderName: e.target.value })
+								}
+								placeholder="cth: Bimbel GFS"
+							/>
 						</div>
 						<Button
 							type="submit"

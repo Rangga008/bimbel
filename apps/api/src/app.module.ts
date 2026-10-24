@@ -44,6 +44,7 @@ import { ImportsModule } from './modules/imports/imports.module';
 import { MasterDataModule } from './modules/master-data/master-data.module';
 import { FeedbackModule } from './modules/feedback/feedback.module';
 import { TutorScopeModule } from './common/tutor-scope/tutor-scope.module';
+import { PhoneVerificationModule } from './common/phone-verification/phone-verification.module';
 
 @Module({
   imports: [
@@ -105,6 +106,7 @@ import { TutorScopeModule } from './common/tutor-scope/tutor-scope.module';
     MasterDataModule,
     FeedbackModule,
     TutorScopeModule,
+    PhoneVerificationModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

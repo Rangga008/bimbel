@@ -9,6 +9,7 @@ import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PhoneVerificationService } from '../../common/phone-verification/phone-verification.service';
 import { UsersService } from '../users/users.service';
 import { ROLE_NAMES } from '../rbac/permissions.constants';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
@@ -16,6 +17,7 @@ import {
   CreateEnrollmentDto,
   PlaceEnrollmentDto,
   ReviewEnrollmentDto,
+  SubmitStatementDto,
   UpdateChildDto,
 } from './dto/enrollment.dto';
 
@@ -93,6 +95,8 @@ const enrollmentInclude = {
     },
   },
   reviewedBy: { select: { id: true, name: true } },
+  /// Surat pernyataan ortu — hanya status terisi yang dibutuhkan daftar.
+  statement: { select: { id: true, agreedAt: true } },
 } as const;
 
 /**
@@ -106,6 +110,7 @@ export class EnrollmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly users: UsersService,
+    private readonly phoneVerification: PhoneVerificationService,
   ) {}
 
   private async myParentOrThrow(userId: string) {
@@ -146,6 +151,9 @@ export class EnrollmentsService {
    */
   async create(actor: AuthenticatedUser, dto: CreateEnrollmentDto) {
     const parent = await this.myParentOrThrow(actor.id);
+    // Mendaftarkan anak butuh nomor HP terverifikasi — akun daftar-mandiri
+    // yang belum membuktikan nomornya tidak bisa membuat pendaftaran.
+    await this.phoneVerification.assertVerified(actor.id);
 
     const [program, level] = await Promise.all([
       this.prisma.program.findUnique({ where: { id: dto.programId } }),
@@ -547,6 +555,174 @@ export class EnrollmentsService {
       where: { parentId: parent.id },
       include: enrollmentInclude,
       orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /** Include lengkap yang dibutuhkan alur surat pernyataan ortu. */
+  private statementEnrollmentInclude() {
+    return {
+      parent: { select: { id: true, user: { select: { name: true, phone: true } } } },
+      student: { select: { id: true, schoolOrigin: true, user: { select: { name: true } } } },
+      program: { select: { name: true, category: true } },
+      level: {
+        select: {
+          name: true,
+          price: true,
+          priceUnit: true,
+          fullPayPrice: true,
+          installment2x: true,
+          monthlyAmount: true,
+          monthlyCount: true,
+          sessionPrices: true,
+        },
+      },
+      invoices: {
+        select: { id: true, dueDate: true, totalAmount: true },
+        orderBy: { dueDate: 'asc' as const },
+      },
+      statement: true,
+    } as const;
+  }
+
+  /**
+   * Snapshot rincian pembayaran untuk surat pernyataan — disusun ulang dari
+   * billingPlan/level di server (klien tidak boleh mengirim angka sendiri):
+   * label sistem bayar, daftar angsuran 1..N, nominal per angsuran, dan total.
+   */
+  private statementSnapshot(e: {
+    paymentPlan: string | null;
+    sessionCount: number | null;
+    studentCount: number | null;
+    billingPlan: Prisma.JsonValue | null;
+    level: {
+      priceUnit: string | null;
+      price: unknown;
+      installment2x: unknown;
+      monthlyAmount: unknown;
+      monthlyCount: number | null;
+      sessionPrices: unknown;
+    };
+    invoices: { totalAmount: unknown }[];
+  }) {
+    const num = (v: unknown) => (v !== null && v !== undefined ? Number(v) : 0);
+    type Plan = { label: string; items: { amount: number }[] };
+    const plans = (e.billingPlan as Plan[] | null) ?? [];
+    const installments = plans.map((p) => ({
+      label: p.label,
+      amount: p.items.reduce((s, it) => s + Number(it.amount), 0),
+    }));
+    // billingPlan kosong → hanya tagihan pertama (extra per bulan / paket / privat).
+    if (installments.length === 0) {
+      installments.push({
+        label: 'Tagihan pertama',
+        amount: num(e.invoices[0]?.totalAmount),
+      });
+    }
+    const totalAmount = installments.reduce((s, p) => s + p.amount, 0);
+
+    let paymentLabel: string;
+    let installmentAmount: number | null = null;
+    let installmentCount: number | null = null;
+    if (e.paymentPlan === 'FULL') {
+      paymentLabel = 'Tunai (lunas di awal)';
+    } else if (e.paymentPlan === 'TWO_TIMES') {
+      paymentLabel = 'Angsuran 2x';
+      installmentAmount = num(e.level.installment2x);
+      installmentCount = 2;
+    } else if (e.paymentPlan === 'MONTHLY') {
+      const count = e.level.monthlyCount ?? installments.length;
+      paymentLabel = `Angsuran ${count}x bulanan`;
+      installmentAmount = num(e.level.monthlyAmount);
+      installmentCount = count;
+    } else if (e.level.priceUnit === 'SESSION') {
+      paymentLabel = `Paket privat ${e.sessionCount ?? 0} pertemuan${
+        e.studentCount && e.studentCount > 1 ? ` (${e.studentCount} siswa)` : ''
+      }`;
+      installmentCount = e.sessionCount;
+      const tiers = (e.level.sessionPrices ?? {}) as Record<string, number>;
+      installmentAmount =
+        e.studentCount && e.studentCount > 1 && tiers[String(e.studentCount)]
+          ? Number(tiers[String(e.studentCount)])
+          : num(e.level.price);
+    } else {
+      paymentLabel = e.level.priceUnit === 'MONTH' ? 'Per bulan' : 'Paket';
+      installmentAmount = num(e.level.price) || installments[0].amount;
+    }
+    return { paymentLabel, installments, installmentAmount, installmentCount, totalAmount };
+  }
+
+  /**
+   * Ortu: data surat pernyataan untuk satu pendaftaran — surat yang sudah
+   * tersimpan (bila ada) beserta prefill dari profil ortu + data pendaftaran.
+   */
+  async statementForm(actor: AuthenticatedUser, enrollmentId: string) {
+    const parent = await this.myParentOrThrow(actor.id);
+    const e = await this.prisma.enrollment.findFirst({
+      where: { id: enrollmentId, parentId: parent.id },
+      include: this.statementEnrollmentInclude(),
+    });
+    if (!e) throw new NotFoundException('Pendaftaran tidak ditemukan.');
+    const snap = this.statementSnapshot(e);
+    return {
+      statement: e.statement,
+      status: e.status,
+      form: {
+        parentName: e.parent.user.name,
+        phone: e.parent.user.phone ?? '',
+        studentName: e.student?.user.name ?? e.childName,
+        levelName: e.level.name,
+        schoolOrigin: e.student?.schoolOrigin ?? '',
+        programName: e.program.name,
+        dueDay: e.invoices[0]?.dueDate ? new Date(e.invoices[0].dueDate).getDate() : null,
+        ...snap,
+      },
+    };
+  }
+
+  /**
+   * Ortu: tandatangani surat pernyataan — menyimpan snapshot data ortu,
+   * anak, program, dan rincian pembayaran saat persetujuan diberikan.
+   * Boleh diperbarui (typo) — agreedAt ikut diperbarui.
+   */
+  async submitStatement(
+    actor: AuthenticatedUser,
+    enrollmentId: string,
+    dto: SubmitStatementDto,
+  ) {
+    const parent = await this.myParentOrThrow(actor.id);
+    const e = await this.prisma.enrollment.findFirst({
+      where: { id: enrollmentId, parentId: parent.id },
+      include: this.statementEnrollmentInclude(),
+    });
+    if (!e) throw new NotFoundException('Pendaftaran tidak ditemukan.');
+    if (e.status === 'REJECTED') {
+      throw new BadRequestException(
+        'Pendaftaran ini sudah ditolak — surat pernyataan tidak berlaku.',
+      );
+    }
+    const snap = this.statementSnapshot(e);
+    const data = {
+      parentName: dto.parentName.trim(),
+      address: dto.address?.trim() || null,
+      phone: dto.phone?.trim() || e.parent.user.phone || null,
+      studentName: e.student?.user.name ?? e.childName,
+      levelName: e.level.name,
+      schoolOrigin: dto.schoolOrigin?.trim() || e.student?.schoolOrigin || null,
+      programName: e.program.name,
+      dueDay: dto.dueDay ?? (e.invoices[0]?.dueDate ? new Date(e.invoices[0].dueDate).getDate() : null),
+      ...snap,
+      installments: snap.installments as unknown as Prisma.InputJsonValue,
+      agreedAt: new Date(),
+    };
+    return this.prisma.parentStatement.upsert({
+      where: { enrollmentId: e.id },
+      create: {
+        enrollmentId: e.id,
+        parentId: parent.id,
+        studentId: e.studentId,
+        ...data,
+      },
+      update: data,
     });
   }
 

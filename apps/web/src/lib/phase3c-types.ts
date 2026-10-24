@@ -24,6 +24,21 @@ export interface ProctoringFields {
   unlockedBy: string | null;
 }
 
+export interface ExamSubtesRow {
+  id: string;
+  examId?: string;
+  name: string;
+  sortOrder: number;
+  durationMinutes: number;
+  subjectId?: string | null;
+  subject?: { id: string; name: string } | null;
+}
+
+export interface ExamGroupRow {
+  groupId: string;
+  group: { id: string; name: string; code?: string | null };
+}
+
 export interface ExamRow {
   id: string;
   category?: string | null;
@@ -41,11 +56,17 @@ export interface ExamRow {
   maxScore: number;
   durationMinutes: number | null;
   proctoringEnabled: boolean;
+  /** true = siswa langsung melihat nilai+kunci setelah submit. */
+  showResultImmediately?: boolean;
+  /** Kode akses untuk peserta luar (ditukar di halaman ujian siswa). */
+  accessCode?: string | null;
   notes: string | null;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
   items: ExamItem[];
+  subtes?: ExamSubtesRow[];
+  groups?: ExamGroupRow[];
   _count: {
     attempts: number;
   };
@@ -57,6 +78,8 @@ export interface ExamItem {
   questionId: string;
   sortOrder: number;
   points: number;
+  /** Subtes tempat soal ini berada (null = ujian tanpa subtes). */
+  subtesId?: string | null;
   question: {
     id: string;
     type: string;
@@ -89,6 +112,23 @@ export interface ExamAttempt extends ProctoringFields {
   };
 }
 
+/** Status pengerjaan satu subtes dalam sebuah attempt. */
+export interface ExamAttemptSubtesState {
+  subtesId: string;
+  startedAt: string | null;
+  submittedAt: string | null;
+}
+
+/** Rekap hasil per subtes — hanya terisi setelah hasil dirilis. */
+export interface ExamSubtesResult {
+  subtesId: string;
+  name: string;
+  total: number;
+  correct: number;
+  score: number;
+  maxScore: number;
+}
+
 export interface ExamAttemptDetail extends ProctoringFields {
   id: string;
   examId: string;
@@ -100,12 +140,18 @@ export interface ExamAttemptDetail extends ProctoringFields {
   submittedAt: string | null;
   lateByMs: number | null;
   resultReleased?: boolean;
+  /** State per subtes (ujian multi-subtes). */
+  subtesStates?: ExamAttemptSubtesState[];
+  /** Rekap nilai per subtes — ada setelah hasil dirilis. */
+  subtesResults?: ExamSubtesResult[];
   exam: {
     id: string;
     title: string;
     scheduledStartAt: string;
     scheduledEndAt: string;
     proctoringEnabled?: boolean;
+    showResultImmediately?: boolean;
+    subtes?: { id: string; name: string; durationMinutes: number; sortOrder: number }[];
   };
   items: ExamAttemptItem[];
 }
@@ -114,6 +160,9 @@ export interface ExamAttemptItem {
   questionId: string;
   sortOrder: number;
   points: number;
+  /** Subtes tempat soal berada (ujian multi-subtes). */
+  subtesId?: string | null;
+  subtesName?: string | null;
   question: {
     id: string;
     type: string;
@@ -138,16 +187,40 @@ export interface ExamAttemptItem {
   } | null;
 }
 
+export interface ExamSubtesDto {
+  name: string;
+  subjectId?: string;
+  durationMinutes: number;
+}
+
+export interface ExamItemDto {
+  questionId: string;
+  points?: number;
+  /** Indeks subtes (0-based) pada array subtes di request yang sama. */
+  subtesIdx?: number | null;
+}
+
 export interface CreateExamDto {
+  programId?: string;
+  levelId?: string;
+  subjectId?: string;
+  category?: string;
   title: string;
   description?: string;
   scheduledStartAt: string;
   scheduledEndAt: string;
   durationMinutes?: number;
   proctoringEnabled?: boolean;
+  /** true = siswa langsung melihat hasil setelah submit. */
+  showResultImmediately?: boolean;
   notes?: string;
-  questionIds: string[];
+  questionIds?: string[];
   points?: number[];
+  /** Kelompok target — kosong/undefined = terbuka sesuai scope taksonomi. */
+  groupIds?: string[];
+  /** Mode multi-subtes — bila dikirim, pakai `items` untuk penempatan soal. */
+  subtes?: ExamSubtesDto[];
+  items?: ExamItemDto[];
 }
 
 export interface UpdateExamDto {
@@ -162,9 +235,13 @@ export interface UpdateExamDto {
   status?: ExamStatus;
   durationMinutes?: number;
   proctoringEnabled?: boolean;
+  showResultImmediately?: boolean;
   notes?: string;
   questionIds?: string[];
   points?: number[];
+  groupIds?: string[];
+  subtes?: ExamSubtesDto[];
+  items?: ExamItemDto[];
 }
 
 export interface SaveExamAnswerDto {

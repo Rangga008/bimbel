@@ -1,4 +1,5 @@
 import {
+  ValidateIf,
   IsBoolean,
   IsDateString,
   IsEmail,
@@ -11,8 +12,10 @@ import {
 } from 'class-validator';
 
 export class CreateStudentDto {
+  /** Opsional — kosong → email placeholder digenerate dari nomor HP. */
+  @ValidateIf((o: CreateStudentDto) => !!o.email)
   @IsEmail({}, { message: 'Email siswa tidak valid.' })
-  email: string;
+  email?: string;
 
   @IsString()
   @MinLength(3, { message: 'Nama minimal 3 karakter.' })

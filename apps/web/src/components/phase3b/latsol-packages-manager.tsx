@@ -24,7 +24,6 @@ import {
   drillDone,
   drillQuery,
   DRILL_ALL,
-  DRILL_EMPTY,
   DRILL_NONE,
 } from '@/lib/content-taxonomy';
 
@@ -79,10 +78,28 @@ export function LatsolPackagesManager({
   });
 
   const items = listQ.data ?? [];
-  const filtered = applyDrill(items, drill, levels).filter(
-    (i) => !catFilter || i.category === catFilter,
-  );
-  const done = drillDone(drill) || !!debouncedSearch;
+  const [subjectFilter, setSubjectFilter] = useState('');
+  // Opsi filter siswa diturunkan dari paket yang memang tersedia untuknya
+  // — hanya mapel/tipe yang ada, jadi filter langsung menjurus tanpa
+  // drill jenjang (paket siswa sudah di-scope server ke jenjangnya).
+  const subjectOptions = [...new Map(
+    items.filter((i) => i.subject).map((i) => [i.subject!.id, i.subject!.name]),
+  ).entries()]
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const typeOptions = [...new Set(items.map((i) => i.category).filter((c): c is string => !!c))]
+    .map((c) => ({ value: c, label: categoryLabel(c, catsQ.data) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const filtered = canManage
+    ? applyDrill(items, drill, levels).filter(
+        (i) => !catFilter || i.category === catFilter,
+      )
+    : items.filter(
+        (i) =>
+          (!subjectFilter || i.subject?.id === subjectFilter) &&
+          (!catFilter || i.category === catFilter),
+      );
+  const done = canManage ? drillDone(drill) || !!debouncedSearch : true;
 
   const createUrl = () => {
     const p = new URLSearchParams(drillQuery(drill));
@@ -135,17 +152,29 @@ export function LatsolPackagesManager({
 
   return (
     <div className="flex flex-col gap-4">
-      {!debouncedSearch && <DrillBreadcrumb items={items} levels={levels} categories={catsQ.data} value={drill} onChange={setDrill} />}
+      {canManage && !debouncedSearch && <DrillBreadcrumb items={items} levels={levels} categories={catsQ.data} value={drill} onChange={setDrill} />}
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex w-full items-end gap-1.5 sm:w-auto">
+          {!canManage && (
+            <div className="w-full sm:w-44">
+              <Phase1aSelectField
+                id="lp-subject"
+                label="Mapel"
+                value={subjectFilter}
+                onChange={setSubjectFilter}
+                options={subjectOptions}
+                placeholder="Semua mapel"
+              />
+            </div>
+          )}
           <div className="w-full sm:w-44">
             <Phase1aSelectField
               id="lp-cat"
-              label="Kategori"
+              label={canManage ? 'Kategori' : 'Tipe'}
               value={catFilter}
               onChange={setCatFilter}
-              options={categoryOptions(catsQ.data)}
-              placeholder="Semua kategori"
+              options={canManage ? categoryOptions(catsQ.data) : typeOptions}
+              placeholder={canManage ? 'Semua kategori' : 'Semua tipe'}
             />
           </div>
           {canManage && (

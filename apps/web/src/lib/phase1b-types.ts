@@ -9,6 +9,8 @@ export interface GroupListItem {
   packageId?: string | null;
   capacity: number | null;
   isActive: boolean;
+  /** Kode gabung — siswa mandiri memasukkan ini saat mendaftar. */
+  joinCode?: string | null;
   program: { id: string; name: string; code: string };
   level: { id: string; name: string } | null;
   package?: { id: string; name: string; code: string | null; totalSessions: number } | null;

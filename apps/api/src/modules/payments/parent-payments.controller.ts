@@ -53,6 +53,13 @@ export class ParentPaymentsController {
     return this.payments.myPayments(actor.id);
   }
 
+  /** Daftar rekening tujuan transfer — dipakai ortu saat upload bukti manual. */
+  @Get('me/payment-accounts')
+  @RequirePermissions(PERMISSION_CODES.PAYMENT_VIEW)
+  paymentAccounts() {
+    return this.payments.listPaymentAccounts();
+  }
+
   @Post('me/payments/manual-proof')
   @RequirePermissions(PERMISSION_CODES.PAYMENT_CREATE)
   async manualProof(

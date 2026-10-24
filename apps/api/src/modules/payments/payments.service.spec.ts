@@ -82,6 +82,10 @@ function makeService(prismaMock: ReturnType<typeof makePrismaMock>['prisma']) {
   const enrollments = {
     ensureDueInstallments: jest.fn(() => Promise.resolve()),
   };
+  // PhoneVerificationService di-stub — test pembayaran tak menguji OTP.
+  const phoneVerification = {
+    assertVerified: jest.fn(() => Promise.resolve()),
+  };
   return {
     svc: new PaymentsService(
       prismaMock as never,
@@ -89,6 +93,7 @@ function makeService(prismaMock: ReturnType<typeof makePrismaMock>['prisma']) {
       events as never,
       settings as never,
       enrollments as never,
+      phoneVerification as never,
     ),
     events,
   };

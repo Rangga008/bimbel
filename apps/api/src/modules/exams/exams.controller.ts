@@ -8,7 +8,7 @@ import { RequirePermissions, RequireAnyPermissions } from '../rbac/permissions.d
 import { PERMISSION_CODES } from '../rbac/permissions.constants';
 import { AuditService } from '../../common/audit/audit.service';
 import { ExamsService } from './exams.service';
-import { CreateExamDto, UpdateExamDto } from './dto/exam.dto';
+import { CreateExamDto, RedeemExamCodeDto, UpdateExamDto } from './dto/exam.dto';
 
 function ctx(req: Request) {
   return { ipAddress: req.ip, userAgent: req.headers['user-agent'] };
@@ -57,6 +57,25 @@ export class ExamsController {
   @RequirePermissions(PERMISSION_CODES.EXAM_ATTEMPT)
   getForStudent(@Param('id') id: string, @CurrentUser() actor: AuthenticatedUser) {
     return this.exams.getForStudent(id, actor);
+  }
+
+  /** Siswa menukar kode akses ujian menjadi hak ikut — jalur peserta luar. */
+  @Post('exams/redeem')
+  @RequirePermissions(PERMISSION_CODES.EXAM_ATTEMPT)
+  redeem(
+    @Body() dto: RedeemExamCodeDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.exams.redeemAccessCode(actor, dto.code ?? '');
+  }
+
+  @Post('exams/:id/access-code/regenerate')
+  @RequirePermissions(PERMISSION_CODES.EXAM_MANAGE)
+  regenerateAccessCode(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.exams.regenerateAccessCode(id, actor);
   }
 
   @Get('exams/:id/for-pembahasan')

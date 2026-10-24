@@ -74,6 +74,21 @@ export class PeopleService {
     return student;
   }
 
+  /** Email placeholder dari nomor HP — kolom users.email wajib unik,
+   * jadi akun tanpa email mendapat alamat sintetis dari nomor HP-nya. */
+  private async synthEmail(
+    tx: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
+    phone?: string,
+  ) {
+    const digits = (phone ?? '').replace(/\D/g, '') || 'x';
+    for (let i = 0; i < 20; i += 1) {
+      const candidate = `wa.${digits}${i ? `.${i}` : ''}@hp.bimbel.local`;
+      const clash = await tx.user.findUnique({ where: { email: candidate } });
+      if (!clash) return candidate;
+    }
+    return `wa.${digits}.${Date.now()}@hp.bimbel.local`;
+  }
+
   async createStudent(dto: CreateStudentDto) {
     if (dto.parentIds?.length) {
       const parents = await this.prisma.parent.findMany({
@@ -86,7 +101,7 @@ export class PeopleService {
 
     return this.prisma.$transaction(async (tx) => {
       const createdUser = await this.users.createUserForPersonInTx(tx, {
-        email: dto.email,
+        email: dto.email?.trim() || (await this.synthEmail(tx, dto.phone)),
         name: dto.name,
         phone: dto.phone,
         roleName: ROLE_NAMES.SISWA,

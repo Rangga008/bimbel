@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Param,
   Patch,
   Post,
   Req,
@@ -19,12 +20,14 @@ import { Throttle } from '@nestjs/throttler';
 import type { CookieOptions, Request, Response } from 'express';
 import { LoginDto } from './dto/login.dto';
 import { RegisterParentDto } from './dto/register-parent.dto';
+import { RegisterStudentDto } from './dto/register-student.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AuthService, IssuedTokens } from './auth.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { PhoneVerificationService } from '../../common/phone-verification/phone-verification.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './current-user.decorator';
 import type { AuthenticatedUser } from './types/authenticated-user.type';
@@ -37,6 +40,7 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly config: ConfigService,
     private readonly audit: AuditService,
+    private readonly phoneVerification: PhoneVerificationService,
   ) {}
 
   private refreshCookieOptions(expiresAt: Date): CookieOptions {
@@ -165,6 +169,49 @@ export class AuthController {
   }
 
   /**
+   * Pendaftaran mandiri SISWA dari luar bimbel (try out/promosi) — hanya
+   * butuh nama + no HP + sandi; email & kode kelompok opsional. Kode yang
+   * valid langsung memasukkan siswa ke kelompok sehingga ujian yang
+   * ditugaskan ke kelompok itu bisa langsung dikerjakan.
+   */
+  @Post('register-student')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  async registerStudent(
+    @Body() dto: RegisterStudentDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const created = await this.authService.registerStudent(dto);
+    await this.audit.log({
+      actorId: created.userId,
+      action: 'STUDENT_SELF_REGISTERED',
+      entity: 'Student',
+      entityId: created.studentId,
+      newData: { groupId: created.group?.id ?? null },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    const tokens = await this.authService.login(
+      dto.email || dto.phone,
+      dto.password,
+      {
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      },
+    );
+    this.setRefreshCookie(res, tokens);
+    return this.tokenPayload(req, tokens);
+  }
+
+  /** Preview nama kelompok dari kode gabung — untuk halaman daftar siswa. */
+  @Get('group-join/:code')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  groupJoinInfo(@Param('code') code: string) {
+    return this.authService.groupJoinInfo(code);
+  }
+
+  /**
    * Minta link reset password via email.
    * Catatan: `identifier` = email ATAU nomor HP — dipilah di AuthService. Origin request dipakai sebagai base
    * URL link (fallback env WEB_APP_URL) supaya cocok dengan host yang diakses
@@ -225,6 +272,35 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   me(@CurrentUser() user: AuthenticatedUser) {
     return { user };
+  }
+
+  /**
+   * Status verifikasi nomor HP user yang sedang login — dipakai banner
+   * "verifikasi no HP" di shell siswa/ortu.
+   */
+  @Get('phone-verification/status')
+  @UseGuards(JwtAuthGuard)
+  phoneVerificationStatus(@CurrentUser() user: AuthenticatedUser) {
+    return this.phoneVerification.status(user.id);
+  }
+
+  /** Kirim kode OTP 6 digit ke WhatsApp nomor HP user (rate-limit 60 detik). */
+  @Post('phone-verification/send')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 4, ttl: 60_000 } })
+  sendPhoneVerification(@CurrentUser() user: AuthenticatedUser) {
+    return this.phoneVerification.send(user.id);
+  }
+
+  /** Cocokkan kode OTP — berhasil menandai nomor HP user terverifikasi. */
+  @Post('phone-verification/confirm')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  confirmPhoneVerification(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: { code?: string },
+  ) {
+    return this.phoneVerification.confirm(user.id, dto.code ?? '');
   }
 
   /**

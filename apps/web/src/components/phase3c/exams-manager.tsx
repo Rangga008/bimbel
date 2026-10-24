@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { CalendarClock, CircleAlert, FileCheck2, FileQuestion, MonitorCheck, Pencil, Plus, Send, Settings2, Star, StopCircle, Trash2, Users } from 'lucide-react';
+import { CalendarClock, CircleAlert, FileCheck2, FileQuestion, KeyRound, MonitorCheck, Pencil, Plus, Send, Settings2, Star, StopCircle, Trash2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -235,6 +235,20 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
                       <p className="text-xs text-muted-foreground">
                         {[exam.level?.name, exam.subject?.name].filter(Boolean).join(' · ')}
                       </p>
+                    )}
+                    {exam.accessCode && (
+                      <button
+                        type="button"
+                        title="Kode akses peserta luar — klik untuk menyalin"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(exam.accessCode!);
+                          toast.success(`Kode akses ${exam.accessCode} disalin.`);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-md border border-dashed px-2 py-0.5 font-mono text-xs tracking-[0.2em] text-muted-foreground hover:bg-muted"
+                      >
+                        <KeyRound className="size-3" />
+                        {exam.accessCode}
+                      </button>
                     )}
                   </div>
                 </div>

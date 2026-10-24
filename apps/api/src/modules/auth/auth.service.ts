@@ -198,12 +198,94 @@ export class AuthService {
         phone: dto.phone,
         roleName: ROLE_NAMES.ORANG_TUA,
         tempPassword: dto.password,
+        // Daftar-mandiri — wajib verifikasi no HP via OTP WhatsApp.
+        phoneVerified: false,
       });
       const parent = await tx.parent.create({
         data: { userId: created.userId },
       });
       return { parentId: parent.id, userId: created.userId };
     });
+  }
+
+  /**
+   * Pendaftaran mandiri siswa dari luar bimbel (mis. try out/promosi).
+   * Membuat User role SISWA + Student isExternal. `joinCode` opsional:
+   * bila cocok dengan `learning_groups.join_code`, siswa langsung jadi
+   * anggota kelompok tsb — bisa mengerjakan ujian yang ditugaskan ke
+   * kelompok itu tanpa menunggu penempatan admin.
+   */
+  async registerStudent(dto: {
+    name: string;
+    phone: string;
+    password: string;
+    email?: string;
+    joinCode?: string;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const phoneTaken = await tx.user.findFirst({
+        where: {
+          phone: { in: this.phoneVariants(dto.phone) },
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      if (phoneTaken) {
+        throw new BadRequestException(
+          'Nomor HP sudah terdaftar pada akun aktif. Silakan login atau hubungi admin.',
+        );
+      }
+      // Kode kelompok (opsional) — salah kode ditolak supaya tidak asal masuk.
+      let group: { id: string; name: string } | null = null;
+      if (dto.joinCode?.trim()) {
+        const found = await tx.learningGroup.findUnique({
+          where: { joinCode: dto.joinCode.trim().toUpperCase() },
+          select: { id: true, name: true, isActive: true },
+        });
+        group = found && found.isActive ? { id: found.id, name: found.name } : null;
+        if (!group) {
+          throw new BadRequestException('Kode kelompok tidak valid atau sudah tidak aktif.');
+        }
+      }
+      const email =
+        dto.email?.trim() ||
+        (await this.synthEmailFromPhone(tx, dto.phone));
+      const created = await this.usersService.createUserForPersonInTx(tx, {
+        email,
+        name: dto.name,
+        phone: dto.phone,
+        roleName: ROLE_NAMES.SISWA,
+        tempPassword: dto.password,
+        // Daftar-mandiri — wajib verifikasi no HP via OTP WhatsApp.
+        phoneVerified: false,
+      });
+      const student = await tx.student.create({
+        data: { userId: created.userId, isExternal: true },
+      });
+      if (group) {
+        await tx.groupMember.create({
+          data: { groupId: group.id, studentId: student.id },
+        });
+      }
+      return { studentId: student.id, userId: created.userId, group };
+    });
+  }
+
+  /** Preview kode kelompok untuk halaman daftar — nama + jenjang saja. */
+  async groupJoinInfo(code: string) {
+    const group = await this.prisma.learningGroup.findUnique({
+      where: { joinCode: code.trim().toUpperCase() },
+      select: {
+        name: true,
+        isActive: true,
+        level: { select: { name: true } },
+        program: { select: { name: true } },
+      },
+    });
+    if (!group || !group.isActive) {
+      throw new BadRequestException('Kode kelompok tidak valid.');
+    }
+    return { name: group.name, level: group.level?.name ?? null, program: group.program?.name ?? null };
   }
 
   async login(
@@ -325,11 +407,15 @@ export class AuthService {
         'Sesi tidak valid, silakan login kembali.',
       );
     }
+    const phoneChanged =
+      dto.phone !== undefined && (dto.phone || null) !== user.phone;
     await this.prisma.user.update({
       where: { id: userId },
       data: {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
         ...(dto.phone !== undefined ? { phone: dto.phone || null } : {}),
+        // Nomor berganti → harus verifikasi ulang lewat OTP WhatsApp.
+        ...(phoneChanged ? { phoneVerifiedAt: null } : {}),
       },
     });
     // Pilihan kampus hanya berlaku kalau akun ini memang siswa.

@@ -184,6 +184,28 @@ export function AdvancedReportsManager() {
 		channel: "",
 		search: "",
 	});
+	// Rentang bulan (mis. tahun ajaran Jul 2025–Jun 2026, 1–2 semester) —
+	// diterjemahkan ke filters.from/to (tanggal 1 s.d. akhir bulan).
+	const [monthFrom, setMonthFrom] = useState("");
+	const [monthTo, setMonthTo] = useState("");
+	const applyMonthRange = (from: string, to: string) => {
+		setMonthFrom(from);
+		setMonthTo(to);
+		setFilters((f) => {
+			const next = { ...f, period: "" };
+			if (from) next.from = `${from}-01`;
+			if (to) {
+				const [y, m] = to.split("-").map((s) => parseInt(s, 10));
+				const lastDay = new Date(y, m, 0).getDate();
+				next.to = `${to}-${String(lastDay).padStart(2, "0")}`;
+			}
+			if (!from && !to) {
+				next.from = "";
+				next.to = "";
+			}
+			return next;
+		});
+	};
 	const [snapshotTitle, setSnapshotTitle] = useState("");
 	const [snapshotToDelete, setSnapshotToDelete] =
 		useState<ReportSnapshotItem | null>(null);
@@ -368,19 +390,41 @@ export function AdvancedReportsManager() {
 					</div>
 					<div className="flex flex-wrap items-end gap-2">
 						<label className="flex flex-col gap-1 text-xs">
-							Periode
+							Periode (1 bulan)
 							<input
 								type="month"
 								className={inputCls}
 								value={filters.period}
-								onChange={(e) =>
+								onChange={(e) => {
+									if (e.target.value) {
+										setMonthFrom("");
+										setMonthTo("");
+									}
 									setFilters({
 										...filters,
 										period: e.target.value,
 										// Period menang atas from/to di backend.
 										...(e.target.value ? { from: "", to: "" } : {}),
-									})
-								}
+									});
+								}}
+							/>
+						</label>
+						<label className="flex flex-col gap-1 text-xs">
+							Dari bulan
+							<input
+								type="month"
+								className={inputCls}
+								value={monthFrom}
+								onChange={(e) => applyMonthRange(e.target.value, monthTo)}
+							/>
+						</label>
+						<label className="flex flex-col gap-1 text-xs">
+							Sampai bulan
+							<input
+								type="month"
+								className={inputCls}
+								value={monthTo}
+								onChange={(e) => applyMonthRange(monthFrom, e.target.value)}
 							/>
 						</label>
 						<label className="flex flex-col gap-1 text-xs">
@@ -389,13 +433,17 @@ export function AdvancedReportsManager() {
 								type="date"
 								className={inputCls}
 								value={filters.from}
-								onChange={(e) =>
+								onChange={(e) => {
+									if (e.target.value) {
+										setMonthFrom("");
+										setMonthTo("");
+									}
 									setFilters({
 										...filters,
 										from: e.target.value,
 										...(e.target.value ? { period: "" } : {}),
-									})
-								}
+									});
+								}}
 							/>
 						</label>
 						<label className="flex flex-col gap-1 text-xs">
@@ -404,13 +452,17 @@ export function AdvancedReportsManager() {
 								type="date"
 								className={inputCls}
 								value={filters.to}
-								onChange={(e) =>
+								onChange={(e) => {
+									if (e.target.value) {
+										setMonthFrom("");
+										setMonthTo("");
+									}
 									setFilters({
 										...filters,
 										to: e.target.value,
 										...(e.target.value ? { period: "" } : {}),
-									})
-								}
+									});
+								}}
 							/>
 						</label>
 						<div className="w-52">

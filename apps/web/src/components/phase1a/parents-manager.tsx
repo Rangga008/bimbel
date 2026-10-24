@@ -23,7 +23,7 @@ import { ParentLinkManager } from '@/components/phase1a/parent-link-manager';
 
 const CREATE_FIELDS: Phase1aField[] = [
   { name: 'name', label: 'Nama lengkap', placeholder: 'Nama orang tua/wali', required: true },
-  { name: 'email', label: 'Email', type: 'email', placeholder: 'ortu@contoh.id', required: true },
+  { name: 'email', label: 'Email (opsional — kosong = dibuat dari no HP)', type: 'email', placeholder: 'ortu@contoh.id' },
   { name: 'password', label: 'Kata sandi awal (opsional — kosong = auto-generate)', type: 'password' },
   { name: 'phone', label: 'No. HP/WhatsApp (wajib — dipakai untuk login & notifikasi)', placeholder: '08...', required: true },
 ];
@@ -79,7 +79,7 @@ export function ParentsManager({ canManage, basePath }: { canManage: boolean; ba
         method: 'POST',
         body: {
           name: form.name,
-          email: form.email,
+          email: form.email?.trim() || undefined,
           password: form.password || undefined,
           phone: form.phone || undefined,
           studentIds: form.studentIds ? [form.studentIds] : undefined,
