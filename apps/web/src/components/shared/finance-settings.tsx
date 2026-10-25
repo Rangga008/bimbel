@@ -162,25 +162,61 @@ function err(e: unknown, fb: string) {
 	return e instanceof ApiError ? e.message : fb;
 }
 
-/** Sub-bagian di pengaturan landing — judul + field + pratinjau opsional. */
+/** Sub-bagian di pengaturan landing — collapsible (judul selalu tampil,
+ *  isi terbuka saat diklik) + tombol simpan sendiri di tiap seksi supaya
+ *  tidak perlu scroll ke bawah. */
 function LandingSubSection({
 	title,
 	hint,
+	onSave,
+	saving,
 	children,
 }: {
 	title: string;
 	hint?: string;
+	/** Simpan per-seksi — bila diisi, tombol Simpan tampil di bawah isi. */
+	onSave?: () => void;
+	saving?: boolean;
 	children: ReactNode;
 }) {
+	const [open, setOpen] = useState(false);
 	return (
-		<div className="grid gap-3 rounded-lg border p-4">
-			<div>
-				<p className="text-sm font-semibold">{title}</p>
-				{hint ? (
-					<p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>
-				) : null}
-			</div>
-			{children}
+		<div className="rounded-lg border">
+			<button
+				type="button"
+				onClick={() => setOpen((v) => !v)}
+				className="flex w-full items-center justify-between gap-3 rounded-lg p-4 text-left transition-colors hover:bg-accent/40"
+				aria-expanded={open}
+			>
+				<div className="min-w-0">
+					<p className="text-sm font-semibold">{title}</p>
+					{hint ? (
+						<p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+							{hint}
+						</p>
+					) : null}
+				</div>
+				<ChevronRight
+					className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
+				/>
+			</button>
+			{open ? (
+				<div className="grid gap-3 border-t p-4">
+					{children}
+					{onSave ? (
+						<div className="border-t pt-3">
+							<Button
+								type="button"
+								size="sm"
+								disabled={saving}
+								onClick={onSave}
+							>
+								{saving ? "Menyimpan…" : `Simpan ${title}`}
+							</Button>
+						</div>
+					) : null}
+				</div>
+			) : null}
 		</div>
 	);
 }
@@ -586,17 +622,19 @@ export function FinanceSettings() {
 				</CardHeader>
 				<CardContent>
 					{display ? (
-						<form
-							className="grid gap-4"
-							onSubmit={(e) => {
-								e.preventDefault();
-								saveMutation.mutate({ key: "display", value: display });
-							}}
-						>
+						<div className="grid gap-4">
+							<p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+								Tiap bagian bisa dibuka lewat judulnya — ubah isi lalu tekan
+								tombol Simpan di bagian itu langsung.
+							</p>
 							{/* ---- Foto hero + link per gambar ---- */}
 							<LandingSubSection
 								title="Foto Hero (slider halaman awal)"
 								hint="Tiap foto bisa diberi link klik sendiri — mis. ke formulir pendaftaran atau halaman program. Kosongkan link bila foto tidak perlu bisa diklik."
+								saving={saving}
+								onSave={() =>
+									saveMutation.mutate({ key: "display", value: display })
+								}
 							>
 								<div className="rounded-md border border-brand-blue-200 bg-brand-blue-50/60 px-3 py-2 text-xs text-brand-blue-900">
 									<p className="font-medium">Ukuran yang direkomendasikan</p>
@@ -683,8 +721,12 @@ export function FinanceSettings() {
 
 							{/* ---- Link pendaftaran ---- */}
 							<LandingSubSection
-								title="Link Formulir Pendaftaran"
-								hint="Tombol 'Info & Pendaftaran' di header, hero, dan footer mengarah ke link ini — ganti tiap tahun ajaran."
+								title="Link Buku Tamu / Formulir Pendaftaran"
+								hint="Tombol 'Buku Tamu'/'Info & Pendaftaran' di header, hero, dan footer mengarah ke link ini — ganti tiap tahun ajaran."
+								saving={saving}
+								onSave={() =>
+									saveMutation.mutate({ key: "display", value: display })
+								}
 							>
 								<Input
 									type="url"
@@ -700,6 +742,10 @@ export function FinanceSettings() {
 							<LandingSubSection
 								title="Teks Hero"
 								hint="Judul besar di halaman awal. Tulis {appName} di subjudul untuk menyisipkan nama aplikasi otomatis."
+								saving={saving}
+								onSave={() =>
+									saveMutation.mutate({ key: "display", value: display })
+								}
 							>
 								<div className="grid gap-3 sm:grid-cols-2">
 									<div className="grid gap-1.5">
@@ -771,6 +817,10 @@ export function FinanceSettings() {
 							<LandingSubSection
 								title="Tentang Kami"
 								hint="Dua paragraf di section Tentang halaman awal."
+								saving={saving}
+								onSave={() =>
+									saveMutation.mutate({ key: "display", value: display })
+								}
 							>
 								<div className="grid gap-3">
 									<div className="grid gap-1.5">
@@ -812,6 +862,10 @@ export function FinanceSettings() {
 							<LandingSubSection
 								title="Alamat & Jam Kantor"
 								hint="Tampil di kartu 'Mau datang langsung?' dan jam operasional di footer."
+								saving={saving}
+								onSave={() =>
+									saveMutation.mutate({ key: "display", value: display })
+								}
 							>
 								<div className="grid gap-3 sm:grid-cols-2">
 									<div className="grid gap-1.5">
@@ -854,6 +908,10 @@ export function FinanceSettings() {
 							<LandingSubSection
 								title="Lokasi di Footer"
 								hint="Daftar lokasi & jam buka di kolom 'Lokasi & Jam Buka' footer halaman awal. Kosongkan daftar ini untuk memakai data gedung dari menu Gedung. Maksimal 10."
+								saving={saving}
+								onSave={() =>
+									saveMutation.mutate({ key: "display", value: display })
+								}
 							>
 								<div className="grid gap-3">
 									{display.locations.map((loc, i) => (
@@ -959,6 +1017,10 @@ export function FinanceSettings() {
 							<LandingSubSection
 								title="Testimoni"
 								hint="Kutipan alumni & siswa di section Testimoni — maksimal 12."
+								saving={saving}
+								onSave={() =>
+									saveMutation.mutate({ key: "display", value: display })
+								}
 							>
 								<div className="grid gap-3">
 									{display.testimonials.map((t, i) => (
@@ -1082,6 +1144,10 @@ export function FinanceSettings() {
 							<LandingSubSection
 								title="Ajakan Akhir (CTA)"
 								hint="Banner besar di bagian bawah sebelum footer."
+								saving={saving}
+								onSave={() =>
+									saveMutation.mutate({ key: "display", value: display })
+								}
 							>
 								<div className="grid gap-3">
 									<div className="grid gap-1.5">
@@ -1119,12 +1185,7 @@ export function FinanceSettings() {
 								</LandingPreview>
 							</LandingSubSection>
 
-							<div>
-								<Button type="submit" disabled={saving}>
-									{saving ? "Menyimpan…" : "Simpan Tampilan Landing"}
-								</Button>
-							</div>
-						</form>
+						</div>
 					) : null}
 					<MediaLibraryDialog
 						open={heroPickerOpen}

@@ -369,6 +369,7 @@ export function ContentDrilldown({
   itemNoun,
   loading,
   onManageCategories,
+  hideEmpty = false,
 }: {
   items: TaxonomyItem[];
   /** Master data jenjang (+levelSubjects). Bila kosong/undefined —
@@ -382,6 +383,9 @@ export function ContentDrilldown({
   loading?: boolean;
   /** Bila diisi, langkah tipe menampilkan kartu "Kelola Tipe" (admin/tutor). */
   onManageCategories?: () => void;
+  /** true = kartu bucket tanpa konten disembunyikan (tampilan siswa —
+   *  jenjang/mapel/tipe kosong, termasuk "Lainnya" 0, tidak perlu tampil). */
+  hideEmpty?: boolean;
 }) {
   // Dengan master data: Tingkat → Jenjang → Mapel → Tipe.
   // Tanpa master data (siswa): Jenjang → Mapel → Tipe dari item.
@@ -485,6 +489,10 @@ export function ContentDrilldown({
             ]
           : drillBuckets(pool, step);
 
+  // Tampilan siswa: bucket tanpa konten (jenjang/mapel/tipe 0 item — termasuk
+  // "Lainnya" kosong) disembunyikan supaya drill langsung menjurus.
+  const visibleBuckets = hideEmpty ? buckets.filter((b) => b.count > 0) : buckets;
+
   const stepMeta = {
     grade: {
       icon: GraduationCap,
@@ -532,7 +540,7 @@ export function ContentDrilldown({
       </div>
       {loading ? <Skeleton className="h-40 w-full" /> : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {buckets.map((b) => (
+        {visibleBuckets.map((b) => (
           <DrillCard
             key={b.id}
             icon={stepMeta.icon}

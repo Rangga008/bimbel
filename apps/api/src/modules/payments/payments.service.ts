@@ -611,6 +611,292 @@ export class PaymentsService {
     );
   }
 
+  /**
+   * Ortu: timeline angsuran per anak — menggabungkan invoice yang sudah
+   * terbit dengan sisa billingPlan (cicilan yang belum terbit) menjadi satu
+   * daftar berurut. Ordinal invoice ke-i selalu berpasangan dengan plan ke-i
+   * (ensureDueInstallments menghitung SEMUA invoice, termasuk yang void).
+   * Dipakai halaman Pembayaran ortu yang baru (pilih anak → angsuran → bayar).
+   */
+  async myPaymentPlan(userId: string, studentId?: string) {
+    await this.enrollments.ensureDueInstallments().catch(() => undefined);
+    const allowed = await this.allowedStudentsOrThrow(userId);
+    const ids = studentId
+      ? allowed.includes(studentId)
+        ? [studentId]
+        : []
+      : allowed;
+    if (studentId && ids.length === 0)
+      throw new ForbiddenException('Anak tersebut tidak terhubung ke akun ini.');
+    const scope = ids.length ? ids : ['__none__'];
+    const today = new Date(new Date().toDateString());
+    const endOfMonth = new Date();
+    endOfMonth.setMonth(endOfMonth.getMonth() + 1, 0);
+    endOfMonth.setHours(23, 59, 59, 999);
+
+    const students = await this.prisma.student.findMany({
+      where: { id: { in: scope } },
+      select: { id: true, user: { select: { name: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: { studentId: { in: scope }, status: { not: 'REJECTED' } },
+      select: {
+        id: true,
+        studentId: true,
+        status: true,
+        paymentPlan: true,
+        createdAt: true,
+        billingPlan: true,
+        discountAmount: true,
+        discountMonths: true,
+        program: { select: { name: true } },
+        level: {
+          select: {
+            name: true,
+            monthlyAmount: true,
+            monthlyCount: true,
+            installment2x: true,
+          },
+        },
+        group: { select: { name: true } },
+        invoices: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            number: true,
+            status: true,
+            totalAmount: true,
+            amountPaid: true,
+            dueDate: true,
+            items: {
+              select: { description: true },
+              orderBy: { createdAt: 'asc' },
+              take: 3,
+            },
+            receipts: {
+              select: { id: true, number: true },
+              orderBy: { issuedAt: 'desc' },
+              take: 1,
+            },
+            allocations: {
+              where: { payment: { status: 'PENDING' } },
+              select: { id: true },
+              take: 1,
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    // Invoice lepas — bukan cicilan pendaftaran (paket / tagihan manual admin).
+    const standalone = await this.prisma.invoice.findMany({
+      where: {
+        studentId: { in: scope },
+        enrollmentId: null,
+        enrollment: null,
+        status: 'ISSUED',
+      },
+      select: {
+        id: true,
+        number: true,
+        studentId: true,
+        status: true,
+        totalAmount: true,
+        amountPaid: true,
+        dueDate: true,
+        items: {
+          select: { description: true },
+          orderBy: { createdAt: 'asc' },
+          take: 3,
+        },
+        receipts: {
+          select: { id: true, number: true },
+          orderBy: { issuedAt: 'desc' },
+          take: 1,
+        },
+        allocations: {
+          where: { payment: { status: 'PENDING' } },
+          select: { id: true },
+          take: 1,
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 100,
+    });
+
+    type Plan = {
+      label: string;
+      dueOffsetMonths: number;
+      items: { amount: number }[];
+    };
+    const planAmount = (e: (typeof enrollments)[number], i: number, plan: Plan) => {
+      const base = plan.items.reduce((s, it) => s + Number(it.amount), 0);
+      const disc = e.discountAmount ? Number(e.discountAmount) : 0;
+      const withinLimit = e.discountMonths === null || i + 1 <= e.discountMonths;
+      return disc > 0 && withinLimit ? base - disc : base;
+    };
+    const invState = (inv: {
+      status: string;
+      totalAmount: unknown;
+      amountPaid: unknown;
+      dueDate: Date | null;
+      allocations: { id: string }[];
+    }) => {
+      const sisa = Number(inv.totalAmount) - Number(inv.amountPaid);
+      if (inv.status === 'VOID') return { state: 'VOID', sisa };
+      if (sisa <= 0.009) return { state: 'PAID', sisa };
+      if (inv.allocations.length > 0) return { state: 'VERIFYING', sisa };
+      if (inv.dueDate && new Date(inv.dueDate) <= today)
+        return { state: 'DUE', sisa };
+      return { state: 'UPCOMING', sisa };
+    };
+
+    const byStudent = new Map<
+      string,
+      { enrollments: unknown[]; otherInvoices: unknown[] }
+    >();
+    for (const s of students) byStudent.set(s.id, { enrollments: [], otherInvoices: [] });
+
+    for (const e of enrollments) {
+      const plans = (e.billingPlan as Plan[] | null) ?? [];
+      // Enrollment lama tanpa billingPlan: proyeksikan sisa angsuran dari
+      // paymentPlan + pricelist jenjang supaya timeline tetap menampilkan
+      // cicilan yang belum terbit (extra per-bulan/privat tidak diproyeksikan).
+      const expected =
+        e.paymentPlan === 'TWO_TIMES'
+          ? 2
+          : e.paymentPlan === 'MONTHLY'
+            ? (e.level.monthlyCount ?? 0) || 10
+            : 0;
+      const perInstallment =
+        e.paymentPlan === 'TWO_TIMES'
+          ? Number(e.level.installment2x ?? 0)
+          : e.paymentPlan === 'MONTHLY'
+            ? Number(e.level.monthlyAmount ?? 0)
+            : 0;
+      const count = Math.max(plans.length, e.invoices.length, expected);
+      const installments = [];
+      for (let i = 0; i < count; i += 1) {
+        const inv = e.invoices[i];
+        const plan = plans[i];
+        // Estimasi nominal cicilan terproyeksi (tanpa plan tersimpan).
+        const projected = plan
+          ? planAmount(e, i, plan)
+          : (() => {
+              const disc = e.discountAmount ? Number(e.discountAmount) : 0;
+              const within =
+                e.discountMonths === null || i + 1 <= e.discountMonths;
+              const base =
+                perInstallment ||
+                (e.invoices[0] ? Number(e.invoices[0].totalAmount) : 0);
+              return disc > 0 && within ? base - disc : base;
+            })();
+        const projectedLabel =
+          plan?.label ??
+          (e.paymentPlan === 'TWO_TIMES'
+            ? `angsuran ${i + 1} dari 2`
+            : e.paymentPlan === 'MONTHLY'
+              ? `angsuran bulan ${i + 1} dari ${expected || count}`
+              : `tagihan ${i + 1}`);
+        if (inv) {
+          const { state, sisa } = invState(inv);
+          installments.push({
+            no: i + 1,
+            label: plan?.label ?? projectedLabel,
+            amount: Number(inv.totalAmount),
+            sisa,
+            dueDate: inv.dueDate,
+            state,
+            invoice: {
+              id: inv.id,
+              number: inv.number,
+              totalAmount: Number(inv.totalAmount),
+              amountPaid: Number(inv.amountPaid),
+              dueDate: inv.dueDate,
+              items: inv.items,
+            },
+            receipts: inv.receipts,
+          });
+        } else {
+          const due = new Date(e.createdAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+          due.setMonth(due.getMonth() + (plan?.dueOffsetMonths ?? i));
+          installments.push({
+            no: i + 1,
+            label: projectedLabel,
+            amount: projected,
+            sisa: projected,
+            dueDate: due,
+            state: 'PLANNED',
+            invoice: null,
+            receipts: [],
+          });
+        }
+      }
+      const sisa = installments.reduce((s, x) => s + x.sisa, 0);
+      const total = installments.reduce((s, x) => s + x.amount, 0);
+      byStudent.get(e.studentId)?.enrollments.push({
+        id: e.id,
+        status: e.status,
+        paymentPlan: e.paymentPlan,
+        program: e.program.name,
+        level: e.level.name,
+        group: e.group?.name ?? null,
+        total,
+        sisa,
+        installments,
+      });
+    }
+    for (const inv of standalone) {
+      const { state, sisa } = invState(inv);
+      byStudent.get(inv.studentId)?.otherInvoices.push({
+        id: inv.id,
+        number: inv.number,
+        description: inv.items[0]?.description ?? 'Tagihan',
+        totalAmount: Number(inv.totalAmount),
+        amountPaid: Number(inv.amountPaid),
+        sisa,
+        dueDate: inv.dueDate,
+        state,
+        receipts: inv.receipts,
+      });
+    }
+
+    return students.map((s) => {
+      const bucket = byStudent.get(s.id) ?? { enrollments: [], otherInvoices: [] };
+      const enrs = bucket.enrollments as {
+        installments: { state: string; sisa: number; dueDate: Date | null }[];
+      }[];
+      const others = bucket.otherInvoices as {
+        state: string;
+        sisa: number;
+        dueDate: Date | null;
+      }[];
+      const active = [
+        ...enrs.flatMap((e) => e.installments),
+        ...others,
+      ].filter((x) => x.state !== 'PAID' && x.state !== 'VOID');
+      return {
+        studentId: s.id,
+        name: s.user.name,
+        // Tagihan yang tampil & bisa dibayar sekarang — sama dengan aturan
+        // /me/invoices (jatuh tempo sampai akhir bulan ini).
+        dueNow: active
+          .filter(
+            (x) =>
+              // PLANNED belum punya invoice — tidak bisa dibayar, jangan
+              // hitung sebagai tagihan bulan ini.
+              x.state !== 'PLANNED' &&
+              (!x.dueDate || new Date(x.dueDate) <= endOfMonth),
+          )
+          .reduce((sum, x) => sum + x.sisa, 0),
+        totalDue: active.reduce((sum, x) => sum + x.sisa, 0),
+        enrollments: bucket.enrollments,
+        otherInvoices: bucket.otherInvoices,
+      };
+    });
+  }
+
   async myPayments(userId: string) {
     return this.prisma.payment.findMany({
       where: { createdBy: userId },

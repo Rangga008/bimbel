@@ -65,19 +65,39 @@ export function buildExamPayload(form: ExamFormState) {
   };
 }
 
-/** Validasi form — subtes wajib nama + durasi + minimal 1 soal. */
-export function examFormValid(form: ExamFormState): boolean {
+/** Payload khusus bagian soal — dipakai halaman Kelola Soal (PATCH). */
+export function buildQuestionsPayload(form: ExamFormState) {
+  return form.subtes.length > 0
+    ? {
+        items: form.subtes.flatMap((s, idx) =>
+          s.questionIds.map((questionId) => ({ questionId, subtesIdx: idx })),
+        ),
+      }
+    : { questionIds: form.questionIds };
+}
+
+/** Validasi pengaturan ujian — tanpa soal (soal diatur di halaman detail).
+ *  Subtes wajib nama + durasi; soalnya ditambah belakangan. */
+export function examSettingsValid(form: ExamFormState): boolean {
   const baseOk =
     !!form.title.trim() &&
     !!form.pickerFilters.levelId &&
     !!form.category &&
     !!form.scheduledStartAt &&
-    !!form.scheduledEndAt;
+    !!form.scheduledEndAt &&
+    new Date(form.scheduledEndAt) > new Date(form.scheduledStartAt);
   if (!baseOk) return false;
   if (form.subtes.length > 0) {
-    return form.subtes.every(
-      (s) => s.name.trim() && Number(s.durationMinutes) > 0 && s.questionIds.length > 0,
-    );
+    return form.subtes.every((s) => s.name.trim() && Number(s.durationMinutes) > 0);
+  }
+  return true;
+}
+
+/** Validasi form lengkap — subtes wajib nama + durasi + minimal 1 soal. */
+export function examFormValid(form: ExamFormState): boolean {
+  if (!examSettingsValid(form)) return false;
+  if (form.subtes.length > 0) {
+    return form.subtes.every((s) => s.questionIds.length > 0);
   }
   // Mapel opsional — ujian campuran/try out boleh tanpa mapel tunggal.
   return form.questionIds.length > 0;
@@ -126,30 +146,31 @@ export function ExamCreatePage({
     }
   }, [levelsAllQ.data, form.pickerFilters.levelId]);
 
+  const backUrl = () =>
+    drillBackFromUrl(basePath, (k) => searchParams.get(k), {
+      tingkat: form.pickerFilters.tingkat,
+      levelId: form.pickerFilters.levelId,
+      subjectId: form.pickerFilters.subjectId,
+      category: form.category,
+    });
+
   const saveM = useMutation({
     mutationFn: () =>
-      apiFetch('/exams', {
+      apiFetch<{ id: string }>('/exams', {
         method: 'POST',
         body: buildExamPayload(form),
       }),
-    onSuccess: () => {
-      toast.success('Ujian berhasil dibuat.');
+    // Langkah 2: buka halaman detail — di sanalah soal ditambah/diimpor.
+    onSuccess: (created) => {
+      toast.success('Ujian dibuat — sekarang tambahkan soalnya di halaman detail.');
       qc.invalidateQueries({ queryKey: ['exams'] });
-      router.push(
-        drillBackFromUrl(basePath, (k) => searchParams.get(k), {
-          tingkat: form.pickerFilters.tingkat,
-          levelId: form.pickerFilters.levelId,
-          subjectId: form.pickerFilters.subjectId,
-          category: form.category,
-        }),
-      );
+      router.push(`${basePath}/${created.id}/edit`);
     },
     onError: (e) => toast.error(err(e, 'Gagal membuat ujian.')),
   });
 
-  // Jenjang + tipe wajib — ujian dikategorikan per jenjang; mapel wajib
-  // hanya di mode biasa (mode subtes punya mapel per subtes).
-  const isValid = examFormValid(form);
+  // Jenjang + tipe + jadwal wajib; soal tidak wajib di langkah ini.
+  const isValid = examSettingsValid(form);
 
   return (
     <div className="flex flex-col gap-4">
@@ -157,32 +178,21 @@ export function ExamCreatePage({
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Buat Ujian</h1>
           <p className="text-sm text-muted-foreground">
-            Ujian baru disimpan sebagai <strong>Draft</strong> — belum terlihat siswa sampai dipublikasikan.
-            Jadwal mulai/selesai bersifat global (server-authoritative).
+            <strong>Langkah 1 dari 2</strong> — atur detail ujian (judul, jadwal, subtes, peserta).
+            Setelah tersimpan, Anda diarahkan ke halaman detail untuk menambah, mengedit,
+            dan mengimpor soal. Ujian disimpan sebagai <strong>Draft</strong>.
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() =>
-            router.push(
-              drillBackFromUrl(basePath, (k) => searchParams.get(k), {
-                tingkat: form.pickerFilters.tingkat,
-                levelId: form.pickerFilters.levelId,
-                subjectId: form.pickerFilters.subjectId,
-                category: form.category,
-              }),
-            )
-          }
-        >
+        <Button variant="outline" onClick={() => router.push(backUrl())}>
           Batal
         </Button>
       </div>
 
-      <ExamForm form={form} onChange={setForm} />
+      <ExamForm form={form} onChange={setForm} withQuestions={false} />
 
       <div className="flex items-center justify-end gap-2 sticky bottom-0 bg-background py-3 border-t">
         <Button disabled={!isValid || saveM.isPending} onClick={() => saveM.mutate()}>
-          {saveM.isPending ? 'Menyimpan...' : 'Simpan sebagai Draft'}
+          {saveM.isPending ? 'Menyimpan...' : 'Buat & Lanjut Atur Soal'}
         </Button>
       </div>
     </div>

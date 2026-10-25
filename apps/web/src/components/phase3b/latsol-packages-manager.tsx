@@ -128,6 +128,7 @@ export function LatsolPackagesManager({
           itemNoun="Paket"
           loading={listQ.isLoading || levelsQ.isLoading}
           onManageCategories={canManage ? () => setManageCats(true) : undefined}
+          hideEmpty={!canManage}
         />
         <ContentCategoriesManager open={manageCats} onOpenChange={setManageCats} />
       </div>

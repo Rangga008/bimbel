@@ -1,6 +1,8 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,6 +16,7 @@ const POLL_MS = 15_000;
 
 export function NotificationsInbox() {
   const qc = useQueryClient();
+  const router = useRouter();
   const [unreadOnly, setUnreadOnly] = useState(false);
   const listQ = useQuery({
     queryKey: ['notifications', unreadOnly],
@@ -69,6 +72,17 @@ export function NotificationsInbox() {
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {!n.isRead ? <Badge variant="secondary">Baru</Badge> : null}
+                {n.link ? (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      if (!n.isRead) readM.mutate(n.id);
+                      router.push(n.link!);
+                    }}
+                  >
+                    Buka <ArrowRight className="size-4" />
+                  </Button>
+                ) : null}
                 {!n.isRead ? <Button variant="outline" size="sm" onClick={() => readM.mutate(n.id)}>Tandai dibaca</Button> : null}
               </div>
             </CardContent>

@@ -116,7 +116,7 @@ export class PaymentsController {
     await this.notifyPayer(
       created.studentId,
       `Pembayaran tunai ${created.id} terverifikasi.`,
-      `/pembayaran/${created.id}`,
+      '/orang-tua/pembayaran',
     );
     return created;
   }
@@ -154,7 +154,7 @@ export class PaymentsController {
         dto.action === 'APPROVE'
           ? 'Bukti pembayaran Anda disetujui.'
           : `Bukti pembayaran ditolak: ${dto.reason ?? '-'}`,
-        `/pembayaran/${id}`,
+        '/orang-tua/pembayaran',
       );
     }
     return updated;
@@ -217,10 +217,8 @@ export class PaymentsController {
         },
       });
       if (!student) return;
-      const userIds = [
-        student.userId,
-        ...student.parentStudents.map((p) => p.parent.userId),
-      ];
+      // Siswa tidak dinotifikasi soal pembayaran — hanya ortu terhubung.
+      const userIds = student.parentStudents.map((p) => p.parent.userId);
       for (const userId of [...new Set(userIds)]) {
         try {
           await this.notifications.create({ userId, title, body: title, link });

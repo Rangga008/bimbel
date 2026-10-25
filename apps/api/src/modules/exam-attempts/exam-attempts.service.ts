@@ -870,4 +870,25 @@ export class ExamAttemptsService {
       orderBy: { startedAt: 'desc' },
     });
   }
+
+  /**
+   * Reset sesi pengerjaan — hapus attempt beserta jawaban & progres subtes
+   * (cascade) supaya siswa bisa mengerjakan ujian dari awal lagi.
+   * Dipanggil admin/tutor dari halaman proctoring. Mengembalikan info
+   * attempt yang dihapus untuk audit log.
+   */
+  async resetAttempt(attemptId: string) {
+    const attempt = await this.prisma.examAttempt.findUnique({
+      where: { id: attemptId },
+      include: { student: { select: { user: { select: { name: true } } } } },
+    });
+    if (!attempt) throw new NotFoundException('Attempt tidak ditemukan.');
+    await this.prisma.examAttempt.delete({ where: { id: attemptId } });
+    return {
+      success: true,
+      examId: attempt.examId,
+      studentName: attempt.student.user?.name ?? null,
+      status: attempt.status,
+    };
+  }
 }

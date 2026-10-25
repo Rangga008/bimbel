@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -121,6 +122,30 @@ export class ExamAttemptsController {
   @RequirePermissions(PERMISSION_CODES.EXAM_VIEW)
   getExamAttempts(@Param('examId') examId: string) {
     return this.attempts.getExamAttempts(examId);
+  }
+
+  /**
+   * Reset sesi pengerjaan siswa — hapus attempt (jawaban + progres subtes
+   * ikut terhapus) sehingga siswa bisa mengulang ujian dari awal.
+   */
+  @Delete('exam-attempts/:id')
+  @RequirePermissions(PERMISSION_CODES.EXAM_MANAGE)
+  async resetAttempt(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const result = await this.attempts.resetAttempt(id);
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'EXAM_ATTEMPT_RESET',
+      entity: 'ExamAttempt',
+      entityId: id,
+      newData: result,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return result;
   }
 
   @Post('exams/:id/end')

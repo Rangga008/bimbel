@@ -182,12 +182,7 @@ export class NotificationEventsService {
           link: '/orang-tua/pembayaran',
         },
       );
-      if (student) {
-        await this.notifications.notifyMany([student.userId], {
-          title: `Tagihan baru ${invoice.number}`,
-          body: `Tagihan sebesar ${amount} telah diterbitkan.${due}`,
-        });
-      }
+      // Siswa tidak dinotifikasi soal pembayaran — urusan tagihan milik ortu.
       const wa = await this.waSettings();
       if (wa.notifyInvoiceIssued) {
         for (const p of parents) {
@@ -298,12 +293,6 @@ export class NotificationEventsService {
           link: '/orang-tua/pembayaran',
         },
       );
-      if (student) {
-        await this.notifications.notifyMany([student.userId], {
-          title: 'Pembayaran terverifikasi',
-          body: `Pembayaran ${amount} untuk invoice ${inv} telah terverifikasi.`,
-        });
-      }
       const wa = await this.waSettings();
       if (wa.notifyPaymentVerified) {
         // Kwitansi: PDF dilampirkan langsung ke pesan WA + link publik
@@ -379,12 +368,6 @@ export class NotificationEventsService {
           link: '/orang-tua/pembayaran',
         },
       );
-      if (student) {
-        await this.notifications.notifyMany([student.userId], {
-          title: 'Pembayaran ditolak',
-          body: `Pembayaran ${amount} untuk invoice ${inv} ditolak.${reason}`,
-        });
-      }
       const wa = await this.waSettings();
       if (wa.notifyPaymentRejected) {
         for (const p of parents) {
@@ -588,6 +571,7 @@ export class NotificationEventsService {
           await this.notifications.notifyMany([student.userId], {
             title: 'Ketidakhadiran tercatat',
             body,
+            link: '/siswa/kehadiran',
             category: 'attendance',
           });
         }
@@ -626,7 +610,8 @@ export class NotificationEventsService {
       await this.notifications.notifyMany(studentUserIds, {
         title: `Hasil ujian rilis: ${exam.title}`,
         body: 'Hasil ujian sudah bisa dilihat di halaman ujian.',
-        link: '/siswa/ujian',
+        // Deep-link langsung ke kartu ujiannya (highlight + scroll).
+        link: `/siswa/ujian?focus=${exam.id}`,
       });
       await this.notifications.notifyMany(parentIds, {
         title: `Hasil ujian rilis: ${exam.title}`,

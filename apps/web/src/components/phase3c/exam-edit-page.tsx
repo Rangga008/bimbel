@@ -4,22 +4,28 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
-import { KeyRound, RefreshCw } from 'lucide-react';
+import { FileQuestion, KeyRound, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { ExamRow, UpdateExamDto } from '@/lib/phase3c-types';
 import { drillBackFromUrl, tingkatCode } from '@/lib/content-taxonomy';
 import { useContentLevels } from '@/components/shared/content-drilldown';
-import { ExamForm, emptyExamForm, emptySubtes, type ExamFormState } from './exam-form';
-import { buildExamPayload, examFormValid, isoToLocalInput } from './exam-create-page';
+import {
+  ExamForm,
+  emptyExamForm,
+  emptySubtes,
+  examQuestionCount,
+  type ExamFormState,
+} from './exam-form';
+import { buildExamPayload, examSettingsValid, isoToLocalInput } from './exam-create-page';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 
 function err(e: unknown, fb: string) {
   return e instanceof ApiError ? e.message : fb;
 }
 
-function toForm(exam: ExamRow): ExamFormState {
+export function toForm(exam: ExamRow): ExamFormState {
   const hasSubtes = (exam.subtes?.length ?? 0) > 0;
   const basePicker = {
     tingkat: '',
@@ -139,22 +145,47 @@ function ExamEditForm({
     onError: (e) => toast.error(err(e, 'Gagal membuat ulang kode akses.')),
   });
 
-  // Jenjang + tipe wajib; mapel hanya wajib di mode biasa.
-  const isValid = examFormValid(form);
+  // Pengaturan wajib valid; soal boleh kosong sementara (publish tetap
+  // ditolak server sampai ada ≥1 soal).
+  const isValid = examSettingsValid(form);
+  const questionCount = examQuestionCount(form);
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Edit Ujian</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Detail Ujian</h1>
           <p className="text-sm text-muted-foreground">
-            Perbarui detail, status, atau daftar soal ujian ini.
+            Pengaturan ujian — jadwal, durasi, subtes, peserta. Susunan soal diatur
+            di halaman Kelola Soal.
           </p>
         </div>
-        <Button variant="outline" onClick={() => router.push(backUrl)}>
-          Batal
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="outline" onClick={() => router.push(backUrl)}>
+            Batal
+          </Button>
+          <Button onClick={() => router.push(`${basePath}/${examId}/soal`)}>
+            <FileQuestion /> Kelola Soal
+            {questionCount > 0 ? ` (${questionCount})` : ''}
+          </Button>
+        </div>
       </div>
+
+      {questionCount === 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-warning-300 bg-warning-50 p-3 text-sm text-warning-800">
+          <p className="flex-1">
+            Ujian ini belum memiliki soal — ujian tanpa soal tidak bisa
+            dipublikasikan.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => router.push(`${basePath}/${examId}/soal`)}
+          >
+            <FileQuestion /> Tambah Soal
+          </Button>
+        </div>
+      )}
 
       {/* Kode akses — dibagikan ke peserta luar; mereka memasukkannya di
           halaman Ujian untuk membuka akses tanpa jadi anggota kelompok. */}
@@ -190,7 +221,9 @@ function ExamEditForm({
         </Button>
       </div>
 
-      <ExamForm form={form} onChange={setForm} showStatus />
+      {/* Pengaturan saja — susunan soal dikelola di halaman Kelola Soal
+          (form.subtes/questionIds tetap dimuat & ikut terkirim saat simpan). */}
+      <ExamForm form={form} onChange={setForm} showStatus withQuestions={false} />
 
       <div className="flex items-center justify-between gap-2 sticky bottom-0 bg-background py-3 border-t">
         <Button

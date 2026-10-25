@@ -137,6 +137,7 @@ export function MaterialsManager({ canManage, basePath = '/materi' }: { canManag
           itemNoun="Materi"
           loading={listQ.isLoading || levelsQ.isLoading}
           onManageCategories={canManage ? () => setManageCats(true) : undefined}
+          hideEmpty={!canManage}
         />
         <ContentCategoriesManager open={manageCats} onOpenChange={setManageCats} />
       </div>

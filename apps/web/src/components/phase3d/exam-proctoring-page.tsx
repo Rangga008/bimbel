@@ -11,6 +11,7 @@ import {
   FileQuestion,
   Lock,
   MonitorCheck,
+  RotateCcw,
   Search,
   ShieldAlert,
   Unlock,
@@ -119,12 +120,16 @@ function ParticipantRow({
   p,
   groupName,
   canUnlock,
+  canReset,
   onUnlock,
+  onReset,
 }: {
   p: Participant;
   groupName: string;
   canUnlock: boolean;
+  canReset: boolean;
   onUnlock: (p: Participant) => void;
+  onReset: (p: Participant) => void;
 }) {
   const a = p.attempt;
   return (
@@ -167,11 +172,23 @@ function ParticipantRow({
         )}
       </td>
       <td className={`${td} whitespace-nowrap text-right`}>
-        {canUnlock && a?.status === 'LOCKED' && (
-          <Button size="sm" variant="outline" onClick={() => onUnlock(p)}>
-            <Unlock /> Unlock
-          </Button>
-        )}
+        <div className="flex justify-end gap-1.5">
+          {canUnlock && a?.status === 'LOCKED' && (
+            <Button size="sm" variant="outline" onClick={() => onUnlock(p)}>
+              <Unlock /> Unlock
+            </Button>
+          )}
+          {canReset && a && (
+            <Button
+              size="sm"
+              variant="outline"
+              title="Hapus sesi — siswa bisa mengulang ujian dari awal"
+              onClick={() => onReset(p)}
+            >
+              <RotateCcw /> Reset
+            </Button>
+          )}
+        </div>
       </td>
     </tr>
   );
@@ -195,6 +212,7 @@ export function ExamProctoringPage({
   const me = useAuthStore((s) => s.user);
   const canUnlock =
     me?.permissions.includes('exam_proctor.unlock') ?? false;
+  const canReset = me?.permissions.includes('exam.manage') ?? false;
   const catsQ = useContentCategories();
 
   const overviewQ = useQuery({
@@ -207,6 +225,7 @@ export function ExamProctoringPage({
   });
 
   const [unlockTarget, setUnlockTarget] = useState<Participant | null>(null);
+  const [resetTarget, setResetTarget] = useState<Participant | null>(null);
   const [reason, setReason] = useState('');
 
   // Filter peserta — client-side, tidak mengubah data backend.
@@ -231,6 +250,19 @@ export function ExamProctoringPage({
       setReason('');
     },
     onError: (e) => toast.error(err(e, 'Gagal membuka attempt.')),
+  });
+
+  // Reset sesi — hapus attempt siswa supaya bisa mengerjakan ulang dari awal.
+  const resetM = useMutation({
+    mutationFn: () =>
+      apiFetch(`/exam-attempts/${resetTarget!.attempt!.id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      toast.success('Sesi pengerjaan dihapus — siswa bisa mengulang ujian dari awal.');
+      qc.invalidateQueries({ queryKey: ['exam-proctoring-overview', examId] });
+      qc.invalidateQueries({ queryKey: ['exams'] });
+      setResetTarget(null);
+    },
+    onError: (e) => toast.error(err(e, 'Gagal menghapus sesi.')),
   });
 
   if (overviewQ.isLoading) {
@@ -484,7 +516,9 @@ export function ExamProctoringPage({
                   p={r.p}
                   groupName={r.groupName}
                   canUnlock={canUnlock}
+                  canReset={canReset}
                   onUnlock={setUnlockTarget}
+                  onReset={setResetTarget}
                 />
               ))}
             </tbody>
@@ -530,6 +564,35 @@ export function ExamProctoringPage({
               onClick={() => unlockM.mutate()}
             >
               {unlockM.isPending ? 'Memproses...' : 'Unlock'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!resetTarget}
+        onOpenChange={(open) => {
+          if (!open) setResetTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset sesi pengerjaan?</DialogTitle>
+            <DialogDescription>
+              {resetTarget &&
+                `Sesi ${resetTarget.name} untuk ujian "${exam.title}" akan dihapus permanen — jawaban & nilai sesi ini hilang, lalu siswa bisa mengerjakan ulang dari awal.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetTarget(null)}>
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={resetM.isPending}
+              onClick={() => resetM.mutate()}
+            >
+              {resetM.isPending ? 'Menghapus...' : 'Ya, hapus sesi'}
             </Button>
           </DialogFooter>
         </DialogContent>

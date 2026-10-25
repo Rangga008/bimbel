@@ -166,8 +166,10 @@ export class ExamsService {
             points: dto.points?.[i],
             subtesIdx: null,
           }));
+    // Ujian boleh dibuat/draft tanpa soal — soal ditambahkan kemudian dari
+    // halaman detail. Kewajiban ≥1 soal ditegakkan saat publish.
     if (!effective.length) {
-      throw new BadRequestException('Ujian minimal berisi 1 soal.');
+      return { items: [], maxScore: 0 };
     }
     const qids = [...new Set(effective.map((i) => i.questionId))];
     const found = await this.prisma.question.findMany({
@@ -225,18 +227,20 @@ export class ExamsService {
     });
     if (dto.items) {
       await tx.examItem.deleteMany({ where: { examId } });
-      await tx.examItem.createMany({
-        data: dto.items.map((it) => ({
-          examId,
-          questionId: it.questionId,
-          sortOrder: it.sortOrder,
-          points: it.points,
-          subtesId:
-            it.subtesIdx !== null && it.subtesIdx !== undefined
-              ? subtesRows[it.subtesIdx]?.id ?? null
-              : null,
-        })),
-      });
+      if (dto.items.length) {
+        await tx.examItem.createMany({
+          data: dto.items.map((it) => ({
+            examId,
+            questionId: it.questionId,
+            sortOrder: it.sortOrder,
+            points: it.points,
+            subtesId:
+              it.subtesIdx !== null && it.subtesIdx !== undefined
+                ? subtesRows[it.subtesIdx]?.id ?? null
+                : null,
+          })),
+        });
+      }
       if (dto.maxScore !== undefined) {
         await tx.exam.update({ where: { id: examId }, data: { maxScore: dto.maxScore } });
       }
@@ -418,12 +422,28 @@ export class ExamsService {
 
     // Item/subtes/kelompok diubah → tulis ulang struktur dalam transaksi.
     const structureChanged = !!(dto.questionIds || dto.items || dto.subtes || dto.groupIds);
-    if (structureChanged) {
-      const prep =
-        dto.questionIds || dto.items
-          ? await this.prepareItems(dto)
-          : { items: undefined, maxScore: undefined };
+    const prep =
+      structureChanged && (dto.questionIds || dto.items)
+        ? await this.prepareItems(dto)
+        : { items: undefined, maxScore: undefined };
 
+    // Transisi DRAFT → PUBLISHED via PATCH harus lolos syarat yang sama
+    // dengan aksi publish: ≥1 soal dan jadwal belum lewat.
+    if (dto.status === 'PUBLISHED' && exam.status !== 'PUBLISHED') {
+      const end = dto.scheduledEndAt ? new Date(dto.scheduledEndAt) : exam.scheduledEndAt;
+      if (end <= new Date()) {
+        throw new BadRequestException(
+          'Waktu selesai ujian sudah lewat — atur ulang jadwal dulu.',
+        );
+      }
+      const itemCount =
+        prep.items?.length ?? (await this.prisma.examItem.count({ where: { examId: id } }));
+      if (itemCount === 0) {
+        throw new BadRequestException('Ujian belum memiliki soal — tambahkan soal dulu.');
+      }
+    }
+
+    if (structureChanged) {
       return this.prisma.$transaction(async (tx) => {
         await this.replaceStructure(tx, id, {
           items: prep.items,

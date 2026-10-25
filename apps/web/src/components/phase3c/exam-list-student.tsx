@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { KeyRound, Layers, Search } from 'lucide-react';
@@ -11,10 +11,14 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
-import { CategoryChips } from '@/components/shared/category-chips';
-import { useContentCategories } from '@/components/shared/content-drilldown';
-import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
-import { categoryLabel } from '@/lib/content-taxonomy';
+import {
+  ContentDrilldown,
+  DrillBreadcrumb,
+  useContentCategories,
+  useContentLevels,
+  useDrillState,
+} from '@/components/shared/content-drilldown';
+import { applyDrill, categoryLabel, drillDone } from '@/lib/content-taxonomy';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { ExamAttempt, ExamRow, ExamStatus } from '@/lib/phase3c-types';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -52,8 +56,8 @@ export function ExamListStudent() {
   const attemptUrl = (attemptId: string) => `/siswa/ujian/${attemptId}`;
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
-  const [subjectFilter, setSubjectFilter] = useState('');
-  const [catFilter, setCatFilter] = useState('');
+  // Drill kartu seperti materi/latsol — Tingkat → Jenjang → Mapel → Tipe.
+  const [drill, setDrill] = useDrillState();
   const [accessCode, setAccessCode] = useState('');
 
   const dataQ = useQuery({
@@ -62,6 +66,7 @@ export function ExamListStudent() {
   });
 
   const catsQ = useContentCategories();
+  const levelsQ = useContentLevels();
 
   const [startTarget, setStartTarget] = useState<ExamRow | null>(null);
 
@@ -175,48 +180,17 @@ export function ExamListStudent() {
     (exam) => exam.status === 'PUBLISHED' || (exam.status === 'ENDED' && myAttempts[exam.id]),
   );
 
-  // Opsi filter diturunkan dari ujian yang benar-benar tersedia untuk
-  // siswa ini — hanya mapel/tipe yang memang ada, jadi langsung menjurus.
-  const subjectOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const e of visibleExams) {
-      if (e.subject) map.set(e.subject.id, e.subject.name);
-      // Ujian multi-subtes: tiap subtes ber-mapel sendiri.
-      for (const s of e.subtes ?? []) {
-        if (s.subject) map.set(s.subject.id, s.subject.name);
-      }
-    }
-    return [...map.entries()]
-      .map(([value, label]) => ({ value, label }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [visibleExams]);
+  // Drill seperti materi/latsol — bucket kosong disembunyikan oleh
+  // ContentDrilldown(hideEmpty); pencarian mem-bypass drill supaya semua
+  // ujian yang cocok langsung tampil.
+  const levels = levelsQ.data;
+  const done = drillDone(drill) || !!debouncedSearch;
 
-  const typeOptions = useMemo(() => {
-    const codes = [...new Set(visibleExams.map((e) => e.category).filter((c): c is string => !!c))];
-    return codes
-      .map((c) => ({
-        value: c,
-        label: categoryLabel(c, catsQ.data),
-        count: visibleExams.filter((e) => e.category === c).length,
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [visibleExams, catsQ.data]);
-
-  const list = visibleExams.filter((e) => {
-    if (subjectFilter) {
-      const matchSubject =
-        e.subject?.id === subjectFilter ||
-        (e.subtes ?? []).some((s) => s.subject?.id === subjectFilter);
-      if (!matchSubject) return false;
-    }
-    if (catFilter && e.category !== catFilter) return false;
-    if (
-      debouncedSearch &&
-      !e.title.toLowerCase().includes(debouncedSearch.toLowerCase())
-    )
-      return false;
-    return true;
-  });
+  const list = applyDrill(visibleExams, drill, levels).filter(
+    (e) =>
+      !debouncedSearch ||
+      e.title.toLowerCase().includes(debouncedSearch.toLowerCase()),
+  );
 
   const startExam = (examId: string) => {
     qc.invalidateQueries({ queryKey: ['exams-with-my-attempts'] });
@@ -274,28 +248,32 @@ export function ExamListStudent() {
         </CardContent>
       </Card>
 
-      {/* Pengkategorian — chips tipe (hanya tipe yang ada ujiannya) +
-          filter mapel langsung; tidak perlu drill jenjang. */}
-      {typeOptions.length > 0 ? (
-        <CategoryChips
-          options={typeOptions}
-          value={catFilter}
-          onChange={setCatFilter}
-          total={visibleExams.length}
+      {/* Pengkategorian — drill kartu seperti materi/latsol; bucket tanpa
+          ujian (termasuk "Lainnya" kosong) disembunyikan. */}
+      {!done ? (
+        <ContentDrilldown
+          items={visibleExams}
+          levels={levels}
+          categories={catsQ.data}
+          value={drill}
+          onChange={setDrill}
+          itemNoun="Ujian"
+          loading={levelsQ.isLoading}
+          hideEmpty
         />
-      ) : null}
+      ) : (
+      <>
+      {!debouncedSearch && (
+        <DrillBreadcrumb
+          items={visibleExams}
+          levels={levels}
+          categories={catsQ.data}
+          value={drill}
+          onChange={setDrill}
+        />
+      )}
 
       <div className="flex flex-wrap items-end gap-3">
-        <div className="w-full sm:w-44">
-          <Phase1aSelectField
-            id="ex-subject"
-            label="Mapel"
-            value={subjectFilter}
-            onChange={setSubjectFilter}
-            options={subjectOptions}
-            placeholder="Semua mapel"
-          />
-        </div>
         <div className="relative w-full sm:w-56">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -407,6 +385,8 @@ export function ExamListStudent() {
           );
         })}
       </div>
+      </>
+      )}
 
       {visibleExams.length === 0 && (
         <Card>

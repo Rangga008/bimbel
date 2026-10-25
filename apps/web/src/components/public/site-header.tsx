@@ -188,7 +188,7 @@ export function SiteHeader() {
 									}
 								>
 									<span className="block rounded-lg border px-3 py-2.5 text-center text-sm font-medium">
-										Info &amp; Pendaftaran (Formulir)
+										Buku Tamu
 									</span>
 								</SheetClose>
 								<SheetClose render={<Link href="/daftar" />}>

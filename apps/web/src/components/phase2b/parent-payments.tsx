@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { CheckCircle2, Circle, Clock, Hourglass } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,16 +12,92 @@ import { FormField, SubmitButton } from '@/components/shared/form-field';
 import { apiFetch } from '@/lib/api-client';
 import { rupiah } from '@/components/phase2a/invoices-manager';
 import type { PaymentAccount, PaymentListItem, ReceiptItem } from '@/lib/phase2b-types';
-import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
 import { err2b } from '@/components/phase2b/payment-shared';
 import { PrintReceiptButton } from '@/components/phase2b/receipt-print';
-import { sisaInv, useMeInvoices, type ChildInvoiceRow } from '@/components/phase2b/proofs-manager';
+import type { ChildInvoiceRow } from '@/components/phase2b/proofs-manager';
 
-/** Fase 2b — Halaman "Pembayaran" (Orang Tua): invoice anak + upload bukti + gateway. */
+/** Satu baris angsuran pada timeline — invoice terbit atau rencana billingPlan. */
+interface InstallmentRow {
+  no: number;
+  label: string;
+  amount: number;
+  sisa: number;
+  dueDate: string | null;
+  state: 'PAID' | 'DUE' | 'UPCOMING' | 'VERIFYING' | 'PLANNED' | 'VOID';
+  invoice: {
+    id: string;
+    number: string;
+    totalAmount: number;
+    amountPaid: number;
+    dueDate: string | null;
+    items: { description: string }[];
+  } | null;
+  receipts: { id: string; number: string }[];
+}
+
+interface PlanEnrollment {
+  id: string;
+  status: string;
+  paymentPlan: string | null;
+  program: string;
+  level: string;
+  group: string | null;
+  total: number;
+  sisa: number;
+  installments: InstallmentRow[];
+}
+
+interface OtherInvoice {
+  id: string;
+  number: string;
+  description: string;
+  totalAmount: number;
+  amountPaid: number;
+  sisa: number;
+  dueDate: string | null;
+  state: InstallmentRow['state'];
+  receipts: { id: string; number: string }[];
+}
+
+interface ChildPlan {
+  studentId: string;
+  name: string;
+  /** Tagihan yang bisa dibayar sekarang (jatuh tempo ≤ akhir bulan ini). */
+  dueNow: number;
+  /** Total sisa semua tagihan yang belum lunas. */
+  totalDue: number;
+  enrollments: PlanEnrollment[];
+  otherInvoices: OtherInvoice[];
+}
+
+const fmtDate = (d: string | null | undefined) =>
+  d ? new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+
+const STATE_META: Record<
+  InstallmentRow['state'],
+  { text: string; cls: string; icon: 'check' | 'due' | 'clock' | 'plain' }
+> = {
+  PAID: { text: 'Lunas', cls: 'border-emerald-300 bg-emerald-50/60 dark:bg-emerald-950/20', icon: 'check' },
+  VERIFYING: { text: 'Menunggu verifikasi', cls: 'border-sky-300 bg-sky-50/60 dark:bg-sky-950/20', icon: 'clock' },
+  DUE: { text: 'Jatuh Tempo', cls: 'border-amber-400 bg-amber-50/60 dark:bg-amber-950/20', icon: 'due' },
+  UPCOMING: { text: 'Belum Jatuh Tempo', cls: '', icon: 'plain' },
+  PLANNED: { text: 'Belum Terbit', cls: '', icon: 'plain' },
+  VOID: { text: 'Dibatalkan', cls: 'opacity-60', icon: 'plain' },
+};
+
+function StateIcon({ icon }: { icon: 'check' | 'due' | 'clock' | 'plain' }) {
+  if (icon === 'check') return <CheckCircle2 className="size-5 text-emerald-500" />;
+  if (icon === 'due') return <Clock className="size-5 text-amber-500" />;
+  if (icon === 'clock') return <Hourglass className="size-5 text-sky-500" />;
+  return <Circle className="size-5 text-muted-foreground/40" />;
+}
+
+/** Fase 2b — Halaman "Pembayaran" (Orang Tua): pilih anak → timeline
+ *  angsuran → checkout (metode → bayar) → riwayat & kwitansi per anak. */
 export function ParentPayments() {
   const qc = useQueryClient();
   const [childId, setChildId] = useState('');
-  /** Invoice yang sedang di-checkout — null = langkah 1 (pilih tagihan). */
+  /** Invoice yang sedang di-checkout — null = daftar angsuran. */
   const [checkout, setCheckout] = useState<ChildInvoiceRow | null>(null);
   /** Langkah checkout: 2 = pilih metode, 3 = pembayaran. */
   const [step, setStep] = useState<2 | 3>(2);
@@ -28,12 +105,14 @@ export function ParentPayments() {
   const [amount, setAmount] = useState('');
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofNote, setProofNote] = useState('');
-  const [invSearch, setInvSearch] = useState('');
   const [histSearch, setHistSearch] = useState('');
   const [histStatus, setHistStatus] = useState('');
   const [histChannel, setHistChannel] = useState('');
   const [accountId, setAccountId] = useState('');
-  const invQ = useMeInvoices(childId);
+  const planQ = useQuery({
+    queryKey: ['me-payment-plan'],
+    queryFn: () => apiFetch<ChildPlan[]>('/me/payment-plan'),
+  });
   // Rekening tujuan transfer — ditampilkan ke ortu saat memilih metode manual.
   const accountsQ = useQuery({
     queryKey: ['me-payment-accounts'],
@@ -41,9 +120,6 @@ export function ParentPayments() {
     staleTime: 5 * 60 * 1000,
   });
   const payAccounts = accountsQ.data ?? [];
-  // Opsi filter anak harus dari daftar LENGKAP (tanpa filter) — kalau ikut
-  // invQ yang terfilter, setelah pilih satu anak opsi anak lain hilang.
-  const allInvQ = useMeInvoices('');
   const mineQ = useQuery({
     queryKey: ['me-payments'],
     queryFn: () => apiFetch<PaymentListItem[]>('/me/payments'),
@@ -52,6 +128,8 @@ export function ParentPayments() {
     queryKey: ['me-receipts'],
     queryFn: () => apiFetch<ReceiptItem[]>('/me/receipts'),
   });
+  const children = planQ.data ?? [];
+  const child = children.find((c) => c.studentId === childId) ?? null;
   const resetCheckout = () => {
     setCheckout(null);
     setStep(2);
@@ -61,15 +139,9 @@ export function ParentPayments() {
     setProofNote('');
     setAccountId('');
   };
-  // Ganti filter anak → batalkan checkout invoice anak sebelumnya supaya
-  // bukti/nominal tidak nyangkut ke invoice yang salah.
-  useEffect(() => {
-    if (checkout && childId && checkout.student.id !== childId) resetCheckout();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [childId]);
   const payM = useMutation({
     mutationFn: async () => {
-      if (!checkout) throw new Error('Pilih invoice dulu.');
+      if (!checkout) throw new Error('Pilih tagihan dulu.');
       if (mode === 'MANUAL') {
         if (!proofFile) throw new Error('Pilih file bukti transfer dulu.');
         if (payAccounts.length > 0 && !accountId) {
@@ -106,6 +178,7 @@ export function ParentPayments() {
       resetCheckout();
       qc.invalidateQueries({ queryKey: ['me-payments'] });
       qc.invalidateQueries({ queryKey: ['me-invoices'] });
+      qc.invalidateQueries({ queryKey: ['me-payment-plan'] });
     },
     onError: (e) => toast.error(err2b(e, 'Gagal memproses pembayaran.')),
   });
@@ -116,6 +189,7 @@ export function ParentPayments() {
       toast.success(p.status === 'VERIFIED' ? 'Pembayaran gateway berhasil (simulasi) — kwitansi terbit.' : `Simulasi ${p.status}.`);
       qc.invalidateQueries({ queryKey: ['me-payments'] });
       qc.invalidateQueries({ queryKey: ['me-invoices'] });
+      qc.invalidateQueries({ queryKey: ['me-payment-plan'] });
       qc.invalidateQueries({ queryKey: ['me-receipts'] });
     },
     onError: (e) => toast.error(err2b(e, 'Simulasi gateway gagal.')),
@@ -130,6 +204,7 @@ export function ParentPayments() {
       else if (p.status === 'REJECTED') toast.info(`Pembayaran ${p.rejectReason ?? 'ditolak/kedaluwarsa'}.`);
       qc.invalidateQueries({ queryKey: ['me-payments'] });
       qc.invalidateQueries({ queryKey: ['me-invoices'] });
+      qc.invalidateQueries({ queryKey: ['me-payment-plan'] });
       qc.invalidateQueries({ queryKey: ['me-receipts'] });
     },
     onError: (e) => toast.error(err2b(e, 'Gagal memeriksa status pembayaran.')),
@@ -149,32 +224,48 @@ export function ParentPayments() {
     const onFocus = () => {
       autoChecked.current.clear(); // izinkan cek ulang saat kembali dari Snap
       mineQ.refetch();
+      planQ.refetch();
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const children = [...new Map((allInvQ.data ?? []).map((i) => [i.student.id, i.student])).values()];
 
-  /** Label program/tagihan invoice untuk pencarian. */
-  const invProgramText = (inv: ChildInvoiceRow) => {
-    const enr = inv.enrollmentLink ?? inv.enrollment;
-    return enr
-      ? [enr.program?.name, enr.level?.name, enr.group?.name].filter(Boolean).join(' · ')
-      : (inv.package?.name ?? inv.items?.[0]?.description ?? 'Tagihan');
+  /** Bangun objek invoice untuk alur checkout dari baris angsuran. */
+  const startCheckout = (
+    c: ChildPlan,
+    inv: InstallmentRow['invoice'],
+    enr?: PlanEnrollment,
+  ) => {
+    if (!inv) return;
+    setCheckout({
+      id: inv.id,
+      number: inv.number,
+      totalAmount: inv.totalAmount,
+      amountPaid: inv.amountPaid,
+      dueDate: inv.dueDate,
+      student: { id: c.studentId, user: { name: c.name } },
+      package: null,
+      enrollmentLink: enr
+        ? {
+            program: { name: enr.program },
+            level: { name: enr.level },
+            group: enr.group ? { name: enr.group } : null,
+          }
+        : null,
+      enrollment: null,
+      items: inv.items,
+    } as ChildInvoiceRow);
+    setAmount(String(inv.totalAmount - inv.amountPaid));
+    setStep(2);
+    setMode(null);
   };
-  // Tagihan terfilter pencarian (nomor / program / nama anak).
-  const visibleInvoices = (invQ.data ?? []).filter((inv) => {
-    if (!invSearch.trim()) return true;
-    const q = invSearch.trim().toLowerCase();
-    return (
-      inv.number.toLowerCase().includes(q) ||
-      inv.student.user.name.toLowerCase().includes(q) ||
-      invProgramText(inv).toLowerCase().includes(q)
-    );
-  });
-  // Riwayat terfilter pencarian + status + metode.
+
+  // Riwayat & kwitansi difilter ke anak yang sedang dibuka.
+  const paymentChildId = (p: PaymentListItem) =>
+    p.studentId ?? p.allocations?.[0]?.invoice?.student?.id ?? null;
   const visiblePayments = (mineQ.data ?? []).filter((p) => {
+    if (childId && paymentChildId(p) !== childId) return false;
     if (histStatus && p.status !== histStatus) return false;
     if (histChannel && p.channel !== histChannel) return false;
     if (!histSearch.trim()) return true;
@@ -185,6 +276,10 @@ export function ParentPayments() {
       (p.method ?? '').toLowerCase().includes(q)
     );
   });
+  const visibleReceipts = (rcpQ.data ?? []).filter(
+    (r) => !childId || r.studentId === childId,
+  );
+
   const th = 'px-3 py-2 text-left font-medium whitespace-nowrap';
   const thR = 'px-3 py-2 text-right font-medium whitespace-nowrap';
   const td = 'px-3 py-2 align-top';
@@ -197,22 +292,192 @@ export function ParentPayments() {
     <div className="flex flex-col gap-5">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Pembayaran</h1>
-        <p className="text-sm text-muted-foreground">Pilih tagihan → pilih metode → selesaikan pembayaran. Tunai/cash dibayar langsung di kantor oleh admin.</p>
+        <p className="text-sm text-muted-foreground">
+          Pilih anak → lihat angsuran → bayar. Tunai/cash dibayar langsung di kantor oleh admin.
+        </p>
       </div>
-      {children.length > 1 && !checkout ? (
-        <Phase1aSelectField id="pay-child" label="Filter anak" value={childId} onChange={setChildId}
-          options={children.map((c) => ({ value: c.id, label: c.user.name }))} placeholder="Semua anak" />
-      ) : null}
-      {!checkout && (invQ.data?.length ?? 0) > 0 ? (
-        <Input
-          className="w-full sm:w-72"
-          placeholder="Cari nomor / program / nama anak…"
-          value={invSearch}
-          onChange={(e) => setInvSearch(e.target.value)}
-        />
+
+      {/* Langkah 1 — pilih anak */}
+      {!childId && !checkout ? (
+        planQ.isLoading ? (
+          <Skeleton className="h-24 w-full" />
+        ) : children.length > 0 ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {children.map((c) => (
+              <button
+                key={c.studentId}
+                type="button"
+                onClick={() => setChildId(c.studentId)}
+                className="group rounded-xl border bg-card p-4 text-left transition-colors hover:border-primary/50 hover:bg-accent/40"
+              >
+                <p className="font-medium">{c.name}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {c.dueNow > 0
+                    ? `Tagihan bulan ini: ${rupiah(c.dueNow)}`
+                    : c.totalDue > 0
+                      ? `Sisa tagihan: ${rupiah(c.totalDue)}`
+                      : 'Tidak ada tagihan aktif'}
+                </p>
+                {c.dueNow > 0 ? (
+                  <Badge variant="destructive" className="mt-2">Perlu dibayar</Badge>
+                ) : c.totalDue > 0 ? (
+                  <Badge variant="outline" className="mt-2">Cicilan berjalan</Badge>
+                ) : (
+                  <Badge variant="secondary" className="mt-2">Lunas</Badge>
+                )}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Belum ada anak yang tertaut ke akun ini.</CardContent></Card>
+        )
       ) : null}
 
-      {/* Indikator langkah ala e-commerce */}
+      {/* Langkah 2 — detail anak: total + timeline angsuran */}
+      {child && !checkout ? (
+        <div className="flex flex-col gap-5">
+          <Button variant="outline" size="sm" className="w-fit" onClick={() => setChildId('')}>
+            Kembali
+          </Button>
+
+          <Card>
+            <CardContent className="py-6 text-center">
+              <p className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">
+                Tagihan bulan ini
+              </p>
+              <p className="mt-1 text-3xl font-bold tabular-nums">{rupiah(child.dueNow)}</p>
+              {child.totalDue > child.dueNow ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Total sisa semua cicilan: {rupiah(child.totalDue)}
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          {child.enrollments.map((enr) => {
+            const firstDue = enr.installments.find((x) => x.invoice && (x.state === 'DUE' || x.state === 'UPCOMING'));
+            return (
+              <Card key={enr.id}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">
+                    {enr.program} · {enr.level}
+                    {enr.group ? ` · ${enr.group}` : ''}
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    {enr.paymentPlan === 'FULL'
+                      ? 'Tunai (lunas di awal)'
+                      : enr.paymentPlan === 'TWO_TIMES'
+                        ? 'Angsuran 2x'
+                        : enr.paymentPlan === 'MONTHLY'
+                          ? `Angsuran bulanan — ${enr.installments.length}x`
+                          : 'Tagihan pendaftaran'}
+                  </p>
+                </CardHeader>
+                <CardContent className="grid gap-0">
+                  {enr.installments.map((inst) => {
+                    if (inst.state === 'VOID') return null;
+                    const meta = STATE_META[inst.state];
+                    return (
+                      <div
+                        key={inst.no}
+                        className={`flex items-center gap-3 border-l-2 py-2 pl-4 ${inst.state === 'PAID' ? 'border-emerald-400' : inst.state === 'DUE' || inst.state === 'VERIFYING' ? 'border-amber-400' : 'border-muted'}`}
+                      >
+                        <StateIcon icon={meta.icon} />
+                        <div className={`flex-1 rounded-lg border px-3 py-2.5 ${meta.cls}`}>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">
+                                Angsuran {inst.no} — {meta.text}
+                                {inst.sisa > 0.009 ? ` (${rupiah(inst.sisa)})` : ` (${rupiah(inst.amount)})`}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {inst.invoice?.number ? `${inst.invoice.number} · ` : ''}
+                                Jatuh tempo {fmtDate(inst.dueDate)}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {inst.state === 'PAID'
+                                ? inst.receipts.map((r) => (
+                                    <PrintReceiptButton key={r.id} receiptId={r.id} detailBase="/me/receipts" />
+                                  ))
+                                : null}
+                              {inst.invoice && (inst.state === 'DUE' || inst.state === 'UPCOMING') ? (
+                                <Button size="sm" onClick={() => startCheckout(child, inst.invoice, enr)}>
+                                  Bayar
+                                </Button>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {firstDue ? (
+                    <div className="mt-3 flex justify-end">
+                      <Button onClick={() => startCheckout(child, firstDue.invoice, enr)}>
+                        Bayar {rupiah(firstDue.sisa)}
+                      </Button>
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+            );
+          })}
+
+          {child.otherInvoices.length > 0 ? (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Tagihan lainnya</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-0">
+                {child.otherInvoices.map((inv) => {
+                  const meta = STATE_META[inv.state];
+                  return (
+                    <div key={inv.id} className="flex items-center gap-3 border-l-2 border-muted py-2 pl-4">
+                      <StateIcon icon={meta.icon} />
+                      <div className={`flex-1 rounded-lg border px-3 py-2.5 ${meta.cls}`}>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium">
+                              {inv.description} — {meta.text} ({rupiah(inv.sisa)})
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {inv.number} · Jatuh tempo {fmtDate(inv.dueDate)}
+                            </p>
+                          </div>
+                          {(inv.state === 'DUE' || inv.state === 'UPCOMING') ? (
+                            <Button
+                              size="sm"
+                              onClick={() =>
+                                startCheckout(child, {
+                                  id: inv.id,
+                                  number: inv.number,
+                                  totalAmount: inv.totalAmount,
+                                  amountPaid: inv.amountPaid,
+                                  dueDate: inv.dueDate,
+                                  items: [{ description: inv.description }],
+                                })
+                              }
+                            >
+                              Bayar
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {child.enrollments.length === 0 && child.otherInvoices.length === 0 ? (
+            <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Tidak ada tagihan untuk {child.name}.</CardContent></Card>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Indikator langkah checkout */}
       {checkout ? (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <button type="button" className="font-medium text-primary hover:underline" onClick={resetCheckout}>1. Pilih Tagihan</button>
@@ -229,71 +494,6 @@ export function ParentPayments() {
         </div>
       ) : null}
 
-      {invQ.isLoading ? <Skeleton className="h-24 w-full" /> : null}
-      {invQ.data?.length === 0 && !checkout ? (
-        <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Tidak ada tagihan aktif. Semua lunas.</CardContent></Card>
-      ) : null}
-      {(invQ.data?.length ?? 0) > 0 && visibleInvoices.length === 0 && !checkout ? (
-        <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Tidak ada tagihan yang cocok dengan pencarian.</CardContent></Card>
-      ) : null}
-
-      {/* Langkah 1 — pilih tagihan */}
-      {!checkout && visibleInvoices.length > 0 ? (
-        <div className="overflow-x-auto rounded-md border">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead>
-              <tr className="border-b bg-muted/50">
-                <th className={th}>Invoice</th>
-                <th className={th}>Anak / Program</th>
-                <th className={th}>Jatuh Tempo</th>
-                <th className={thR}>Sisa Tagihan</th>
-                <th className={th}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleInvoices.map((inv) => {
-                const enr = inv.enrollmentLink ?? inv.enrollment;
-                const program = enr
-                  ? [enr.program?.name, enr.level?.name, enr.group?.name].filter(Boolean).join(' · ')
-                  : (inv.package?.name ?? inv.items?.[0]?.description ?? 'Tagihan');
-                const sisa = sisaInv(inv);
-                const overdue = sisa > 0.009 && inv.dueDate ? new Date(inv.dueDate) < new Date(new Date().toDateString()) : false;
-                return (
-                  <tr key={inv.id} className="border-b last:border-0">
-                    <td className={`${td} font-medium whitespace-nowrap`}>{inv.number}</td>
-                    <td className={td}>
-                      <p className="font-medium whitespace-nowrap">{inv.student.user.name}</p>
-                      <p className="text-xs text-muted-foreground">{program}</p>
-                    </td>
-                    <td className={`${td} whitespace-nowrap`}>
-                      {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('id-ID') : '—'}
-                      {overdue ? <Badge variant="destructive" className="ml-1.5">Jatuh tempo</Badge> : null}
-                    </td>
-                    <td className={`${tdR} font-medium tabular-nums whitespace-nowrap`}>
-                      {rupiah(sisa)}
-                      <p className="text-xs font-normal text-muted-foreground">dari {rupiah(inv.totalAmount)}</p>
-                    </td>
-                    <td className={`${td} text-right`}>
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          setCheckout(inv);
-                          setStep(2);
-                          setMode(null);
-                          setAmount(String(sisaInv(inv)));
-                        }}
-                      >
-                        Bayar
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-
       {/* Langkah 2 — pilih metode */}
       {checkout && step === 2 ? (
         <Card>
@@ -302,7 +502,10 @@ export function ParentPayments() {
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <p className="text-sm text-muted-foreground">
-              {checkout.student.user.name} · Sisa tagihan <span className="font-semibold text-foreground">{rupiah(sisaInv(checkout))}</span>
+              {checkout.student.user.name} · Sisa tagihan{' '}
+              <span className="font-semibold text-foreground">
+                {rupiah(Number(checkout.totalAmount) - Number(checkout.amountPaid))}
+              </span>
             </p>
             <div className="grid gap-2 sm:grid-cols-2">
               {(['MANUAL', 'GATEWAY'] as const).map((m) => (
@@ -348,13 +551,13 @@ export function ParentPayments() {
                 <p className="font-medium">{checkout.number}</p>
                 <p className="text-xs text-muted-foreground">
                   {checkout.student.user.name}
-                  {(checkout.enrollmentLink ?? checkout.enrollment)
-                    ? ` · ${[(checkout.enrollmentLink ?? checkout.enrollment)!.program?.name, (checkout.enrollmentLink ?? checkout.enrollment)!.level?.name].filter(Boolean).join(' · ')}`
+                  {checkout.enrollmentLink
+                    ? ` · ${[checkout.enrollmentLink.program?.name, checkout.enrollmentLink.level?.name].filter(Boolean).join(' · ')}`
                     : checkout.package?.name ? ` · ${checkout.package.name}` : ''}
                 </p>
               </div>
-              <FormField htmlFor="pay-amount" label="Nominal yang dibayar (Rp)" required hint={`Sisa tagihan ${rupiah(sisaInv(checkout))} — bisa bayar sebagian (angsuran).`}>
-                <Input id="pay-amount" type="number" min={1000} max={sisaInv(checkout)} required value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <FormField htmlFor="pay-amount" label="Nominal yang dibayar (Rp)" required hint={`Sisa tagihan ${rupiah(Number(checkout.totalAmount) - Number(checkout.amountPaid))} — bisa bayar sebagian (angsuran).`}>
+                <Input id="pay-amount" type="number" min={1000} max={Number(checkout.totalAmount) - Number(checkout.amountPaid)} required value={amount} onChange={(e) => setAmount(e.target.value)} />
               </FormField>
               {mode === 'MANUAL' ? (
                 <>
@@ -443,7 +646,13 @@ export function ParentPayments() {
           </CardContent>
         </Card>
       ) : null}
-      <h2 className="text-lg font-medium">Riwayat saya</h2>
+
+      {/* Riwayat & kwitansi — hanya di daftar anak. Detail anak sudah
+          menampilkan timeline angsuran + cetak kwitansi per baris, jadi
+          tabel di bawah tidak perlu diulang. */}
+      {!child ? (
+        <>
+      <h2 className="text-lg font-medium">Riwayat Pembayaran</h2>
       {(mineQ.data?.length ?? 0) > 0 ? (
         <div className="flex flex-wrap gap-2">
           <Input
@@ -541,7 +750,7 @@ export function ParentPayments() {
         </p>
       )}
       <h2 className="text-lg font-medium">Kwitansi</h2>
-      {(rcpQ.data?.length ?? 0) > 0 ? (
+      {visibleReceipts.length > 0 ? (
         <div className="overflow-x-auto rounded-md border">
           <table className="w-full min-w-[720px] text-sm">
             <thead>
@@ -554,7 +763,7 @@ export function ParentPayments() {
               </tr>
             </thead>
             <tbody>
-              {rcpQ.data?.map((r) => (
+              {visibleReceipts.map((r) => (
                 <tr key={r.id} className="border-b last:border-0">
                   <td className={`${td} font-medium whitespace-nowrap`}>{r.number}</td>
                   <td className={`${td} whitespace-nowrap`}>{r.method}</td>
@@ -573,6 +782,8 @@ export function ParentPayments() {
       ) : (
         <p className="text-sm text-muted-foreground">Belum ada kwitansi.</p>
       )}
+        </>
+      ) : null}
     </div>
   );
 }

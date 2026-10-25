@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ChevronLeft, ChevronRight, LayoutGrid, Maximize } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, Maximize } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -322,6 +322,8 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
 
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  // Panel navigasi subtes di top bar (gaya GO) — status tiap subtes + aksi mulai.
+  const [subtesNavOpen, setSubtesNavOpen] = useState(false);
 
   const submitExam = () => {
     if (!attempt || attempt.status !== 'IN_PROGRESS') return;
@@ -477,6 +479,52 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
   const showFsGate =
     isInProgress && proctoringOn && !proctoring.isFullscreen && !fsDismissed && item;
 
+  // Baris status tiap subtes — dipakai di lobi dan panel navigasi top bar.
+  const subtesRows = subtesList.map((s, idx) => {
+    const st = subtesStates.find((x) => x.subtesId === s.id);
+    const done = !!st?.submittedAt;
+    const running = s.id === activeSubtesId;
+    const count = attempt.items.filter((it) => it.subtesId === s.id).length;
+    const canStart = s.id === nextSubtesId && !activeSubtesId;
+    return (
+      <div
+        key={s.id}
+        className={`flex items-center gap-3 rounded-lg border p-3 ${
+          done ? 'opacity-60' : running || canStart ? 'border-primary/50 bg-primary/5' : ''
+        }`}
+      >
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">
+          {idx + 1}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{s.name}</p>
+          <p className="text-xs text-muted-foreground">
+            {count} soal · {s.durationMinutes} menit
+          </p>
+        </div>
+        {done ? (
+          <Badge variant="secondary" className="shrink-0">Selesai</Badge>
+        ) : running ? (
+          <Badge variant="default" className="shrink-0">Berjalan</Badge>
+        ) : canStart ? (
+          <Button
+            size="sm"
+            className="shrink-0"
+            disabled={subtesBusy}
+            onClick={() => {
+              setSubtesNavOpen(false);
+              doStartSubtes(s.id);
+            }}
+          >
+            {subtesBusy ? 'Memulai…' : 'Mulai Subtes'}
+          </Button>
+        ) : (
+          <Badge variant="outline" className="shrink-0">Terkunci</Badge>
+        )}
+      </div>
+    );
+  });
+
   const questionBody = item ? (
     <Card>
       <CardHeader>
@@ -617,7 +665,9 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
               </Badge>
               {isInProgress && hasSubtes && (
                 <span className="font-medium text-primary">
-                  {activeSubtes ? `Subtes: ${activeSubtes.name}` : 'Pilih subtes'}
+                  {activeSubtes
+                    ? `Subtes ${subtesList.findIndex((s) => s.id === activeSubtesId) + 1}/${subtesList.length}: ${activeSubtes.name}`
+                    : 'Pilih subtes'}
                 </span>
               )}
               {isInProgress && (
@@ -634,6 +684,36 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
               )}
             </div>
           </div>
+          {isInProgress && hasSubtes && (
+            <button
+              type="button"
+              onClick={() => setSubtesNavOpen((v) => !v)}
+              className="flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-1 hover:bg-muted"
+              aria-expanded={subtesNavOpen}
+              title="Navigasi antar subtes"
+            >
+              {subtesList.map((s, idx) => {
+                const st = subtesStates.find((x) => x.subtesId === s.id);
+                const doneS = !!st?.submittedAt;
+                const running = s.id === activeSubtesId;
+                return (
+                  <span
+                    key={s.id}
+                    className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${
+                      doneS
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : running
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-muted-foreground'
+                    }`}
+                  >
+                    {idx + 1}
+                  </span>
+                );
+              })}
+              <ChevronDown className="size-3.5 text-muted-foreground" />
+            </button>
+          )}
           {isInProgress && activeSubtes && (
             <div
               className={`shrink-0 rounded-md px-2.5 py-1 font-mono text-sm font-bold tabular-nums ${
@@ -662,6 +742,29 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
           )}
         </div>
       </div>
+
+      {/* Panel navigasi subtes — dibuka dari chips di top bar; memberi gambaran
+          posisi (selesai/berjalan/terkunci) dan aksi mulai subtes berikutnya. */}
+      {isInProgress && hasSubtes && subtesNavOpen && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Navigasi Subtes</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {subtesRows}
+            {allSubtesDone && (
+              <Button
+                size="sm"
+                className="w-fit"
+                onClick={submitExam}
+                disabled={timeLeft <= 0 || subtesBusy}
+              >
+                Kumpulkan Ujian
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Notifikasi pelanggaran — server mengunci pada pelanggaran pertama. */}
       {isInProgress && attempt.violationCount > 0 && (
@@ -709,55 +812,18 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
               Subtes dikerjakan berurutan — subtes yang sudah dikumpulkan tidak
               bisa dibuka lagi. Waktu subtes berjalan sejak tombol Mulai ditekan.
             </p>
-            {subtesList.map((s, idx) => {
-              const st = subtesStates.find((x) => x.subtesId === s.id);
-              const done = !!st?.submittedAt;
-              const count = attempt.items.filter((it) => it.subtesId === s.id).length;
-              const canStart = s.id === nextSubtesId;
-              return (
-                <div
-                  key={s.id}
-                  className={`flex items-center gap-3 rounded-lg border p-3 ${
-                    done ? 'opacity-60' : canStart ? 'border-primary/50 bg-primary/5' : ''
-                  }`}
-                >
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">
-                    {idx + 1}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{s.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {count} soal · {s.durationMinutes} menit
-                    </p>
-                  </div>
-                  {done ? (
-                    <Badge variant="secondary" className="shrink-0">Selesai</Badge>
-                  ) : canStart ? (
-                    <Button
-                      size="sm"
-                      className="shrink-0"
-                      disabled={subtesBusy}
-                      onClick={() => doStartSubtes(s.id)}
-                    >
-                      {subtesBusy ? 'Memulai…' : 'Mulai Subtes'}
-                    </Button>
-                  ) : (
-                    <Badge variant="outline" className="shrink-0">Terkunci</Badge>
-                  )}
-                </div>
-              );
-            })}
+            {subtesRows}
             <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-dashed p-3">
               <p className="text-xs text-muted-foreground">
                 {allSubtesDone
                   ? 'Semua subtes sudah dikumpulkan — kumpulkan ujian untuk mengakhiri.'
-                  : 'Selesaikan semua subtes dulu, atau kumpulkan ujian sekarang (subtes yang belum selesai ditutup).'}
+                  : 'Ujian baru bisa dikumpulkan setelah semua subtes selesai dikerjakan.'}
               </p>
               <Button
                 size="sm"
                 variant={allSubtesDone ? 'default' : 'outline'}
                 onClick={submitExam}
-                disabled={timeLeft <= 0 || subtesBusy}
+                disabled={!allSubtesDone || timeLeft <= 0 || subtesBusy}
                 className="shrink-0"
               >
                 Kumpulkan Ujian

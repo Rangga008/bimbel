@@ -47,6 +47,19 @@ export class ParentPaymentsController {
     return this.payments.myChildrenInvoices(actor.id, studentId);
   }
 
+  /**
+   * Timeline angsuran per anak (termasuk cicilan billingPlan yang belum
+   * terbit) — dipakai tampilan Pembayaran ortu "pilih anak → angsuran".
+   */
+  @Get('me/payment-plan')
+  @RequirePermissions(PERMISSION_CODES.PAYMENT_VIEW)
+  myPaymentPlan(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Query('studentId') studentId?: string,
+  ) {
+    return this.payments.myPaymentPlan(actor.id, studentId);
+  }
+
   @Get('me/payments')
   @RequirePermissions(PERMISSION_CODES.PAYMENT_VIEW)
   myPayments(@CurrentUser() actor: AuthenticatedUser) {

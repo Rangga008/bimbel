@@ -17,7 +17,12 @@ import {
   emptyQuestionPickerFilters,
 } from '@/components/shared/question-picker';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
-import { categoryOptions } from '@/lib/content-taxonomy';
+import {
+  categoryOptions,
+  sortLevels,
+  tingkatCode,
+  type HierarchyLevel,
+} from '@/lib/content-taxonomy';
 import { useContentCategories } from '@/components/shared/content-drilldown';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { GroupListItem } from '@/lib/phase1b-types';
@@ -198,20 +203,27 @@ function QuickQuestionCreate({
   );
 }
 
-/** Form Buat/Edit Ujian — dipakai di halaman terpisah (bukan modal). */
+/** Form Buat/Edit Ujian — dipakai di halaman terpisah (bukan modal).
+ *  `withQuestions=false` (halaman Buat/Detail) menyembunyikan bagian soal.
+ *  `questionsOnly=true` (halaman Kelola Soal) menampilkan hanya bagian soal. */
 export function ExamForm({
   form,
   onChange,
   showStatus,
+  withQuestions = true,
+  questionsOnly = false,
 }: {
   form: ExamFormState;
   onChange: (form: ExamFormState) => void;
   showStatus?: boolean;
+  withQuestions?: boolean;
+  questionsOnly?: boolean;
 }) {
   const catsQ = useContentCategories();
   const groupsQ = useQuery({
     queryKey: ['groups'],
     queryFn: () => apiFetch<GroupListItem[]>('/groups'),
+    enabled: !questionsOnly,
   });
   const [allLevelsGroups, setAllLevelsGroups] = useState(false);
   // Dialog import soal — 'main' = ujian biasa, angka = indeks subtes.
@@ -276,6 +288,142 @@ export function ExamForm({
         ? form.pickerFilters
         : form.subtes[importTarget]?.pickerFilters;
 
+  // Blok alat soal per subtes — dipakai di form penuh maupun mode questionsOnly.
+  const subtesQuestionTools = (idx: number, s: ExamSubtesForm) => (
+    <>
+      <QuestionPicker
+        filters={{ ...s.pickerFilters, category: form.category }}
+        onFiltersChange={(pickerFilters) => updateSubtes(idx, { pickerFilters })}
+        selectedIds={s.questionIds}
+        onToggle={(qid) =>
+          updateSubtes(idx, {
+            questionIds: s.questionIds.includes(qid)
+              ? s.questionIds.filter((id) => id !== qid)
+              : [...s.questionIds, qid],
+          })
+        }
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        <QuickQuestionCreate
+          seed={{
+            tingkat: s.pickerFilters.tingkat,
+            programId: s.pickerFilters.programId,
+            levelId: s.pickerFilters.levelId,
+            subjectId: s.pickerFilters.subjectId,
+            category: form.category,
+          }}
+          onCreated={(qid) =>
+            updateSubtes(idx, { questionIds: [...s.questionIds, qid] })
+          }
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setImportTarget(idx)}
+        >
+          <FileUp className="mr-1 h-4 w-4" /> Import Soal (Word/Excel)
+        </Button>
+      </div>
+    </>
+  );
+
+  // Blok alat soal mode biasa (tanpa subtes).
+  const mainQuestionTools = (
+    <>
+      <QuestionPicker
+        // Tipe di picker disinkronkan dengan kategori ujian — soal yang
+        // ditawarkan selalu se-tipe dengan ujian yang dibuat.
+        filters={{ ...form.pickerFilters, category: form.category }}
+        onFiltersChange={(pickerFilters) =>
+          onChange({ ...form, pickerFilters, category: pickerFilters.category })
+        }
+        selectedIds={form.questionIds}
+        onToggle={toggleQuestionSelection}
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        <QuickQuestionCreate
+          seed={{
+            tingkat: form.pickerFilters.tingkat,
+            programId: form.pickerFilters.programId,
+            levelId: form.pickerFilters.levelId,
+            subjectId: form.pickerFilters.subjectId,
+            category: form.category,
+          }}
+          onCreated={(qid) =>
+            onChange({ ...form, questionIds: [...form.questionIds, qid] })
+          }
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setImportTarget('main')}
+        >
+          <FileUp className="mr-1 h-4 w-4" /> Import Soal (Word/Excel)
+        </Button>
+      </div>
+    </>
+  );
+
+  const importDialog = (
+    <QuestionImportDialog
+      open={importTarget !== null}
+      onOpenChange={(o) => {
+        if (!o) setImportTarget(null);
+      }}
+      initial={
+        importSeed
+          ? {
+              tingkat: importSeed.tingkat,
+              levelId: importSeed.levelId,
+              subjectId:
+                importTarget === 'main'
+                  ? importSeed.subjectId
+                  : typeof importTarget === 'number'
+                    ? form.subtes[importTarget]?.subjectId || importSeed.subjectId
+                    : importSeed.subjectId,
+              category: form.category,
+            }
+          : undefined
+      }
+      onImported={mergeImported}
+    />
+  );
+
+  // Mode Kelola Soal — hanya alat soal, pengaturan diatur di halaman Detail.
+  if (questionsOnly) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Kelola Soal</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {subtesMode ? (
+            form.subtes.map((s, idx) => (
+              <div key={idx} className="flex flex-col gap-2 rounded-md border p-3">
+                <span className="text-sm font-medium">
+                  Subtes {idx + 1}: {s.name || '(tanpa nama)'}
+                  {s.durationMinutes ? ` · ${s.durationMinutes} menit` : ''}
+                </span>
+                {subtesQuestionTools(idx, s)}
+              </div>
+            ))
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Pilih soal dari bank soal, buat soal baru, atau impor dari
+                Word/Excel — perubahan berlaku setelah disimpan.
+              </p>
+              {mainQuestionTools}
+            </>
+          )}
+          {importDialog}
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -290,10 +438,19 @@ export function ExamForm({
           options={categoryOptions(catsQ.data)}
           placeholder="Harian/UTS/TO/Bab…"
         />
-        <p className="-mt-1 text-xs text-muted-foreground">
-          Jenjang &amp; mapel ujian mengikuti filter pemilih soal di bawah —
-          daftar soal juga otomatis dibatasi ke tipe yang dipilih.
-        </p>
+        {!withQuestions ? (
+          // Mode buat: jenjang/mapel dipilih eksplisit di sini — pemilih soal
+          // (yang biasanya memuat filter ini) disembunyikan sampai ujian dibuat.
+          <ExamScopeSelects
+            filters={form.pickerFilters}
+            onChange={(pickerFilters) => onChange({ ...form, pickerFilters })}
+          />
+        ) : (
+          <p className="-mt-1 text-xs text-muted-foreground">
+            Jenjang &amp; mapel ujian mengikuti filter pemilih soal di bawah —
+            daftar soal juga otomatis dibatasi ke tipe yang dipilih.
+          </p>
+        )}
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="ex-title">Judul Ujian *</Label>
           <Input
@@ -582,40 +739,7 @@ export function ExamForm({
                       />
                     </div>
                   </div>
-                  <QuestionPicker
-                    filters={{ ...s.pickerFilters, category: form.category }}
-                    onFiltersChange={(pickerFilters) => updateSubtes(idx, { pickerFilters })}
-                    selectedIds={s.questionIds}
-                    onToggle={(qid) =>
-                      updateSubtes(idx, {
-                        questionIds: s.questionIds.includes(qid)
-                          ? s.questionIds.filter((id) => id !== qid)
-                          : [...s.questionIds, qid],
-                      })
-                    }
-                  />
-                  <div className="flex flex-wrap items-center gap-2">
-                    <QuickQuestionCreate
-                      seed={{
-                        tingkat: s.pickerFilters.tingkat,
-                        programId: s.pickerFilters.programId,
-                        levelId: s.pickerFilters.levelId,
-                        subjectId: s.pickerFilters.subjectId,
-                        category: form.category,
-                      }}
-                      onCreated={(qid) =>
-                        updateSubtes(idx, { questionIds: [...s.questionIds, qid] })
-                      }
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setImportTarget(idx)}
-                    >
-                      <FileUp className="mr-1 h-4 w-4" /> Import Soal (Word/Excel)
-                    </Button>
-                  </div>
+                  {withQuestions && subtesQuestionTools(idx, s)}
                 </div>
               ))}
               <Button
@@ -639,69 +763,104 @@ export function ExamForm({
           )}
         </div>
 
-        {!subtesMode && (
-          <>
-            <QuestionPicker
-              // Tipe di picker disinkronkan dengan kategori ujian — soal yang
-              // ditawarkan selalu se-tipe dengan ujian yang dibuat.
-              filters={{ ...form.pickerFilters, category: form.category }}
-              onFiltersChange={(pickerFilters) =>
-                onChange({ ...form, pickerFilters, category: pickerFilters.category })
-              }
-              selectedIds={form.questionIds}
-              onToggle={toggleQuestionSelection}
-            />
-            <div className="flex flex-wrap items-center gap-2">
-              <QuickQuestionCreate
-                seed={{
-                  tingkat: form.pickerFilters.tingkat,
-                  programId: form.pickerFilters.programId,
-                  levelId: form.pickerFilters.levelId,
-                  subjectId: form.pickerFilters.subjectId,
-                  category: form.category,
-                }}
-                onCreated={(qid) =>
-                  onChange({ ...form, questionIds: [...form.questionIds, qid] })
-                }
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setImportTarget('main')}
-              >
-                <FileUp className="mr-1 h-4 w-4" /> Import Soal (Word/Excel)
-              </Button>
-            </div>
-          </>
-        )}
+        {!subtesMode && withQuestions && mainQuestionTools}
 
         {/* Import soal langsung ke pilihan — soal duplikat otomatis memakai
             soal yang sudah ada di bank soal. */}
-        <QuestionImportDialog
-          open={importTarget !== null}
-          onOpenChange={(o) => {
-            if (!o) setImportTarget(null);
-          }}
-          initial={
-            importSeed
-              ? {
-                  tingkat: importSeed.tingkat,
-                  levelId: importSeed.levelId,
-                  subjectId:
-                    importTarget === 'main'
-                      ? importSeed.subjectId
-                      : typeof importTarget === 'number'
-                        ? form.subtes[importTarget]?.subjectId || importSeed.subjectId
-                        : importSeed.subjectId,
-                  category: form.category,
-                }
-              : undefined
-          }
-          onImported={mergeImported}
-        />
+        {importDialog}
       </CardContent>
     </Card>
+  );
+}
+
+/** Select Tingkat → Jenjang → Mapel untuk scope ujian — dipakai saat form
+ *  tidak menampilkan pemilih soal (halaman Buat). */
+function ExamScopeSelects({
+  filters,
+  onChange,
+}: {
+  filters: QuestionPickerFilters;
+  onChange: (f: QuestionPickerFilters) => void;
+}) {
+  const levelsQ = useQuery({
+    queryKey: ['levels-all'],
+    queryFn: () => apiFetch<HierarchyLevel[]>('/levels'),
+  });
+  const subjectsQ = useQuery({
+    queryKey: ['subjects'],
+    queryFn: () => apiFetch<{ id: string; name: string; code: string }[]>('/master/subjects'),
+  });
+  const levels = levelsQ.data ?? [];
+
+  const tingkatOptions = [
+    ...new Set(levels.map((l) => tingkatCode(l)).filter((t): t is string => !!t)),
+  ]
+    .map((t) => ({
+      value: t,
+      label: t,
+      sort: Math.min(
+        ...levels
+          .filter((l) => tingkatCode(l) === t)
+          .map((l) => l.gradeLevel?.sortOrder ?? 9999),
+      ),
+    }))
+    .sort((a, b) => a.sort - b.sort);
+  if (levels.some((l) => !tingkatCode(l))) {
+    tingkatOptions.push({ value: 'none', label: 'Lainnya', sort: 9999 });
+  }
+
+  const levelOptions = sortLevels(levels)
+    .filter((l) => {
+      const tk = tingkatCode(l);
+      return !filters.tingkat || (filters.tingkat === 'none' ? !tk : tk === filters.tingkat);
+    })
+    .map((l) => ({
+      value: l.id,
+      label: l.program?.name ? `${l.name} — ${l.program.name}` : l.name,
+    }));
+
+  const selLevel = levels.find((l) => l.id === filters.levelId);
+  const subjectOptions = selLevel?.levelSubjects?.length
+    ? selLevel.levelSubjects
+        .map((ls) => ls.subject)
+        .filter((s): s is { id: string; name: string } => !!s)
+        .map((s) => ({ value: s.id, label: s.name }))
+    : (subjectsQ.data ?? []).map((s) => ({ value: s.id, label: `${s.code} — ${s.name}` }));
+
+  return (
+    <div className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-3">
+      <Phase1aSelectField
+        id="ex-tingkat"
+        label="Tingkat"
+        value={filters.tingkat}
+        onChange={(v) => onChange({ ...filters, tingkat: v, levelId: '', subjectId: '' })}
+        options={tingkatOptions}
+        placeholder="SD/SMP/SMA…"
+      />
+      <Phase1aSelectField
+        id="ex-level"
+        label="Jenjang *"
+        value={filters.levelId}
+        onChange={(v) => {
+          const lvl = levels.find((l) => l.id === v);
+          onChange({
+            ...filters,
+            levelId: v,
+            subjectId: '',
+            programId: lvl?.program?.id ?? filters.programId,
+          });
+        }}
+        options={levelOptions}
+      />
+      <Phase1aSelectField
+        id="ex-subject"
+        label="Mapel (opsional — kosong untuk multi-subtes)"
+        value={filters.subjectId}
+        onChange={(v) => onChange({ ...filters, subjectId: v })}
+        options={subjectOptions}
+        placeholder="Semua mapel"
+      />
+    </div>
   );
 }
 
