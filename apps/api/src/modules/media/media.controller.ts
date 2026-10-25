@@ -111,7 +111,10 @@ export class MediaController {
       .map((o) => o.trim())
       .filter(Boolean)
       .join(' ');
-    res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${frameAncestors}`);
+    // Pertahanan lapis kedua untuk file yang bisa dibuka langsung (mis. SVG
+    // yang lolos attachment, atau sniffing konten): matikan script penuh di
+    // origin API supaya file pengguna tak bisa mengeksekusi JS.
+    res.setHeader('Content-Security-Policy', `script-src 'none'; frame-ancestors 'self' ${frameAncestors}`);
     res.setHeader('Content-Type', file.contentType);
     res.setHeader('Content-Disposition', file.disposition);
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');

@@ -153,14 +153,16 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
 
   const allExams = examsQ.data ?? [];
   const q = search.trim().toLowerCase();
-  const exams = applyDrill(allExams, drill, levels).filter(
+  // Mencari dari halaman mana pun mem-bypass drill — hasil langsung
+  // ditampilkan sebagai daftar flat (judul / kode akses).
+  const exams = (q ? allExams : applyDrill(allExams, drill, levels)).filter(
     (e) =>
       (!catFilter || e.category === catFilter) &&
       (!q ||
         e.title.toLowerCase().includes(q) ||
         e.accessCode?.toLowerCase().includes(q)),
   );
-  const done = drillDone(drill);
+  const done = drillDone(drill) || !!q;
 
   const createUrl = () => {
     const p = new URLSearchParams(drillQuery(drill));
@@ -185,6 +187,16 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
               <Plus /> Buat Ujian
             </Button>
           )}
+        </div>
+        <div className="relative w-full sm:max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            aria-label="Cari ujian"
+            placeholder="Cari judul / kode akses…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
         </div>
         <ContentDrilldown
           items={allExams}
@@ -253,8 +265,12 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
       {exams.length === 0 && (
         <EmptyState
           icon={FileCheck2}
-          title="Belum ada ujian"
-          description="Belum ada ujian yang dibuat."
+          title={q ? 'Tidak ditemukan' : 'Belum ada ujian'}
+          description={
+            q
+              ? `Tidak ada ujian yang cocok dengan "${search.trim()}".`
+              : 'Belum ada ujian yang dibuat.'
+          }
           action={canManage ? (
             <Button size="sm" onClick={() => router.push(`${basePath}/baru`)}><Plus /> Buat Ujian</Button>
           ) : undefined}

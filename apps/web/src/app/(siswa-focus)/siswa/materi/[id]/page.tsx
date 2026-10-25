@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, BookOpen } from "lucide-react";
@@ -8,6 +9,36 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch, resolveAssetUrl } from "@/lib/api-client";
 import type { MaterialRow } from "@/lib/phase3a-types";
+
+/** Materi disimpan sebagai HTML rich-text — disanitasi pakai DOMPurify
+ *  (browser) supaya script/on* handler/javascript: URL tidak bisa jalan di
+ *  browser siswa (stored XSS). Konten dirender hanya setelah mount: SSR tidak
+ *  ikut menyuntikkan HTML mentah dan DOMPurify tidak butuh jsdom. */
+function MaterialHtml({ html }: { html: string }) {
+	const [clean, setClean] = useState<string | null>(null);
+	useEffect(() => {
+		let active = true;
+		import("dompurify").then(({ default: DOMPurify }) => {
+			if (!active) return;
+			setClean(
+				DOMPurify.sanitize(html, {
+					USE_PROFILES: { html: true },
+					FORBID_TAGS: ["style", "form", "input", "button", "textarea", "select", "iframe", "object", "embed"],
+				}),
+			);
+		});
+		return () => {
+			active = false;
+		};
+	}, [html]);
+	if (clean === null) return <Skeleton className="h-40 w-full" />;
+	return (
+		<div
+			className="prose max-w-none rounded-md border bg-white p-4"
+			dangerouslySetInnerHTML={{ __html: clean }}
+		/>
+	);
+}
 
 function isImage(type: string | null) {
 	if (!type) return false;
@@ -74,12 +105,7 @@ export default function MaterialViewPage() {
 							</div>
 						</div>
 
-						{m.content ? (
-							<div
-								className="prose max-w-none rounded-md border bg-white p-4"
-								dangerouslySetInnerHTML={{ __html: m.content }}
-							/>
-						) : null}
+						{m.content ? <MaterialHtml html={m.content} /> : null}
 
 						{m.fileUrl ? (
 							<div className="rounded-md border bg-white p-2">

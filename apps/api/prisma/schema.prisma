@@ -1621,6 +1621,10 @@ model ExamAttempt {
   answers  ExamAnswer[]
   subtesStates ExamAttemptSubtes[]
 
+  // Satu siswa = satu attempt per ujian — ditegakkan atomik di DB supaya
+  // dua request start() paralel tidak bisa membuat attempt ganda (retake
+  // tetap bisa setelah attempt lama dihapus via reset).
+  @@unique([examId, studentId])
   @@index([examId])
   @@index([studentId])
   @@index([status])

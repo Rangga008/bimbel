@@ -85,7 +85,8 @@ export interface ExamItem {
   question: {
     id: string;
     type: string;
-    content: string;
+    /** Tidak selalu ada — endpoint daftar tidak mengirim isi soal. */
+    content?: string;
     points: number | null;
   };
 }

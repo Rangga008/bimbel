@@ -170,6 +170,15 @@ export class LatsolWriteService {
       throw new NotFoundException('Paket latsol tidak ditemukan.');
     if (!pkg.items.length)
       throw new BadRequestException('Paket latsol belum berisi soal.');
+    // Idempotent: attempt IN_PROGRESS yang masih ada dikembalikan apa
+    // adanya — klik ganda/refresh/paralel tidak menumpuk ghost attempt.
+    const inProgress = await this.prisma.latsolAttempt.findFirst({
+      where: { packageId, studentId: student.id, status: 'IN_PROGRESS' },
+      include: { package: { select: { id: true, title: true } } },
+      orderBy: { startedAt: 'desc' },
+    });
+    if (inProgress) return inProgress;
+
     const maxScore = pkg.items.reduce(
       (s, it) => s + (it.question.points ?? 1),
       0,

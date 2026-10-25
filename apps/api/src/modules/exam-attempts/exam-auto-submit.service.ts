@@ -96,17 +96,22 @@ export class ExamAutoSubmitService implements OnModuleInit, OnModuleDestroy {
         `[ExamAutoSubmit] Found ${attemptsToSubmit.length} attempts to auto-submit`,
       );
 
-      // Auto-submit setiap attempt secara paralel
-      const submitPromises = attemptsToSubmit.map((attempt) =>
-        this.autoSubmitAttempt(attempt.id).catch((error) => {
-          console.error(
-            `[ExamAutoSubmit] Failed to auto-submit attempt ${attempt.id}:`,
-            error,
-          );
-        }),
-      );
-
-      await Promise.all(submitPromises);
+      // Auto-submit paralel TAPI terbatas per-batch — ujian besar berakhir
+      // bisa menghasilkan ratusan attempt sekaligus; Promise.all tanpa
+      // batas akan menghantam DB/connection pool dalam satu ledakan.
+      const BATCH = 10;
+      for (let i = 0; i < attemptsToSubmit.length; i += BATCH) {
+        await Promise.all(
+          attemptsToSubmit.slice(i, i + BATCH).map((attempt) =>
+            this.autoSubmitAttempt(attempt.id).catch((error) => {
+              console.error(
+                `[ExamAutoSubmit] Failed to auto-submit attempt ${attempt.id}:`,
+                error,
+              );
+            }),
+          ),
+        );
+      }
     } catch (error) {
       console.error('[ExamAutoSubmit] Error in checkAndAutoSubmit:', error);
     }

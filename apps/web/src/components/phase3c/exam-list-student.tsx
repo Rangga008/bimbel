@@ -260,6 +260,20 @@ export function ExamListStudent() {
         </CardContent>
       </Card>
 
+      {/* Cari judul / kode akses — selalu terlihat, termasuk di halaman
+          drill pertama; mengetik mem-bypass pengkategorian. */}
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="relative w-full sm:w-64">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Cari judul / kode akses…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
       {/* Pengkategorian — drill kartu seperti materi/latsol; bucket tanpa
           ujian (termasuk "Lainnya" kosong) disembunyikan. */}
       {!done ? (
@@ -284,18 +298,6 @@ export function ExamListStudent() {
           onChange={setDrill}
         />
       )}
-
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="relative w-full sm:w-56">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Cari ujian..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
 
       <div className="grid gap-4">
         {list.map((exam) => {

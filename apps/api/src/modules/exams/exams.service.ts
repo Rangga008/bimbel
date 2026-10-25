@@ -89,8 +89,10 @@ export class ExamsService {
         ...SUBTES_GROUPS_INCLUDE,
         items: {
           include: {
+            // Daftar tidak butuh isi soal — hanya tipe/poin untuk badge;
+            // membuang `content` memangkas payload list secara signifikan.
             question: {
-              select: { id: true, type: true, content: true, points: true },
+              select: { id: true, type: true, points: true },
             },
           },
           orderBy: { sortOrder: 'asc' },

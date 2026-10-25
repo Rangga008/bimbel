@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -59,8 +60,11 @@ export class ExamsController {
     return this.exams.getForStudent(id, actor);
   }
 
-  /** Siswa menukar kode akses ujian menjadi hak ikut — jalur peserta luar. */
+  /** Siswa menukar kode akses ujian menjadi hak ikut — jalur peserta luar.
+   *  Throttle ketat: kode 6 karakter tidak boleh bisa ditebak dengan
+   *  brute-force lewat endpoint ini. */
   @Post('exams/redeem')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @RequirePermissions(PERMISSION_CODES.EXAM_ATTEMPT)
   redeem(
     @Body() dto: RedeemExamCodeDto,

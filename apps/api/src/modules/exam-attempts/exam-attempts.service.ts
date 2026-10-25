@@ -74,24 +74,40 @@ export class ExamAttemptsService {
       0,
     );
 
-    return this.prisma.examAttempt.create({
-      data: {
-        examId,
-        studentId: student.id,
-        maxScore,
-        status: 'IN_PROGRESS',
-      },
-      include: {
-        exam: {
-          select: {
-            id: true,
-            title: true,
-            scheduledStartAt: true,
-            scheduledEndAt: true,
+    // @@unique(examId, studentId) menjaga invariant atomik — dua request
+    // paralel yang sama-sama lolos cek di atas tetap hanya menghasilkan
+    // satu attempt; yang kalah race dapat P2002 → pesan ramah.
+    try {
+      return await this.prisma.examAttempt.create({
+        data: {
+          examId,
+          studentId: student.id,
+          maxScore,
+          status: 'IN_PROGRESS',
+        },
+        include: {
+          exam: {
+            select: {
+              id: true,
+              title: true,
+              scheduledStartAt: true,
+              scheduledEndAt: true,
+            },
           },
         },
-      },
-    });
+      });
+    } catch (e) {
+      if (
+        typeof e === 'object' &&
+        e !== null &&
+        (e as { code?: string }).code === 'P2002'
+      ) {
+        throw new BadRequestException(
+          'Anda sudah mengerjakan ujian ini. Hubungi pengawas/admin untuk mereset sesi bila perlu mengulang.',
+        );
+      }
+      throw e;
+    }
   }
 
   /**
@@ -617,6 +633,10 @@ export class ExamAttemptsService {
 
     const answersMap = new Map(answers.map((a) => [a.questionId, a]));
     let totalScore = 0;
+    // Kumpulkan update per-jawaban lalu kirim dalam SATU transaksi —
+    // sebelumnya N round-trip sequential per attempt; saat auto-submit
+    // massal (ujian besar berakhir) itu membebani DB.
+    const updates: Parameters<typeof this.prisma.examAnswer.update>[0][] = [];
 
     // Grade each question
     for (const item of attempt.exam.items) {
@@ -661,18 +681,17 @@ export class ExamAttemptsService {
       }
       // Essay questions cannot be auto-graded (score = 0, pending manual grading)
 
-      // Update answer with grading result (guard: baris bisa hilang via cascade)
-      const existing = answersMap.get(item.questionId);
-      if (!existing) continue;
-      await this.prisma.examAnswer.update({
-        where: { id: existing.id },
-        data: {
-          isCorrect,
-          score: questionScore,
-        },
+      updates.push({
+        where: { id: answer.id },
+        data: { isCorrect, score: questionScore },
       });
-
       totalScore += questionScore;
+    }
+
+    if (updates.length) {
+      await this.prisma.$transaction(
+        updates.map((u) => this.prisma.examAnswer.update(u)),
+      );
     }
 
     return { score: totalScore };

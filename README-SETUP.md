@@ -1,3 +1,5 @@
+> **Catatan:** file ini dokumentasi *workflow AI-agent* (Copilot/Cline) yang dipakai saat fase pembangunan awal. Untuk dokumentasi aplikasi & cara deploy, lihat **[README.md](README.md)** dan **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+
 # Cara Pakai Paket Instruksi Ini
 
 Paket ini punya **dua set instruksi paralel** untuk dua workflow berbeda — pakai salah satu sesuai tool yang Anda gunakan:
