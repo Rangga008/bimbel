@@ -64,7 +64,8 @@ const EDIT_FIELDS: Phase1aField[] = [
   { name: 'dateOfBirth', label: 'Tanggal lahir', type: 'date' },
   { name: 'address', label: 'Alamat', placeholder: 'Jl. ...' },
   { name: 'schoolOrigin', label: 'Asal sekolah', placeholder: 'SMPN 1 ...' },
-  { name: 'isActive', label: 'Aktif? (true/false)', placeholder: 'true' },
+  { name: 'gender', label: 'Jenis kelamin', options: [ { value: 'M', label: 'Laki-laki' }, { value: 'F', label: 'Perempuan' }, { value: 'OTHER', label: 'Lainnya' } ] },
+  { name: 'isActive', label: 'Status akun', options: [ { value: 'true', label: 'Aktif' }, { value: 'false', label: 'Nonaktif' } ] },
 ];
 
 function err(e: unknown, fb: string) {
@@ -146,7 +147,8 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
         method: 'PATCH',
         body: {
           name: editForm.name || undefined,
-          email: editForm.email || undefined,
+          // '' → backend membuat placeholder dari no HP (hapus email login).
+          email: editForm.email?.trim(),
           phone: editForm.phone || undefined,
           dateOfBirth: editForm.dateOfBirth || null,
           gender: editForm.gender || null,

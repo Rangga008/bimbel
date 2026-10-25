@@ -2,57 +2,27 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { UserPlus, UserRoundPlus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ComboboxField } from '@/components/shared/combobox-field';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { UserAvatar } from '@/components/shared/user-avatar';
 import { apiFetch, ApiError } from '@/lib/api-client';
-import type { ApiUserBrief } from '@/lib/phase1a-types';
 import type { GroupDetail } from '@/lib/phase1b-types';
+import { AddGroupStudentsDialog, AddGroupTutorDialog } from './group-member-picker';
 
 function err(e: unknown, fb: string) {
   return e instanceof ApiError ? e.message : fb;
 }
 export function GroupDetailBody({ groupId, canManage, onChanged }: { groupId: string; canManage: boolean; onChanged: () => void }) {
   const qc = useQueryClient();
-  const [studentId, setStudentId] = useState('');
-  const [tutorId, setTutorId] = useState('');
+  const [studentPickOpen, setStudentPickOpen] = useState(false);
+  const [tutorPickOpen, setTutorPickOpen] = useState(false);
   const [delTarget, setDelTarget] = useState<{ kind: string; id: string; label: string } | null>(null);
   const detailQ = useQuery({
     queryKey: ['groups', groupId],
     queryFn: () => apiFetch<GroupDetail>(`/groups/${groupId}`),
-  });
-  const studentsQ = useQuery({
-    queryKey: ['students'],
-    queryFn: () => apiFetch<Array<{ id: string; user: ApiUserBrief }>>('/students'),
-    enabled: canManage,
-  });
-  const tutorsQ = useQuery({
-    queryKey: ['tutors'],
-    queryFn: () => apiFetch<Array<{ id: string; user: ApiUserBrief }>>('/tutors'),
-    enabled: canManage,
-  });
-  const addS = useMutation({
-    mutationFn: () => apiFetch(`/groups/${groupId}/students`, { method: 'POST', body: { studentId } }),
-    onSuccess: () => {
-      toast.success('Siswa ditambahkan.');
-      setStudentId('');
-      qc.invalidateQueries({ queryKey: ['groups', groupId] });
-      onChanged();
-    },
-    onError: (e) => toast.error(err(e, 'Gagal menambahkan siswa.')),
-  });
-  const addT = useMutation({
-    mutationFn: () => apiFetch(`/groups/${groupId}/tutors`, { method: 'POST', body: { tutorId } }),
-    onSuccess: () => {
-      toast.success('Tutor ditugaskan.');
-      setTutorId('');
-      qc.invalidateQueries({ queryKey: ['groups', groupId] });
-      onChanged();
-    },
-    onError: (e) => toast.error(err(e, 'Gagal menugaskan tutor.')),
   });
   const joinCodeM = useMutation({
     mutationFn: () =>
@@ -80,12 +50,6 @@ export function GroupDetailBody({ groupId, canManage, onChanged }: { groupId: st
   const d = detailQ.data;
   const memberIds = new Set(d.members.map((m) => m.studentId));
   const tutorIds = new Set(d.tutors.map((t) => t.tutorId));
-  const studentOptions = (studentsQ.data ?? [])
-    .filter((s) => !memberIds.has(s.id))
-    .map((s) => ({ value: s.id, label: s.user.name, imageUrl: s.user.avatarUrl }));
-  const tutorOptions = (tutorsQ.data ?? [])
-    .filter((t) => !tutorIds.has(t.id))
-    .map((t) => ({ value: t.id, label: t.user.name, imageUrl: t.user.avatarUrl }));
   return (
     <div className="flex flex-col gap-4">
       {canManage ? (
@@ -141,18 +105,10 @@ export function GroupDetailBody({ groupId, canManage, onChanged }: { groupId: st
           {d.members.length === 0 ? <p className="text-xs text-muted-foreground">Belum ada siswa.</p> : null}
         </div>
         {canManage ? (
-          <div className="mt-2 flex gap-2">
-            <div className="flex-1">
-              <ComboboxField
-                id="grp-add-student"
-                value={studentId}
-                onChange={setStudentId}
-                options={studentOptions}
-                placeholder="- Pilih siswa -"
-                emptyText="Semua siswa sudah jadi anggota."
-              />
-            </div>
-            <Button disabled={!studentId || addS.isPending} onClick={() => addS.mutate()}>Tambah</Button>
+          <div className="mt-2">
+            <Button variant="outline" size="sm" onClick={() => setStudentPickOpen(true)}>
+              <UserPlus /> Tambah Siswa
+            </Button>
           </div>
         ) : null}
       </div>
@@ -173,21 +129,27 @@ export function GroupDetailBody({ groupId, canManage, onChanged }: { groupId: st
           {d.tutors.length === 0 ? <p className="text-xs text-muted-foreground">Belum ada tutor.</p> : null}
         </div>
         {canManage ? (
-          <div className="mt-2 flex gap-2">
-            <div className="flex-1">
-              <ComboboxField
-                id="grp-add-tutor"
-                value={tutorId}
-                onChange={setTutorId}
-                options={tutorOptions}
-                placeholder="- Pilih tutor -"
-                emptyText="Semua tutor sudah ditugaskan."
-              />
-            </div>
-            <Button disabled={!tutorId || addT.isPending} onClick={() => addT.mutate()}>Tugaskan</Button>
+          <div className="mt-2">
+            <Button variant="outline" size="sm" onClick={() => setTutorPickOpen(true)}>
+              <UserRoundPlus /> Tugaskan Tutor
+            </Button>
           </div>
         ) : null}
       </div>
+      <AddGroupStudentsDialog
+        open={studentPickOpen}
+        onOpenChange={setStudentPickOpen}
+        groupId={groupId}
+        excludeIds={memberIds}
+        onAdded={onChanged}
+      />
+      <AddGroupTutorDialog
+        open={tutorPickOpen}
+        onOpenChange={setTutorPickOpen}
+        groupId={groupId}
+        excludeIds={tutorIds}
+        onAdded={onChanged}
+      />
       <ConfirmDialog
         open={delTarget !== null}
         onOpenChange={(open) => {

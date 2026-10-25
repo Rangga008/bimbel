@@ -137,11 +137,21 @@ export class ParentsService {
     }
     return this.prisma.$transaction(async (tx) => {
       if (dto.name !== undefined || dto.email !== undefined || dto.phone !== undefined) {
+        // Email dikosongkan → placeholder dari no HP agar kolom unik
+        // users.email tidak menyimpan string kosong (bukan identitas login).
+        const resolvedEmail =
+          dto.email === undefined
+            ? undefined
+            : dto.email.trim() ||
+              (await this.synthEmail(
+                tx,
+                dto.phone ?? parent.user.phone ?? undefined,
+              ));
         await tx.user.update({
           where: { id: parent.userId },
           data: {
             ...(dto.name !== undefined ? { name: dto.name } : {}),
-            ...(dto.email !== undefined ? { email: dto.email } : {}),
+            ...(resolvedEmail !== undefined ? { email: resolvedEmail } : {}),
             ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
           },
         });

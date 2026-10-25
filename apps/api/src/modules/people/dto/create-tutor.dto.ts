@@ -25,7 +25,7 @@ export class CreateTutorDto {
   /** Wajib — nomor WA tutor ditampilkan ke ortu & dipakai reminder jadwal. */
   @IsString()
   @MinLength(8, { message: 'No. HP minimal 8 digit.' })
-  @MaxLength(30)
+  @MaxLength(30, { message: 'Nomor HP maksimal 30 karakter.' })
   phone: string;
 
   @IsOptional()

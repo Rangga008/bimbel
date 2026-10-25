@@ -33,9 +33,16 @@ export class CreateStudentDto {
   @MaxLength(100)
   password?: string;
 
-  @IsOptional()
-  @IsString()
-  @MaxLength(30)
+  /**
+   * Wajib bila email kosong — akun siswa butuh minimal satu identitas
+   * login (email atau no HP); tanpa keduanya akun tidak bisa login.
+   */
+  @ValidateIf(
+    (o: CreateStudentDto) => !o.email?.trim() || o.phone !== undefined,
+  )
+  @IsString({ message: 'Isi nomor HP atau email — minimal salah satu.' })
+  @MinLength(9, { message: 'Nomor HP minimal 9 digit.' })
+  @MaxLength(30, { message: 'Nomor HP maksimal 30 karakter.' })
   phone?: string;
 
   @IsOptional()

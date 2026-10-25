@@ -127,12 +127,14 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
     mutationFn: () => {
       if (!studentId) throw new Error('Pilih siswa dulu.');
       if (!desc || !amount) throw new Error('Isi deskripsi + nominal.');
+      const mainAmount = Number(amount);
+      if (!Number.isFinite(mainAmount) || mainAmount <= 0) throw new Error('Nominal harus lebih dari 0.');
       const extras = extraItems
         .filter((it) => it.description.trim() !== '' || it.unitPrice.trim() !== '')
         .map((it) => {
           if (!it.description.trim()) throw new Error('Isi deskripsi item tambahan.');
           const v = Number(it.unitPrice);
-          if (!Number.isFinite(v) || it.unitPrice.trim() === '') throw new Error('Isi nominal item tambahan.');
+          if (!Number.isFinite(v) || it.unitPrice.trim() === '' || v <= 0) throw new Error('Nominal item tambahan harus lebih dari 0.');
           return { description: it.description.trim(), quantity: 1, unitPrice: v };
         });
       return apiFetch<InvoiceDetail>('/invoices', {
@@ -140,7 +142,7 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
         body: {
           studentId,
           dueDate: dueDate || undefined,
-          items: [{ description: desc, quantity: 1, unitPrice: Number(amount) }, ...extras],
+          items: [{ description: desc, quantity: 1, unitPrice: mainAmount }, ...extras],
         },
       });
     },

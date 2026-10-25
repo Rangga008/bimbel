@@ -20,6 +20,7 @@ import { NotificationsInbox } from "@/components/phase1d/notifications-inbox";
 import { MediaLibraryManager } from "@/components/shared/media-library-manager";
 import { FinanceEnrollments } from "@/components/enrollments/finance-enrollments";
 import { PricingManager } from "@/components/phase1a/pricing-manager";
+import { ProgramsManager } from "@/components/phase1a/programs-manager";
 import { GroupsManager } from "@/components/phase1b/groups-manager";
 import { SkeletonPage } from "@/components/skeleton-page";
 import { findNavItem } from "@/config/role-nav";
@@ -34,8 +35,10 @@ export default async function AdminFinanceMenuPage({
 	if (!item) notFound();
 	if (slug === "pendaftaran") return <FinanceEnrollments />;
 	if (slug === "harga-program") return <PricingManager />;
+	if (slug === "program")
+		return <ProgramsManager canManage basePath="/admin-finance" />;
 	if (slug === "kelompok")
-		return <GroupsManager canManage={false} basePath="/admin-finance" />;
+		return <GroupsManager canManage basePath="/admin-finance" />;
 	if (slug === "siswa") return <StudentsManager canManage basePath="/admin-finance" />;
 	if (slug === "orang-tua") return <ParentsManager canManage basePath="/admin-finance" />;
 	if (slug === "invoice") return <InvoicesManager canManage />;

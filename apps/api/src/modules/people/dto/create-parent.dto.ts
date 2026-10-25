@@ -29,7 +29,7 @@ export class CreateParentDto {
   /** Wajib — nomor HP dipakai ortu untuk login selain email + notifikasi WA. */
   @IsString()
   @MinLength(8, { message: 'No. HP minimal 8 digit.' })
-  @MaxLength(30)
+  @MaxLength(30, { message: 'Nomor HP maksimal 30 karakter.' })
   phone: string;
 
   /** Daftar studentId yang langsung dihubungkan saat parent dibuat. */

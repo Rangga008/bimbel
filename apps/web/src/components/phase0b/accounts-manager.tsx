@@ -26,9 +26,9 @@ import { AccountRoleDialog } from "./account-role-dialog";
 
 const CREATE_FIELDS: Phase1aField[] = [
   { name: "name", label: "Nama lengkap", required: true },
-  { name: "email", label: "Email", type: "email", required: true },
+  { name: "email", label: "Email (opsional — isi email atau no HP, salah satu)", type: "email" },
   { name: "tempPassword", label: "Temporary password (min 8)", required: true },
-  { name: "phone", label: "No. HP (opsional)" },
+  { name: "phone", label: "No. HP (opsional — wajib bila email kosong)" },
 ];
 
 const EDIT_FIELDS: Phase1aField[] = [
@@ -95,7 +95,7 @@ export function AccountsManager({ basePath }: { basePath: string }) {
         method: "POST",
         body: {
           name: createForm.name,
-          email: createForm.email,
+          email: createForm.email?.trim() || undefined,
           phone: createForm.phone || undefined,
           tempPassword: createForm.tempPassword,
           roleIds: createRoles,

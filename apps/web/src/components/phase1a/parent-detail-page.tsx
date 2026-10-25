@@ -40,9 +40,9 @@ interface ParentDetail {
 
 const EDIT_FIELDS: Phase1aField[] = [
   { name: 'name', label: 'Nama lengkap', required: true },
-  { name: 'email', label: 'Email (login)', type: 'email', required: true },
-  { name: 'phone', label: 'No. HP/WhatsApp', placeholder: '08...' },
-  { name: 'isActive', label: 'Aktif? (true/false)', placeholder: 'true' },
+  { name: 'email', label: 'Email (login — opsional, kosong = pakai no HP)', type: 'email' },
+  { name: 'phone', label: 'No. HP/WhatsApp', placeholder: '08...', required: true },
+  { name: 'isActive', label: 'Status akun', options: [ { value: 'true', label: 'Aktif' }, { value: 'false', label: 'Nonaktif' } ] },
 ];
 
 function err(e: unknown, fb: string) {
@@ -69,7 +69,8 @@ export function ParentDetailPage({ parentId, basePath, canManage = false }: { pa
         method: 'PATCH',
         body: {
           name: editForm.name || undefined,
-          email: editForm.email || undefined,
+          // '' → backend membuat placeholder dari no HP (hapus email login).
+          email: editForm.email?.trim(),
           phone: editForm.phone || undefined,
           isActive:
             editForm.isActive === ''
@@ -105,7 +106,7 @@ export function ParentDetailPage({ parentId, basePath, canManage = false }: { pa
     if (!p) return;
     setEditForm({
       name: p.user.name,
-      email: p.user.email,
+      email: p.user.email?.endsWith('@hp.bimbel.local') ? '' : p.user.email,
       phone: p.user.phone ?? '',
       isActive: String(p.isActive),
     });

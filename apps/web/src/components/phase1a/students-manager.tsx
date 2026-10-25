@@ -25,9 +25,9 @@ import {
 
 const CREATE_FIELDS: Phase1aField[] = [
   { name: 'name', label: 'Nama lengkap', placeholder: 'Nama siswa', required: true },
-  { name: 'email', label: 'Email (opsional — kosong = dibuat dari no HP)', type: 'email', placeholder: 'siswa@contoh.id' },
+  { name: 'email', label: 'Email (isi email atau no HP — salah satu)', type: 'email', placeholder: 'siswa@contoh.id' },
   { name: 'password', label: 'Kata sandi awal (opsional — kosong = auto-generate)', type: 'password' },
-  { name: 'phone', label: 'No. HP (opsional)', placeholder: '08...' },
+  { name: 'phone', label: 'No. HP (wajib bila email kosong)', placeholder: '08...' },
   { name: 'dateOfBirth', label: 'Tanggal lahir (opsional)', type: 'date' },
   { name: 'address', label: 'Alamat (opsional)', placeholder: 'Jl. ...' },
   { name: 'schoolOrigin', label: 'Asal sekolah (opsional)', placeholder: 'SMPN 1 ...' },
@@ -56,7 +56,8 @@ const EDIT_FIELDS: Phase1aField[] = [
   { name: 'nis', label: 'NIS bimbel', placeholder: 'GFS262712-...' },
   { name: 'majorChoice1', label: 'Pilihan jurusan 1', placeholder: 'Teknologi Pangan (Universitas ...)' },
   { name: 'majorChoice2', label: 'Pilihan jurusan 2', placeholder: 'Gizi (Universitas ...)' },
-  { name: 'isActive', label: 'Aktif? (true/false)', placeholder: 'true' },
+  { name: 'gender', label: 'Jenis kelamin', options: [ { value: 'M', label: 'Laki-laki' }, { value: 'F', label: 'Perempuan' }, { value: 'OTHER', label: 'Lainnya' } ] },
+  { name: 'isActive', label: 'Status akun', options: [ { value: 'true', label: 'Aktif' }, { value: 'false', label: 'Nonaktif' } ] },
 ];
 
 /** Halaman "Siswa" — data nyata untuk Admin Finance/Academic & Owner. */
@@ -126,7 +127,8 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
         method: 'PATCH',
         body: {
           name: editForm.name || undefined,
-          email: editForm.email || undefined,
+          // '' → backend membuat placeholder dari no HP (hapus email login).
+          email: editForm.email?.trim(),
           phone: editForm.phone || undefined,
           dateOfBirth: editForm.dateOfBirth || null,
           gender: editForm.gender || null,

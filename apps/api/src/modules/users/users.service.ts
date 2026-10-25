@@ -266,10 +266,31 @@ export class UsersService {
 
   /** Buat akun manual (staf/tutor) + assign role awal dalam 1 transaksi. */
   async createUser(dto: CreateUserDto) {
-    const clash = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-    });
-    if (clash) throw new ConflictException('Email sudah dipakai akun lain.');
+    const email = dto.email?.trim() || undefined;
+    if (email) {
+      const clash = await this.prisma.user.findUnique({
+        where: { email },
+      });
+      if (clash) throw new ConflictException('Email sudah dipakai akun lain.');
+    }
+    if (dto.phone) {
+      const phoneTaken = await this.prisma.user.findFirst({
+        where: {
+          phone: { in: UsersService.phoneVariants(dto.phone) },
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      if (phoneTaken) {
+        throw new ConflictException(
+          'Nomor HP sudah dipakai akun aktif lain.',
+        );
+      }
+    }
+    // Email kosong → placeholder dari nomor HP agar kolom unik tetap terisi.
+    const resolvedEmail =
+      email ??
+      `wa.${(dto.phone ?? '').replace(/\D/g, '') || Date.now()}@hp.bimbel.local`;
     const roleIds = [...new Set(dto.roleIds ?? [])];
     if (roleIds.length > 0) {
       const n = await this.prisma.role.count({
@@ -283,7 +304,7 @@ export class UsersService {
     const created = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
-          email: dto.email,
+          email: resolvedEmail,
           name: dto.name,
           phone: dto.phone,
           passwordHash,

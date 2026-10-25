@@ -17,7 +17,6 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { ContentDrilldown, DrillBreadcrumb, useContentCategories, useContentLevels, useDrillState } from '@/components/shared/content-drilldown';
 import { ContentCategoriesManager } from '@/components/shared/content-categories-manager';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
-import { CategoryChips } from '@/components/shared/category-chips';
 import {
   applyDrill,
   categoryLabel,
@@ -79,32 +78,12 @@ export function LatsolPackagesManager({
   });
 
   const items = listQ.data ?? [];
-  const [subjectFilter, setSubjectFilter] = useState('');
-  // Opsi filter siswa diturunkan dari paket yang memang tersedia untuknya
-  // — hanya mapel/tipe yang ada, jadi filter langsung menjurus tanpa
-  // drill jenjang (paket siswa sudah di-scope server ke jenjangnya).
-  const subjectOptions = [...new Map(
-    items.filter((i) => i.subject).map((i) => [i.subject!.id, i.subject!.name]),
-  ).entries()]
-    .map(([value, label]) => ({ value, label }))
-    .sort((a, b) => a.label.localeCompare(b.label));
-  const typeOptions = [...new Set(items.map((i) => i.category).filter((c): c is string => !!c))]
-    .map((c) => ({
-      value: c,
-      label: categoryLabel(c, catsQ.data),
-      count: items.filter((i) => i.category === c).length,
-    }))
-    .sort((a, b) => a.label.localeCompare(b.label));
-  const filtered = canManage
-    ? applyDrill(items, drill, levels).filter(
-        (i) => !catFilter || i.category === catFilter,
-      )
-    : items.filter(
-        (i) =>
-          (!subjectFilter || i.subject?.id === subjectFilter) &&
-          (!catFilter || i.category === catFilter),
-      );
-  const done = canManage ? drillDone(drill) || !!debouncedSearch : true;
+  // Drill kartu untuk semua role — paket siswa sudah di-scope server ke
+  // jenjangnya, jadi bucket drill hanya memuat jenjang yang ada kontennya.
+  const filtered = applyDrill(items, drill, levels).filter(
+    (i) => !catFilter || i.category === catFilter,
+  );
+  const done = drillDone(drill) || !!debouncedSearch;
 
   const createUrl = () => {
     const p = new URLSearchParams(drillQuery(drill));
@@ -157,21 +136,9 @@ export function LatsolPackagesManager({
 
   return (
     <div className="flex flex-col gap-4">
-      {canManage && !debouncedSearch && <DrillBreadcrumb items={items} levels={levels} categories={catsQ.data} value={drill} onChange={setDrill} />}
+      {!debouncedSearch && <DrillBreadcrumb items={items} levels={levels} categories={catsQ.data} value={drill} onChange={setDrill} />}
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex w-full items-end gap-1.5 sm:w-auto">
-          {!canManage && (
-            <div className="w-full sm:w-44">
-              <Phase1aSelectField
-                id="lp-subject"
-                label="Mapel"
-                value={subjectFilter}
-                onChange={setSubjectFilter}
-                options={subjectOptions}
-                placeholder="Semua mapel"
-              />
-            </div>
-          )}
           {canManage && (
             <div className="w-full sm:w-44">
               <Phase1aSelectField
@@ -208,15 +175,6 @@ export function LatsolPackagesManager({
         </div>
         {addButton}
       </div>
-      {/* Siswa: chips tipe — hanya tipe yang memang ada paketnya. */}
-      {!canManage && typeOptions.length > 0 ? (
-        <CategoryChips
-          options={typeOptions}
-          value={catFilter}
-          onChange={setCatFilter}
-          total={items.length}
-        />
-      ) : null}
       {listQ.isLoading ? <Skeleton className="h-24 w-full" /> : null}
       {listQ.isError ? <p className="text-sm text-destructive">Gagal memuat paket latsol.</p> : null}
       {!listQ.isLoading && filtered.length === 0 ? (

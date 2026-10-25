@@ -24,7 +24,7 @@ const PROGRAM_EDIT_FIELDS: Phase1aField[] = [
   { name: 'name', label: 'Nama program' },
   { name: 'registrationFee', label: 'Biaya pendaftaran (Rp)', type: 'number' },
   { name: 'description', label: 'Deskripsi' },
-  { name: 'isActive', label: 'Aktif? (true/false)', placeholder: 'true' },
+  { name: 'isActive', label: 'Status akun', options: [ { value: 'true', label: 'Aktif' }, { value: 'false', label: 'Nonaktif' } ] },
 ];
 
 const CATEGORY_OPTIONS = [
@@ -159,7 +159,7 @@ const LEVEL_FIELDS: Phase1aField[] = [
 const LEVEL_EDIT_FIELDS: Phase1aField[] = [
   { name: 'name', label: 'Nama level' },
   { name: 'price', label: 'Harga (Rp) — kosongkan untuk hapus', type: 'number' },
-  { name: 'isActive', label: 'Aktif? (true/false)', placeholder: 'true' },
+  { name: 'isActive', label: 'Status akun', options: [ { value: 'true', label: 'Aktif' }, { value: 'false', label: 'Nonaktif' } ] },
 ];
 
 function parseIsActive(value: string | undefined): boolean | undefined {

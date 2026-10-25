@@ -86,11 +86,32 @@ export class TutorsService {
     }
     return this.prisma.$transaction(async (tx) => {
       if (dto.name !== undefined || dto.email !== undefined || dto.phone !== undefined) {
+        // Email dikosongkan → placeholder dari no HP agar kolom unik
+        // users.email tidak menyimpan string kosong (bukan identitas login).
+        let resolvedEmail: string | undefined;
+        if (dto.email !== undefined) {
+          resolvedEmail = dto.email.trim() || undefined;
+          if (!resolvedEmail) {
+            const digits = (
+              dto.phone ??
+              tutor.user.phone ??
+              ''
+            ).replace(/\D/g, '');
+            for (let i = 0; i < 20 && !resolvedEmail; i += 1) {
+              const candidate = `wa.${digits || 'x'}${i ? `.${i}` : ''}@hp.bimbel.local`;
+              const clash = await tx.user.findUnique({
+                where: { email: candidate },
+              });
+              if (!clash) resolvedEmail = candidate;
+            }
+            resolvedEmail ??= `wa.${digits || 'x'}.${Date.now()}@hp.bimbel.local`;
+          }
+        }
         await tx.user.update({
           where: { id: tutor.userId },
           data: {
             ...(dto.name !== undefined ? { name: dto.name } : {}),
-            ...(dto.email !== undefined ? { email: dto.email } : {}),
+            ...(resolvedEmail !== undefined ? { email: resolvedEmail } : {}),
             ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
           },
         });

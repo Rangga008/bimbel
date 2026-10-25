@@ -10,7 +10,7 @@ export default async function AdminFinanceGroupDetailPage({
 		<GroupDetailPage
 			groupId={groupId}
 			basePath="/admin-finance"
-			canManage={false}
+			canManage
 		/>
 	);
 }

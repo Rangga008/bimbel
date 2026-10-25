@@ -79,6 +79,9 @@ export function GroupCreatePage({ basePath }: { basePath: string }) {
       if (withSchedule && (startMin === null || endMin === null)) {
         throw new Error('Format jam jadwal harus HH:MM.');
       }
+      if (withSchedule && endMin! <= startMin!) {
+        throw new Error('Jam selesai harus setelah jam mulai.');
+      }
       if (withSchedule && sched.validTo && sched.validFrom && sched.validTo < sched.validFrom) {
         throw new Error('Berlaku sampai harus setelah berlaku dari.');
       }

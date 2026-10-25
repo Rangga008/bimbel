@@ -109,9 +109,12 @@ function MaterialEditForm({
     onError: (e) => toast.error(err(e, 'Gagal menghapus materi.')),
   });
 
-  // Jenjang + mapel + tipe wajib — materi dikategorikan per jenjang.
+  // Jenjang + tipe wajib; mapel opsional. Minimal salah satu sumber isi
+  // (teks/file/gambar) wajib agar siswa tidak membuka materi kosong.
+  const hasContent =
+    !!form.content.trim() || !!form.fileUrl || !!form.imageUrl;
   const isValid =
-    !!form.title.trim() && !!form.levelId && !!form.subjectId && !!form.category;
+    !!form.title.trim() && !!form.levelId && !!form.category && hasContent;
 
   return (
     <div className="flex flex-col gap-4">

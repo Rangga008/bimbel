@@ -160,8 +160,11 @@ const ROLE_PERMISSION_MAP: Record<string, string[]> = {
   [ROLE_NAMES.ADMIN_FINANCE]: [
     PERMISSION_CODES.DASHBOARD_ADMIN_FINANCE_VIEW,
     PERMISSION_CODES.PEOPLE_VIEW,
-    // Filter laporan per kelompok (read-only).
     PERMISSION_CODES.GROUP_VIEW,
+    // Kelola kelompok & program seperti admin academic (sesuai kebijakan
+    // bimbel — kedua admin sama-sama boleh lihat & edit program/kelompok).
+    PERMISSION_CODES.GROUP_MANAGE,
+    PERMISSION_CODES.PROGRAM_MANAGE,
     PERMISSION_CODES.PEOPLE_STUDENT_MANAGE,
     PERMISSION_CODES.PEOPLE_PARENT_MANAGE,
     PERMISSION_CODES.PEOPLE_TUTOR_MANAGE,

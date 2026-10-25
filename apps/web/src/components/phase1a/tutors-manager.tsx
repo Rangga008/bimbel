@@ -42,9 +42,10 @@ const CREATE_FIELDS: Phase1aField[] = [
 
 const EDIT_FIELDS: Phase1aField[] = [
   { name: 'name', label: 'Nama lengkap' },
+  { name: 'email', label: 'Email (login — kosong = pakai no HP)', type: 'email' },
   { name: 'phone', label: 'No. HP / WA (wajib)', placeholder: '08...', required: true },
   { name: 'bio', label: 'Bio', placeholder: 'Pengalaman, latar belakang…' },
-  { name: 'isActive', label: 'Aktif? (true/false)', placeholder: 'true' },
+  { name: 'isActive', label: 'Status akun', options: [ { value: 'true', label: 'Aktif' }, { value: 'false', label: 'Nonaktif' } ] },
 ];
 
 function errorMessage(error: unknown, fallback: string) {
@@ -110,6 +111,8 @@ export function TutorsManager({ canManage }: { canManage: boolean }) {
         method: 'PATCH',
         body: {
           name: editForm.name || undefined,
+          // '' → backend membuat placeholder dari no HP (hapus email login).
+          email: editForm.email?.trim(),
           phone: editForm.phone || undefined,
           specialization: editForm.specialization || undefined,
           bio: editForm.bio || undefined,
@@ -232,6 +235,9 @@ export function TutorsManager({ canManage }: { canManage: boolean }) {
                             setEditTarget(tutor);
                             setEditForm({
                               name: tutor.user.name,
+                              email: tutor.user.email?.endsWith('@hp.bimbel.local')
+                                ? ''
+                                : tutor.user.email,
                               phone: tutor.user.phone ?? '',
                               specialization: tutor.specialization ?? '',
                               bio: tutor.bio ?? '',

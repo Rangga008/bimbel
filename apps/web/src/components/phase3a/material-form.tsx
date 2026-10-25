@@ -171,7 +171,7 @@ export function MaterialForm({
           />
           <Phase1aSelectField
             id="mat-form-subject"
-            label="Mapel"
+            label="Mapel (opsional)"
             value={form.subjectId}
             onChange={(v) => onChange({ ...form, subjectId: v })}
             options={subjectOptions}
@@ -202,7 +202,7 @@ export function MaterialForm({
           />
         </div>
         <p className="text-xs text-muted-foreground">
-          Tingkat → jenjang → mapel → tipe wajib diisi; kelompok/program opsional untuk mempersempit.
+          Jenjang &amp; tipe wajib diisi; mapel/tingkat/kelompok/program opsional untuk mempersempit.
         </p>
 
         <div className="flex flex-col gap-1.5">
@@ -225,7 +225,7 @@ export function MaterialForm({
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="mat-content">Isi Materi (opsional)</Label>
+          <Label htmlFor="mat-content">Isi Materi — wajib salah satu: teks / file / gambar</Label>
           <Textarea
             id="mat-content"
             value={form.content}

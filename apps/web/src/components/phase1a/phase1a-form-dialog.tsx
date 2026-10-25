@@ -25,6 +25,8 @@ export interface Phase1aField {
   required?: boolean;
   min?: number;
   hint?: string;
+  /** Bila diisi → render <select> alih-alih input bebas (mis. status aktif). */
+  options?: Array<{ value: string; label: string }>;
 }
 
 function invalidMessage(field: Phase1aField, validity: ValidityState): string {
@@ -100,21 +102,43 @@ export function Phase1aFormDialog({
                 hint={field.hint}
               >
                 <div className="relative">
-                  <Input
-                    id={`fase1a-${field.name}`}
-                    name={field.name}
-                    type={field.type ?? 'text'}
-                    placeholder={field.placeholder}
-                    required={field.required}
-                    min={field.min}
-                    aria-invalid={error ? true : undefined}
-                    className={valid ? 'pr-9' : undefined}
-                    value={value}
-                    onChange={(e) => {
-                      onChange(field.name, e.target.value);
-                      if (error) setErrors((prev) => ({ ...prev, [field.name]: '' }));
-                    }}
-                  />
+                  {field.options ? (
+                    <select
+                      id={`fase1a-${field.name}`}
+                      name={field.name}
+                      required={field.required}
+                      aria-invalid={error ? true : undefined}
+                      className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+                      value={value}
+                      onChange={(e) => {
+                        onChange(field.name, e.target.value);
+                        if (error) setErrors((prev) => ({ ...prev, [field.name]: '' }));
+                      }}
+                    >
+                      {value === '' ? <option value="">— Pilih —</option> : null}
+                      {field.options.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input
+                      id={`fase1a-${field.name}`}
+                      name={field.name}
+                      type={field.type ?? 'text'}
+                      placeholder={field.placeholder}
+                      required={field.required}
+                      min={field.min}
+                      aria-invalid={error ? true : undefined}
+                      className={valid ? 'pr-9' : undefined}
+                      value={value}
+                      onChange={(e) => {
+                        onChange(field.name, e.target.value);
+                        if (error) setErrors((prev) => ({ ...prev, [field.name]: '' }));
+                      }}
+                    />
+                  )}
                   <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
                     <FieldValidIcon show={valid} />
                   </div>

@@ -24,7 +24,7 @@ export class RegisterStudentDto {
   @ValidateIf((o: RegisterStudentDto) => !o.email?.trim())
   @IsString({ message: 'Isi nomor HP atau email — minimal salah satu.' })
   @MinLength(9, { message: 'Nomor HP minimal 9 digit.' })
-  @MaxLength(30)
+  @MaxLength(30, { message: 'Nomor HP maksimal 30 karakter.' })
   phone?: string;
 
   @IsString()

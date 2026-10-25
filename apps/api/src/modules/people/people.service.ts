@@ -27,7 +27,11 @@ export class PeopleService {
   ) {}
 
   // ---------------------------------------------------------------- students
-  async listStudents(query: { search?: string; isActive?: string }) {
+  async listStudents(query: {
+    search?: string;
+    isActive?: string;
+    levelId?: string;
+  }) {
     const where: Record<string, unknown> = {};
     if (query.isActive === 'true') where.isActive = true;
     if (query.isActive === 'false') where.isActive = false;
@@ -39,9 +43,37 @@ export class PeopleService {
         ],
       };
     }
+    // Filter per jenjang — jenjang siswa diambil dari pendaftaran (enrollment)
+    // atau kelompok yang dia ikuti. 'none' = siswa tanpa jenjang sama sekali.
+    if (query.levelId === 'none') {
+      where.enrollments = { none: {} };
+      where.groupMembers = { none: { group: { levelId: { not: null } } } };
+    } else if (query.levelId) {
+      where.OR = [
+        { enrollments: { some: { levelId: query.levelId } } },
+        { groupMembers: { some: { group: { levelId: query.levelId } } } },
+      ];
+    }
     return this.prisma.student.findMany({
       where,
-      include: studentInclude,
+      include: {
+        ...studentInclude,
+        // Ringkas — untuk label jenjang & kelompok di pemilih siswa.
+        groupMembers: {
+          select: {
+            group: {
+              select: {
+                id: true,
+                name: true,
+                level: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+        enrollments: {
+          select: { level: { select: { id: true, name: true } } },
+        },
+      },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
@@ -154,11 +186,21 @@ export class PeopleService {
         dto.email !== undefined ||
         dto.phone !== undefined
       ) {
+        // Email dikosongkan → placeholder dari no HP agar kolom unik
+        // users.email tidak menyimpan string kosong (bukan identitas login).
+        const resolvedEmail =
+          dto.email === undefined
+            ? undefined
+            : dto.email.trim() ||
+              (await this.synthEmail(
+                tx,
+                dto.phone ?? student.user.phone ?? undefined,
+              ));
         await tx.user.update({
           where: { id: student.userId },
           data: {
             ...(dto.name !== undefined ? { name: dto.name } : {}),
-            ...(dto.email !== undefined ? { email: dto.email } : {}),
+            ...(resolvedEmail !== undefined ? { email: resolvedEmail } : {}),
             ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
           },
         });

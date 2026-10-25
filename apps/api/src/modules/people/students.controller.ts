@@ -35,8 +35,12 @@ export class StudentsController {
 
   @Get('students')
   @RequirePermissions(PERMISSION_CODES.PEOPLE_VIEW)
-  list(@Query('search') search?: string, @Query('isActive') isActive?: string) {
-    return this.people.listStudents({ search, isActive });
+  list(
+    @Query('search') search?: string,
+    @Query('isActive') isActive?: string,
+    @Query('levelId') levelId?: string,
+  ) {
+    return this.people.listStudents({ search, isActive, levelId });
   }
 
   @Get('students/:id')
