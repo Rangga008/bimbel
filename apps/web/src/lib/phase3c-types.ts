@@ -203,9 +203,9 @@ export interface ExamItemDto {
 }
 
 export interface CreateExamDto {
-  programId?: string;
-  levelId?: string;
-  subjectId?: string;
+  programId?: string | null;
+  levelId?: string | null;
+  subjectId?: string | null;
   category?: string;
   title: string;
   description?: string;
@@ -228,9 +228,10 @@ export interface CreateExamDto {
 }
 
 export interface UpdateExamDto {
-  programId?: string;
-  levelId?: string;
-  subjectId?: string;
+  /** null = kosongkan scope (undefined = jangan ubah). */
+  programId?: string | null;
+  levelId?: string | null;
+  subjectId?: string | null;
   category?: string;
   title?: string;
   description?: string;

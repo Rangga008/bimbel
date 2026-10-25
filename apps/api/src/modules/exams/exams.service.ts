@@ -393,18 +393,26 @@ export class ExamsService {
         'Status Berakhir hanya via aksi "Akhiri Ujian" (auto-submit semua peserta).',
       );
     }
-    if (dto.status === 'LOCKED' && exam.status !== 'PUBLISHED') {
-      throw new BadRequestException('Hanya ujian PUBLISHED yang bisa di-LOCKED.');
+    // ENDED tetap terminal — tidak bisa diubah statusnya
+    // (dto.status === 'ENDED' sudah ditolak di atas).
+    if (exam.status === 'ENDED' && dto.status) {
+      throw new BadRequestException(
+        'Ujian yang sudah berakhir tidak bisa diubah statusnya.',
+      );
     }
-    // Ujian LOCKED/ENDED tetap bisa diedit kontennya (judul, jadwal, soal)
-    // — yang dilarang hanya transisi status keluar dari LOCKED/ENDED.
+    if (dto.status === 'LOCKED' && exam.status !== 'PUBLISHED') {
+      throw new BadRequestException('Hanya ujian PUBLISHED yang bisa dijeda.');
+    }
+    // LOCKED = "jeda" — reversibel kembali ke PUBLISHED (lewat guard publish
+    // di bawah).
     if (
-      (exam.status === 'LOCKED' || exam.status === 'ENDED') &&
+      exam.status === 'LOCKED' &&
       dto.status &&
-      dto.status !== exam.status
+      dto.status !== exam.status &&
+      dto.status !== 'PUBLISHED'
     ) {
       throw new BadRequestException(
-        'Ujian yang sudah LOCKED/ENDED tidak bisa diubah statusnya.',
+        'Ujian yang dijeda hanya bisa dilanjutkan (PUBLISHED) atau diakhiri.',
       );
     }
 
@@ -639,8 +647,12 @@ export class ExamsService {
       },
     });
     if (!exam) throw new NotFoundException('Kode ujian tidak dikenali.');
-    if (exam.status === 'DRAFT') {
-      throw new BadRequestException('Ujian belum dipublikasikan.');
+    if (exam.status !== 'PUBLISHED') {
+      throw new BadRequestException(
+        exam.status === 'LOCKED'
+          ? 'Ujian sedang dijeda — coba lagi setelah dibuka kembali.'
+          : 'Ujian tidak tersedia.',
+      );
     }
     await this.prisma.examParticipant.upsert({
       where: { examId_studentId: { examId: exam.id, studentId: student.id } },
@@ -742,6 +754,19 @@ export class ExamsService {
         ...(studentId
           ? [{ AND: [{ OR: statusOr }, { participants: { some: { studentId } } }] }]
           : []),
+        // Sesi siswa selalu terlihat: ujian yang pernah/sedang dikerjakan
+        // tetap muncul supaya hasilnya bisa dibuka kembali — walau scope
+        // jenjang/kelompok atau status berubah setelah itu.
+        ...(studentId
+          ? [
+              {
+                AND: [
+                  { status: { in: ['PUBLISHED', 'LOCKED', 'ENDED'] } },
+                  { attempts: { some: { studentId } } },
+                ],
+              },
+            ]
+          : []),
       ],
     };
     if (sScope) {
@@ -784,7 +809,9 @@ export class ExamsService {
       (where.OR as Record<string, unknown>[])[0] = {
         AND: [{ OR: statusOr }, { participants: { some: { studentId } } }],
       };
-      (where.OR as Record<string, unknown>[]).length = 1;
+      // Buang cabang participants lama (duplikat [0]) tapi pertahankan
+      // cabang attempts — sesi siswa luar tetap terlihat setelah selesai.
+      (where.OR as Record<string, unknown>[]).splice(1, 1);
     } else {
       (where.OR as Record<string, unknown>[])[0] = { id: '__none__' };
       (where.OR as Record<string, unknown>[]).length = 1;
@@ -794,6 +821,7 @@ export class ExamsService {
       select: {
         id: true,
         category: true,
+        accessCode: true,
         level: { select: { id: true, name: true } },
         subject: { select: { id: true, name: true } },
         showResultImmediately: true,

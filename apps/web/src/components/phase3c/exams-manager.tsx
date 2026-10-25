@@ -4,12 +4,13 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { CalendarClock, CircleAlert, FileCheck2, FileQuestion, KeyRound, MonitorCheck, Pencil, Plus, Send, Settings2, Star, StopCircle, Trash2, Users } from 'lucide-react';
+import { CalendarClock, CircleAlert, FileCheck2, FileQuestion, KeyRound, MonitorCheck, Pause, Pencil, Play, Plus, RefreshCw, Search, Send, Settings2, Star, StopCircle, Trash2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/shared/empty-state';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { ExamRow, ExamStatus } from '@/lib/phase3c-types';
@@ -46,6 +47,7 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
   const canUnlockProctoring = me?.permissions.includes('exam_proctor.unlock') ?? false;
   const [drill, setDrill] = useDrillState();
   const [catFilter, setCatFilter] = useState('');
+  const [search, setSearch] = useState('');
 
   const examsQ = useQuery({
     queryKey: ['exams'],
@@ -79,6 +81,34 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
     onError: (e) => toast.error(err(e, 'Gagal mengakhiri ujian.')),
   });
 
+  // Buat ulang kode akses langsung dari daftar — tanpa buka halaman detail.
+  const regenCodeM = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<{ accessCode: string }>(`/exams/${id}/access-code/regenerate`, {
+        method: 'POST',
+      }),
+    onSuccess: (d) => {
+      toast.success(`Kode akses baru: ${d.accessCode}`);
+      qc.invalidateQueries({ queryKey: ['exams'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal membuat ulang kode akses.')),
+  });
+
+  // Jeda / lanjutkan — status LOCKED berperan sebagai "dijeda" (reversibel).
+  const pauseM = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: 'LOCKED' | 'PUBLISHED' }) =>
+      apiFetch(`/exams/${id}`, { method: 'PATCH', body: { status } }),
+    onSuccess: (_d, v) => {
+      toast.success(
+        v.status === 'LOCKED'
+          ? 'Ujian dijeda — peserta tidak bisa mengakses sampai dilanjutkan.'
+          : 'Ujian dibuka kembali — peserta bisa melanjutkan.',
+      );
+      qc.invalidateQueries({ queryKey: ['exams'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal mengubah status ujian.')),
+  });
+
   const deleteM = useMutation({
     mutationFn: (id: string) => apiFetch(`/exams/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
@@ -100,7 +130,7 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
     const cfg = {
       DRAFT: { variant: 'secondary', label: 'Draft' },
       PUBLISHED: { variant: 'default', label: 'Dipublikasi' },
-      LOCKED: { variant: 'destructive', label: 'Terkunci' },
+      LOCKED: { variant: 'destructive', label: 'Dijeda' },
       ENDED: { variant: 'outline', label: 'Berakhir' },
     } as const;
     const c = cfg[status] ?? { variant: 'secondary' as const, label: status };
@@ -122,8 +152,13 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
   }
 
   const allExams = examsQ.data ?? [];
+  const q = search.trim().toLowerCase();
   const exams = applyDrill(allExams, drill, levels).filter(
-    (e) => !catFilter || e.category === catFilter,
+    (e) =>
+      (!catFilter || e.category === catFilter) &&
+      (!q ||
+        e.title.toLowerCase().includes(q) ||
+        e.accessCode?.toLowerCase().includes(q)),
   );
   const done = drillDone(drill);
 
@@ -180,7 +215,17 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
         )}
       </div>
 
-      <div className="flex w-full items-end gap-1.5 sm:w-auto">
+      <div className="flex w-full flex-wrap items-end gap-1.5 sm:w-auto">
+        <div className="relative w-full sm:w-56">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            aria-label="Cari ujian"
+            placeholder="Cari judul / kode akses…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
         <div className="w-full sm:w-52">
           <Phase1aSelectField
             id="exam-cat"
@@ -237,18 +282,31 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
                       </p>
                     )}
                     {exam.accessCode && (
-                      <button
-                        type="button"
-                        title="Kode akses peserta luar — klik untuk menyalin"
-                        onClick={() => {
-                          navigator.clipboard?.writeText(exam.accessCode!);
-                          toast.success(`Kode akses ${exam.accessCode} disalin.`);
-                        }}
-                        className="inline-flex items-center gap-1 rounded-md border border-dashed px-2 py-0.5 font-mono text-xs tracking-[0.2em] text-muted-foreground hover:bg-muted"
-                      >
-                        <KeyRound className="size-3" />
-                        {exam.accessCode}
-                      </button>
+                      <span className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          title="Kode akses peserta luar — klik untuk menyalin"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(exam.accessCode!);
+                            toast.success(`Kode akses ${exam.accessCode} disalin.`);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md border border-dashed px-2 py-0.5 font-mono text-xs tracking-[0.2em] text-muted-foreground hover:bg-muted"
+                        >
+                          <KeyRound className="size-3" />
+                          {exam.accessCode}
+                        </button>
+                        {canManage && (
+                          <button
+                            type="button"
+                            title="Buat ulang kode akses (kode lama berhenti berlaku)"
+                            disabled={regenCodeM.isPending}
+                            onClick={() => regenCodeM.mutate(exam.id)}
+                            className="rounded-md border px-1 py-0.5 text-muted-foreground hover:bg-muted disabled:opacity-50"
+                          >
+                            <RefreshCw className="size-3" />
+                          </button>
+                        )}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -281,12 +339,39 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
                       <Button size="sm" variant="outline" onClick={() => router.push(`${basePath}/${exam.id}/edit${drillQuery(drill)}`)}>
                         <Settings2 /> Kelola
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        title="Jeda ujian — peserta tidak bisa mengakses sampai dilanjutkan (untuk koreksi/edit)"
+                        disabled={pauseM.isPending}
+                        onClick={() => pauseM.mutate({ id: exam.id, status: 'LOCKED' })}
+                      >
+                        <Pause /> Jeda
+                      </Button>
                       <Button size="sm" variant="destructive" onClick={() => setEndTarget(exam)}>
                         <StopCircle /> Akhiri Ujian
                       </Button>
                     </>
                   )}
-                  {canManage && (exam.status === 'LOCKED' || exam.status === 'ENDED') && (
+                  {canManage && exam.status === 'LOCKED' && (
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => router.push(`${basePath}/${exam.id}/edit${drillQuery(drill)}`)}>
+                        <Settings2 /> Kelola
+                      </Button>
+                      <Button
+                        size="sm"
+                        title="Buka kembali — peserta bisa melanjutkan"
+                        disabled={pauseM.isPending}
+                        onClick={() => pauseM.mutate({ id: exam.id, status: 'PUBLISHED' })}
+                      >
+                        <Play /> Lanjutkan
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={() => setEndTarget(exam)}>
+                        <StopCircle /> Akhiri Ujian
+                      </Button>
+                    </>
+                  )}
+                  {canManage && exam.status === 'ENDED' && (
                     <Button size="sm" variant="outline" onClick={() => router.push(`${basePath}/${exam.id}/edit${drillQuery(drill)}`)}>
                       <Settings2 /> Kelola
                     </Button>

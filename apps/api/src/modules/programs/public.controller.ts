@@ -129,7 +129,7 @@ export class PublicController {
   async tryouts() {
     const [exams, catDefs] = await Promise.all([
       this.prisma.exam.findMany({
-        where: { isPublic: true, status: { in: ['PUBLISHED', 'LOCKED'] } },
+        where: { isPublic: true, status: 'PUBLISHED' },
         orderBy: { scheduledStartAt: 'desc' },
         take: 30,
         select: {

@@ -34,9 +34,11 @@ export function isoToLocalInput(iso: string): string {
 export function buildExamPayload(form: ExamFormState) {
   const subtesMode = form.subtes.length > 0;
   return {
-    programId: form.pickerFilters.programId || undefined,
-    levelId: form.pickerFilters.levelId || undefined,
-    subjectId: subtesMode ? undefined : form.pickerFilters.subjectId || undefined,
+    // null (bukan undefined) supaya field benar-benar dikosongkan saat
+    // disimpan — undefined berarti "jangan ubah" sehingga nilai lama balik.
+    programId: form.pickerFilters.programId || null,
+    levelId: form.pickerFilters.levelId || null,
+    subjectId: subtesMode ? null : form.pickerFilters.subjectId || null,
     category: form.category || undefined,
     title: form.title,
     description: form.description || undefined,
@@ -81,7 +83,6 @@ export function buildQuestionsPayload(form: ExamFormState) {
 export function examSettingsValid(form: ExamFormState): boolean {
   const baseOk =
     !!form.title.trim() &&
-    !!form.pickerFilters.levelId &&
     !!form.category &&
     !!form.scheduledStartAt &&
     !!form.scheduledEndAt &&

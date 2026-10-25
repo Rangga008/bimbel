@@ -96,7 +96,15 @@ export function ExamListStudent() {
         queryFn: fetchExamsWithAttempts,
       });
       const exam = fresh.exams.find((e) => e.id === data.exam.id);
-      if (exam) setStartTarget(exam);
+      if (!exam) return;
+      // Sudah pernah/sedang dikerjakan → arahkan ke sesinya (hasil/lanjut),
+      // bukan membuka dialog mulai — siswa tidak bisa mengerjakan dua kali.
+      const attempt = fresh.attemptsMap[exam.id];
+      if (attempt) {
+        router.push(attemptUrl(attempt.id));
+        return;
+      }
+      setStartTarget(exam);
     },
     onError: (e) => toast.error(err(e, 'Kode ujian tidak dikenali.')),
   });
@@ -152,7 +160,7 @@ export function ExamListStudent() {
     const cfg = {
       DRAFT: { variant: 'secondary', label: 'Draft' },
       PUBLISHED: { variant: 'default', label: 'Dibuka' },
-      LOCKED: { variant: 'destructive', label: 'Terkunci' },
+      LOCKED: { variant: 'secondary', label: 'Dijeda' },
       ENDED: { variant: 'outline', label: 'Berakhir' },
     } as const;
     const c = cfg[status] ?? { variant: 'secondary' as const, label: status };
@@ -161,8 +169,9 @@ export function ExamListStudent() {
 
   const getExamStatus = (exam: ExamRow) => {
     // Ujian yang diakhiri manual oleh pengawas tetap dianggap selesai
-    // meski jadwal belum lewat.
+    // meski jadwal belum lewat; LOCKED = dijeda pengawas.
     if (exam.status === 'ENDED') return 'ENDED';
+    if (exam.status === 'LOCKED') return 'PAUSED';
     const now = new Date();
     const start = new Date(exam.scheduledStartAt);
     const end = new Date(exam.scheduledEndAt);
@@ -177,7 +186,9 @@ export function ExamListStudent() {
   // Ujian PUBLISHED selalu tampil; ujian ENDED hanya tampil bila siswa
   // punya attempt (untuk melihat hasil yang sudah dirilis).
   const visibleExams = exams.filter(
-    (exam) => exam.status === 'PUBLISHED' || (exam.status === 'ENDED' && myAttempts[exam.id]),
+    (exam) =>
+      exam.status === 'PUBLISHED' ||
+      (exam.status !== 'DRAFT' && myAttempts[exam.id]),
   );
 
   // Drill seperti materi/latsol — bucket kosong disembunyikan oleh
@@ -189,7 +200,8 @@ export function ExamListStudent() {
   const list = applyDrill(visibleExams, drill, levels).filter(
     (e) =>
       !debouncedSearch ||
-      e.title.toLowerCase().includes(debouncedSearch.toLowerCase()),
+      e.title.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+      e.accessCode?.toLowerCase().includes(debouncedSearch.toLowerCase()),
   );
 
   const startExam = (examId: string) => {
@@ -361,6 +373,22 @@ export function ExamListStudent() {
                       <Button onClick={() => setStartTarget(exam)} disabled={startM.isPending}>
                         Mulai Ujian
                       </Button>
+                    )}
+                  </>
+                )}
+
+                {examStatus === 'PAUSED' && (
+                  <>
+                    {attempt && attempt.status === 'SUBMITTED' ? (
+                      <Button
+                        onClick={() => viewResult(attempt.id, attempt.resultReleased)}
+                        variant="outline"
+                        disabled={!attempt.resultReleased}
+                      >
+                        {attempt.resultReleased ? 'Hasil & Pembahasan' : 'Hasil Belum Dirilis'}
+                      </Button>
+                    ) : (
+                      <Button disabled>Dijeda — tunggu dibuka kembali</Button>
                     )}
                   </>
                 )}

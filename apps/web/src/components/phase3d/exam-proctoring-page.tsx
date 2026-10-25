@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -38,11 +38,8 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { ExamStatus } from '@/lib/phase3c-types';
 import { useAuthStore } from '@/stores/auth-store';
-import { categoryLabel, drillBackFromUrl, tingkatCode } from '@/lib/content-taxonomy';
-import {
-  useContentCategories,
-  useContentLevels,
-} from '@/components/shared/content-drilldown';
+import { categoryLabel } from '@/lib/content-taxonomy';
+import { useContentCategories } from '@/components/shared/content-drilldown';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
 
 function err(e: unknown, fb: string) {
@@ -201,13 +198,13 @@ function ParticipantRow({
  */
 export function ExamProctoringPage({
   examId,
-  basePath,
 }: {
   examId: string;
-  basePath: string;
+  /** Dipertahankan untuk kompatibilitas pemanggil — navigasi kembali
+   *  memakai router.back() sesuai konvensi aplikasi. */
+  basePath?: string;
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const qc = useQueryClient();
   const me = useAuthStore((s) => s.user);
   const canUnlock =
@@ -233,7 +230,6 @@ export function ExamProctoringPage({
   const [statusFilter, setStatusFilter] = useState('');
   const [groupFilter, setGroupFilter] = useState('');
   const [violOnly, setViolOnly] = useState(false);
-  const levelsQ = useContentLevels();
 
   const unlockM = useMutation({
     mutationFn: () =>
@@ -282,7 +278,7 @@ export function ExamProctoringPage({
         title="Gagal memuat proctoring"
         description={err(overviewQ.error, 'Data pengawasan ujian tidak bisa dimuat.')}
         action={
-          <Button size="sm" variant="outline" onClick={() => router.push(basePath)}>
+          <Button size="sm" variant="outline" onClick={() => router.back()}>
             <ArrowLeft /> Kembali
           </Button>
         }
@@ -295,14 +291,6 @@ export function ExamProctoringPage({
     variant: 'secondary' as const,
     label: exam.status,
   };
-
-  // Kembali ke daftar ujian di posisi drill yang sama dengan ujian ini.
-  const backUrl = drillBackFromUrl(basePath, (k) => searchParams.get(k), {
-    tingkat: tingkatCode(levelsQ.data?.find((l) => l.id === exam.level?.id)),
-    levelId: exam.level?.id,
-    subjectId: exam.subject?.id,
-    category: exam.category ?? undefined,
-  });
 
   const q = search.trim().toLowerCase();
   const matches = (p: Participant) => {
@@ -342,7 +330,7 @@ export function ExamProctoringPage({
           <Button
             size="icon"
             variant="outline"
-            onClick={() => router.push(backUrl)}
+            onClick={() => router.back()}
             aria-label="Kembali"
           >
             <ArrowLeft />

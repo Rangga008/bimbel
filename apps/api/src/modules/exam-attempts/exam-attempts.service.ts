@@ -47,13 +47,20 @@ export class ExamAttemptsService {
     // Get exam with validation (throw bila tidak valid untuk siswa)
     await this.exams.getForStudent(examId, actor);
 
-    // Check if student already has IN_PROGRESS attempt
+    // Satu siswa = satu attempt per ujian. Attempt kedua hanya bisa dibuat
+    // setelah attempt lama di-reset (dihapus) oleh pengawas/admin.
     const existing = await this.prisma.examAttempt.findFirst({
-      where: { examId, studentId: student.id, status: 'IN_PROGRESS' },
+      where: { examId, studentId: student.id },
+      orderBy: { startedAt: 'desc' },
     });
+    if (existing?.status === 'IN_PROGRESS') {
+      throw new BadRequestException(
+        'Anda sudah memiliki attempt yang sedang berjalan untuk ujian ini — lanjutkan dari daftar ujian.',
+      );
+    }
     if (existing) {
       throw new BadRequestException(
-        'Anda sudah memiliki attempt yang sedang berjalan untuk ujian ini.',
+        'Anda sudah mengerjakan ujian ini. Hubungi pengawas/admin untuk mereset sesi bila perlu mengulang.',
       );
     }
 
@@ -94,6 +101,27 @@ export class ExamAttemptsService {
    */
   async getAttemptDetail(userId: string, attemptId: string) {
     const student = await this.requireStudent(userId);
+    // Pre-check ringan: attempt yang tertinggal IN_PROGRESS/LOCKED padahal
+    // ujiannya sudah berakhir diselesaikan di sini (fallback bila scheduler
+    // belum sempat jalan) — tanpa ini hasil tidak pernah dirilis.
+    const pre = await this.prisma.examAttempt.findUnique({
+      where: { id: attemptId },
+      select: {
+        studentId: true,
+        status: true,
+        exam: { select: { status: true, scheduledEndAt: true } },
+      },
+    });
+    if (!pre || pre.studentId !== student.id) {
+      throw new NotFoundException('Attempt tidak ditemukan.');
+    }
+    const finished =
+      pre.exam.status === 'ENDED' ||
+      Date.now() >= pre.exam.scheduledEndAt.getTime();
+    if (['IN_PROGRESS', 'LOCKED'].includes(pre.status) && finished) {
+      await this.autoSubmit(attemptId);
+    }
+
     const attempt = await this.prisma.examAttempt.findUnique({
       where: { id: attemptId },
       select: {
@@ -277,6 +305,12 @@ export class ExamAttemptsService {
         'Ujian sudah diakhiri pengawas. Jawaban tidak dapat disimpan lagi.',
       );
     }
+    // Ujian dijeda (LOCKED) — semua interaksi pengerjaan ikut dibekukan.
+    if (attempt.exam.status === 'LOCKED') {
+      throw new BadRequestException(
+        'Ujian sedang dijeda pengawas — lanjutkan setelah dibuka kembali.',
+      );
+    }
     if (new Date() > attempt.exam.scheduledEndAt) {
       throw new BadRequestException(
         'Waktu ujian sudah habis. Jawaban tidak dapat disimpan lagi.',
@@ -380,6 +414,11 @@ export class ExamAttemptsService {
     if (attempt.status !== 'IN_PROGRESS') {
       throw new BadRequestException('Attempt ini sudah dikumpulkan.');
     }
+    if (attempt.exam.status === 'LOCKED') {
+      throw new BadRequestException(
+        'Ujian sedang dijeda pengawas — lanjutkan setelah dibuka kembali.',
+      );
+    }
     if (attempt.exam.status === 'ENDED' || new Date() > attempt.exam.scheduledEndAt) {
       throw new BadRequestException('Waktu ujian sudah habis.');
     }
@@ -417,13 +456,22 @@ export class ExamAttemptsService {
     const student = await this.requireStudent(userId);
     const attempt = await this.prisma.examAttempt.findUnique({
       where: { id: attemptId },
-      select: { studentId: true, status: true },
+      select: {
+        studentId: true,
+        status: true,
+        exam: { select: { status: true } },
+      },
     });
     if (!attempt || attempt.studentId !== student.id) {
       throw new NotFoundException('Attempt tidak ditemukan.');
     }
     if (attempt.status !== 'IN_PROGRESS') {
       throw new BadRequestException('Attempt ini sudah dikumpulkan.');
+    }
+    if (attempt.exam.status === 'LOCKED') {
+      throw new BadRequestException(
+        'Ujian sedang dijeda pengawas — lanjutkan setelah dibuka kembali.',
+      );
     }
     const st = await this.prisma.examAttemptSubtes.findUnique({
       where: { attemptId_subtesId: { attemptId, subtesId } },
@@ -471,6 +519,11 @@ export class ExamAttemptsService {
     if (attempt.exam.status === 'ENDED') {
       throw new BadRequestException(
         'Ujian sudah diakhiri pengawas. Hubungi pengawas bila perlu klarifikasi.',
+      );
+    }
+    if (attempt.exam.status === 'LOCKED') {
+      throw new BadRequestException(
+        'Ujian sedang dijeda pengawas — kumpulkan setelah dibuka kembali.',
       );
     }
 
@@ -639,9 +692,10 @@ export class ExamAttemptsService {
       select: { id: true, status: true },
     });
     if (!exam) throw new NotFoundException('Ujian tidak ditemukan.');
-    if (exam.status !== 'PUBLISHED') {
+    // LOCKED = ujian dijeda — juga bisa langsung diakhiri.
+    if (exam.status !== 'PUBLISHED' && exam.status !== 'LOCKED') {
       throw new BadRequestException(
-        'Hanya ujian berstatus PUBLISHED yang bisa diakhiri.',
+        'Hanya ujian berstatus PUBLISHED/dijeda yang bisa diakhiri.',
       );
     }
 
@@ -773,9 +827,25 @@ export class ExamAttemptsService {
       orderBy: { startedAt: 'desc' },
     });
 
+    // Attempt tertinggal (lupa kumpulkan / ujian lewat sebelum scheduler
+    // jalan) diselesaikan di sini supaya hasilnya tetap bisa dirilis.
+    const now = new Date();
+    for (const a of attempts) {
+      const finished =
+        a.exam.status === 'ENDED' ||
+        now.getTime() >= a.exam.scheduledEndAt.getTime();
+      if (finished && ['IN_PROGRESS', 'LOCKED'].includes(a.status)) {
+        const res = await this.autoSubmit(a.id);
+        if (res) {
+          a.status = 'SUBMITTED';
+          a.submittedAt = res.submittedAt;
+          a.score = res.score;
+        }
+      }
+    }
+
     // Rilis hasil: mode langsung → skor terlihat begitu SUBMITTED;
     // mode default → tunggu jadwal berakhir / ujian diakhiri pengawas.
-    const now = new Date();
     return attempts.map((attempt) => {
       const released = attempt.exam.showResultImmediately
         ? attempt.status === 'SUBMITTED'

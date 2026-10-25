@@ -324,6 +324,9 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
   // Panel navigasi subtes di top bar (gaya GO) — status tiap subtes + aksi mulai.
   const [subtesNavOpen, setSubtesNavOpen] = useState(false);
+  // Pembahasan: ujian multi-subtes dibuka per subtes (klik baris rekap),
+  // bukan semua soal sekaligus.
+  const [reviewSubtesId, setReviewSubtesId] = useState<string | null>(null);
 
   const submitExam = () => {
     if (!attempt || attempt.status !== 'IN_PROGRESS') return;
@@ -990,7 +993,8 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                   </div>
                 </div>
 
-                {/* Rekap per subtes — try out multi-mapel. */}
+                {/* Rekap per subtes — try out multi-mapel. Klik baris untuk
+                    membuka pembahasan subtes tersebut. */}
                 {(attempt.subtesResults?.length ?? 0) > 0 && (
                   <div className="overflow-x-auto rounded-md border">
                     <table className="w-full text-sm">
@@ -1000,11 +1004,19 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                           <th className="px-3 py-2 text-right font-medium">Benar</th>
                           <th className="px-3 py-2 text-right font-medium">Skor</th>
                           <th className="px-3 py-2 font-medium">Akurasi</th>
+                          <th className="px-3 py-2 font-medium" />
                         </tr>
                       </thead>
                       <tbody>
                         {attempt.subtesResults!.map((r) => (
-                          <tr key={r.subtesId} className="border-b last:border-0">
+                          <tr
+                            key={r.subtesId}
+                            onClick={() => setReviewSubtesId(r.subtesId)}
+                            className={`cursor-pointer border-b last:border-0 transition-colors hover:bg-muted/60 ${
+                              reviewSubtesId === r.subtesId ? 'bg-primary/5' : ''
+                            }`}
+                            title="Lihat pembahasan subtes ini"
+                          >
                             <td className="px-3 py-2 font-medium">{r.name}</td>
                             <td className="px-3 py-2 text-right">
                               <span className="text-emerald-700">{r.correct}</span>
@@ -1023,6 +1035,9 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                                   }}
                                 />
                               </div>
+                            </td>
+                            <td className="px-3 py-2 text-right text-muted-foreground">
+                              <ChevronRight className="ml-auto size-4" />
                             </td>
                           </tr>
                         ))}
@@ -1046,25 +1061,45 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
         </Card>
       )}
 
-      {/* Review per soal (hanya setelah result released) */}
+      {/* Review per soal (hanya setelah result released). Ujian multi-subtes:
+          pembahasan dibuka per subtes (klik baris rekap di atas), bukan semua
+          soal sekaligus. */}
       {isSubmitted && attempt.resultReleased && attempt.items.length > 0 && (
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold">Pembahasan</h2>
-          {attempt.items.map((it, index) => {
+          {(() => {
+            const reviewSubtes = subtesList.find((s) => s.id === reviewSubtesId) ?? null;
+            const reviewItems = hasSubtes && reviewSubtesId
+              ? attempt.items.filter((it) => it.subtesId === reviewSubtesId)
+              : attempt.items;
+            return (
+              <>
+          <div className="flex items-center gap-2">
+            {hasSubtes && reviewSubtesId && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setReviewSubtesId(null)}
+              >
+                <ChevronLeft className="size-4" /> Semua Subtes
+              </Button>
+            )}
+            <h2 className="text-lg font-semibold">
+              Pembahasan{reviewSubtes ? ` — ${reviewSubtes.name}` : ''}
+            </h2>
+          </div>
+          {hasSubtes && !reviewSubtesId ? (
+            <Card>
+              <CardContent className="py-6 text-center text-sm text-muted-foreground">
+                Pilih subtes pada tabel rekap di atas untuk melihat pembahasan
+                soalnya.
+              </CardContent>
+            </Card>
+          ) : (
+          reviewItems.map((it, index) => {
             const question = it.question;
             const answer = it.answer;
-            const prevSubtes = index > 0 ? attempt.items[index - 1].subtesId : undefined;
-            const showSubtesHeader = hasSubtes && it.subtesId !== prevSubtes;
             return (
               <div key={it.questionId} className="space-y-4">
-              {showSubtesHeader && (
-                <div className="flex items-center gap-2 pt-2">
-                  <Badge variant="default" className="text-xs">
-                    Subtes {subtesList.findIndex((s) => s.id === it.subtesId) + 1}
-                  </Badge>
-                  <h3 className="text-sm font-semibold">{it.subtesName ?? 'Subtes'}</h3>
-                </div>
-              )}
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
@@ -1127,7 +1162,11 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
               </Card>
               </div>
             );
-          })}
+          })
+          )}
+              </>
+            );
+          })()}
         </div>
       )}
 

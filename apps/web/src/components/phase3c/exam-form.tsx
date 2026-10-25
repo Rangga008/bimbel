@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { FileUp, Plus, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileUp, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -228,6 +228,9 @@ export function ExamForm({
   const [allLevelsGroups, setAllLevelsGroups] = useState(false);
   // Dialog import soal — 'main' = ujian biasa, angka = indeks subtes.
   const [importTarget, setImportTarget] = useState<'main' | number | null>(null);
+  // Mode Kelola Soal: satu subtes per tampilan (navigasi panah), bukan
+  // semua subtes ditumpuk ke bawah.
+  const [activeSubtes, setActiveSubtes] = useState(0);
 
   const groups = (groupsQ.data ?? []).filter(
     (g) =>
@@ -400,15 +403,75 @@ export function ExamForm({
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {subtesMode ? (
-            form.subtes.map((s, idx) => (
-              <div key={idx} className="flex flex-col gap-2 rounded-md border p-3">
-                <span className="text-sm font-medium">
-                  Subtes {idx + 1}: {s.name || '(tanpa nama)'}
-                  {s.durationMinutes ? ` · ${s.durationMinutes} menit` : ''}
-                </span>
-                {subtesQuestionTools(idx, s)}
-              </div>
-            ))
+            (() => {
+              const idx = Math.min(activeSubtes, form.subtes.length - 1);
+              const s = form.subtes[idx];
+              return (
+                <>
+                  {/* Navigasi antar-subtes: panah + chip (klik untuk lompat).
+                      Chip menunjukkan jumlah soal yang sudah dipilih. */}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      disabled={idx <= 0}
+                      onClick={() => setActiveSubtes(idx - 1)}
+                      aria-label="Subtes sebelumnya"
+                    >
+                      <ChevronLeft />
+                    </Button>
+                    <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
+                      {form.subtes.map((st, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setActiveSubtes(i)}
+                          className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                            i === idx
+                              ? 'border-primary bg-primary text-primary-foreground'
+                              : 'bg-muted/40 hover:bg-muted'
+                          }`}
+                        >
+                          {i + 1}. {st.name || '(tanpa nama)'}
+                          <span
+                            className={`rounded-full px-1.5 text-[10px] ${
+                              st.questionIds.length > 0
+                                ? i === idx
+                                  ? 'bg-primary-foreground/20'
+                                  : 'bg-emerald-100 text-emerald-700'
+                                : i === idx
+                                  ? 'bg-primary-foreground/20'
+                                  : 'bg-muted text-muted-foreground'
+                            }`}
+                          >
+                            {st.questionIds.length}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      disabled={idx >= form.subtes.length - 1}
+                      onClick={() => setActiveSubtes(idx + 1)}
+                      aria-label="Subtes berikutnya"
+                    >
+                      <ChevronRight />
+                    </Button>
+                  </div>
+
+                  <div className="flex flex-col gap-2 rounded-md border p-3">
+                    <span className="text-sm font-medium">
+                      Subtes {idx + 1}/{form.subtes.length}: {s.name || '(tanpa nama)'}
+                      {s.durationMinutes ? ` · ${s.durationMinutes} menit` : ''}
+                    </span>
+                    {subtesQuestionTools(idx, s)}
+                  </div>
+                </>
+              );
+            })()
           ) : (
             <>
               <p className="text-xs text-muted-foreground">
@@ -839,7 +902,7 @@ function ExamScopeSelects({
       />
       <Phase1aSelectField
         id="ex-level"
-        label="Jenjang *"
+        label="Jenjang (opsional — kosong = semua jenjang bisa akses)"
         value={filters.levelId}
         onChange={(v) => {
           const lvl = levels.find((l) => l.id === v);
