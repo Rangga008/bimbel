@@ -83,6 +83,9 @@ export class ReportsController {
   kinds(@CurrentUser() actor: AuthenticatedUser) {
     const domains = reportDomainsForRoles(actor.roles);
     return Object.entries(REPORT_KIND_META)
+      // 'academic' disembunyikan dari daftar — rekap nilai & jawaban ujian
+      // sudah tercakup di halaman Analisis; builder tetap ada untuk snapshot lama.
+      .filter(([kind]) => kind !== 'academic')
       .filter(([, meta]) => !domains || domains.includes(meta.domain))
       .map(([kind, meta]) => ({ kind, ...meta }));
   }

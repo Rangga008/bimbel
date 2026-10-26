@@ -9,6 +9,7 @@ import ExcelJS from 'exceljs';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TutorScopeService } from '../../common/tutor-scope/tutor-scope.service';
 import { PERMISSION_CODES } from '../rbac/permissions.constants';
+import { barPng, barSvg } from '../../common/charts/chart-render';
 
 /** Escape teks untuk render HTML cetak. */
 function esc(s: unknown): string {
@@ -1810,5 +1811,106 @@ ${report.main && report.main.rows.length ? sectionTable(report.main) : '<p><i>Be
 </div>
 <script>window.onload=()=>setTimeout(()=>window.print(),400)</script>
 </body></html>`;
+  }
+
+  // =====================================================================
+  // Analisis soal — chart benar/salah per nomor (paling bisa vs paling sulit)
+  // =====================================================================
+
+  /** Baris analisis: nomor soal, potongan teks, jumlah benar/salah, % benar. */
+  async getQuestionAnalysisItems(examId: string) {
+    const data = await this.getExamQuestionAnalytics(examId);
+    const stripHtml = (s: string) =>
+      String(s ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    return {
+      examTitle: data.examTitle,
+      items: data.questionAnalytics.map((q, i) => ({
+        no: i + 1,
+        label: `Soal ${i + 1}`,
+        content: stripHtml(q.questionContent).slice(0, 160),
+        type: q.questionType,
+        attempts: q.totalAttempts,
+        correct: q.correctAttempts,
+        wrong: Math.max(0, q.totalAttempts - q.correctAttempts),
+        accuracy: q.accuracy,
+      })),
+    };
+  }
+
+  /** HTML cetak analisis soal: chart akurasi + tabel termudah/tersulit. */
+  renderQuestionAnalysisHtml(analysis: Awaited<ReturnType<typeof this.getQuestionAnalysisItems>>) {
+    const byAcc = [...analysis.items].sort((a, b) => a.accuracy - b.accuracy);
+    const hardest = byAcc.slice(0, Math.min(10, byAcc.length));
+    const easiest = [...analysis.items].sort((a, b) => b.accuracy - a.accuracy).slice(0, Math.min(10, byAcc.length));
+    const chart = barSvg(
+      analysis.items.map((it) => ({ label: it.label, value: it.accuracy })),
+      { maxValue: 100, valueFmt: (v) => `${v}%` },
+    );
+    const tbl = (title: string, list: typeof analysis.items) =>
+      `<h3>${esc(title)}</h3><table><thead><tr><th class="num">NO</th><th>SOAL</th><th class="ctr">TIPE</th><th class="ctr">DIKERJAKAN</th><th class="ctr">BENAR</th><th class="ctr">SALAH</th><th class="ctr">% BENAR</th></tr></thead><tbody>` +
+      list
+        .map(
+          (it) =>
+            `<tr><td class="ctr">${it.no}</td><td>${esc(it.content) || '-'}</td><td class="ctr">${esc(it.type)}</td><td class="ctr">${it.attempts}</td><td class="ctr ok">${it.correct}</td><td class="ctr bad">${it.wrong}</td><td class="ctr"><b>${it.accuracy}%</b></td></tr>`,
+        )
+        .join('') +
+      `</tbody></table>`;
+    return this.printDoc(
+      `Analisis Soal — ${analysis.examTitle}`,
+      `<div class="hdr"><div><h1>ANALISIS SOAL — ${esc(analysis.examTitle)}</h1><div class="sub">Akurasi = persen jawaban benar dari seluruh jawaban soal itu. "Paling bisa" = akurasi tertinggi, "paling sulit" = terendah.</div></div><div class="sub">Bimbel GFS</div></div>` +
+        `<h3>Grafik % Benar per Soal</h3>${chart}` +
+        tbl('Soal paling sulit (akurasi terendah)', hardest) +
+        tbl('Soal paling bisa (akurasi tertinggi)', easiest) +
+        tbl('Semua soal (urut nomor)', analysis.items),
+    );
+  }
+
+  /** Export analisis soal ke .xlsx — tabel + gambar bar chart. */
+  async exportExamAnalysisXlsx(examId: string) {
+    const analysis = await this.getQuestionAnalysisItems(examId);
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Analisis Soal');
+    ws.getCell('A1').value = `ANALISIS SOAL — ${analysis.examTitle}`;
+    ws.getCell('A1').font = { bold: true, size: 14 };
+    ws.getCell('A2').value = 'Akurasi = % jawaban benar dari seluruh jawaban soal.';
+
+    const head = ws.getRow(4);
+    head.values = ['No', 'Soal', 'Tipe', 'Dikerjakan', 'Benar', 'Salah', '% Benar'];
+    head.font = { bold: true };
+    head.eachCell((c) => {
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEEEEE' } };
+      c.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+    });
+    analysis.items.forEach((it, i) => {
+      const r = ws.getRow(5 + i);
+      r.values = [it.no, it.content, it.type, it.attempts, it.correct, it.wrong, it.accuracy];
+      r.eachCell((c) => {
+        c.alignment = { wrapText: true, vertical: 'top' };
+        c.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+      });
+    });
+    ws.getColumn(1).width = 5;
+    ws.getColumn(2).width = 50;
+    ws.getColumn(3).width = 14;
+    for (const c of [4, 5, 6, 7]) ws.getColumn(c).width = 12;
+
+    // Bar chart % benar sebagai gambar PNG di samping tabel.
+    const imgId = wb.addImage({
+      // pngjs menghasilkan Buffer tipe baru — exceljs mengetik Buffer lama.
+      buffer: barPng(
+        analysis.items.map((it) => ({ label: it.label, value: it.accuracy })),
+        480,
+        22,
+      ) as unknown as import('exceljs').Image['buffer'],
+      extension: 'png',
+    });
+    ws.addImage(imgId, {
+      tl: { col: 8, row: 4 },
+      ext: { width: 480, height: Math.max(60, analysis.items.length * 22) },
+    });
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const safe = analysis.examTitle.replace(/[^a-zA-Z0-9-_]+/g, '-').toLowerCase();
+    return { buffer: Buffer.from(buffer), filename: `analisis-soal-${safe}.xlsx` };
   }
 }

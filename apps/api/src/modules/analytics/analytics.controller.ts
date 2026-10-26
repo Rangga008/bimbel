@@ -124,9 +124,27 @@ export class AnalyticsController {
     res.send(buffer);
   }
 
+  /** Export analisis soal (chart % benar per soal) ke .xlsx. */
+  @Get('exam/:examId/analysis.xlsx')
+  @RequirePermissions(PERMISSION_CODES.ANALYTICS_EXAM_VIEW)
+  async exportExamAnalysis(
+    @Param('examId') examId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, filename } = await this.analytics.exportExamAnalysisXlsx(examId);
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': String(buffer.length),
+    });
+    res.send(buffer);
+  }
+
   /**
    * Dokumen cetak HTML siap-print (auto window.print):
-   * part=questions (lembar soal, +key=1 untuk kunci) | answers (rekap jawaban) | scores (rekap nilai).
+   * part=questions (lembar soal, +key=1 untuk kunci) | answers (rekap jawaban)
+   * | scores (rekap nilai) | analysis (chart + tabel analisis soal).
    */
   @Get('exam/:examId/print')
   @RequirePermissions(PERMISSION_CODES.ANALYTICS_EXAM_VIEW)
@@ -144,6 +162,9 @@ export class AnalyticsController {
     } else if (part === 'scores') {
       const recap = await this.analytics.getExamScoreRecap(examId, groupId || undefined);
       html = this.analytics.renderScoreRecapHtml(recap);
+    } else if (part === 'analysis') {
+      const analysis = await this.analytics.getQuestionAnalysisItems(examId);
+      html = this.analytics.renderQuestionAnalysisHtml(analysis);
     } else {
       const sheet = await this.analytics.getExamQuestionSheet(examId, key === '1');
       html = this.analytics.renderQuestionSheetHtml(sheet);

@@ -139,6 +139,82 @@ async function openPrintDoc(path: string) {
   window.open(url, '_blank', 'noopener');
 }
 
+function stripHtml(s: string) {
+	return s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Tab "Analisis": grafik % benar per soal + daftar soal termudah/tersulit. */
+function QuestionAnalysisPanel({ items }: { items: QuestionAnalytics[] }) {
+	if (!items.length) {
+		return <p className="px-1 py-4 text-sm text-muted-foreground">Belum ada jawaban untuk dianalisis.</p>;
+	}
+	const byAcc = [...items].sort((a, b) => a.accuracy - b.accuracy);
+	const hardest = byAcc.slice(0, 5);
+	const easiest = [...items].sort((a, b) => b.accuracy - a.accuracy).slice(0, 5);
+	const barColor = (acc: number) =>
+		acc >= 70 ? "#2e8b57" : acc >= 50 ? "#e8a020" : "#b03a48";
+
+	const miniTable = (title: string, list: QuestionAnalytics[]) => (
+		<div className="flex flex-col gap-1.5">
+			<p className="text-xs font-semibold">{title}</p>
+			<div className="overflow-x-auto rounded-lg border">
+				<table className="w-full text-left text-xs">
+					<thead>
+						<tr className="border-b bg-muted/60 text-muted-foreground">
+							<th className="w-10 px-2 py-1.5 font-medium">No</th>
+							<th className="px-2 py-1.5 font-medium">Soal</th>
+							<th className="px-2 py-1.5 font-medium whitespace-nowrap">Benar/Total</th>
+							<th className="px-2 py-1.5 font-medium">Akurasi</th>
+						</tr>
+					</thead>
+					<tbody>
+						{list.map((q) => (
+							<tr key={q.questionId} className="border-b last:border-0">
+								<td className="px-2 py-1.5 tabular-nums">{items.indexOf(q) + 1}</td>
+								<td className="max-w-xs truncate px-2 py-1.5" title={stripHtml(q.questionContent)}>
+									{stripHtml(q.questionContent) || "—"}
+								</td>
+								<td className="px-2 py-1.5 tabular-nums">{q.correctAttempts}/{q.totalAttempts}</td>
+								<td className="px-2 py-1.5">
+									<Badge variant={accuracyVariant(q.accuracy)}>{q.accuracy.toFixed(1)}%</Badge>
+								</td>
+							</tr>
+						))}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	);
+
+	return (
+		<div className="flex flex-col gap-4">
+			<div className="flex flex-col gap-1.5">
+				<p className="text-xs font-semibold">% Benar per Soal — hijau ≥70%, kuning 50–70%, merah &lt;50%</p>
+				<div className="flex flex-col gap-1">
+					{items.map((q, i) => (
+						<div key={q.questionId} className="flex items-center gap-2 text-xs">
+							<span className="w-14 shrink-0 tabular-nums">Soal {i + 1}</span>
+							<div className="h-3.5 min-w-0 flex-1 rounded bg-muted">
+								<div
+									className="h-full rounded"
+									style={{ width: `${Math.max(2, q.accuracy)}%`, background: barColor(q.accuracy) }}
+								/>
+							</div>
+							<span className="w-24 shrink-0 text-right tabular-nums">
+								{q.accuracy.toFixed(1)}% · {q.correctAttempts}/{q.totalAttempts}
+							</span>
+						</div>
+					))}
+				</div>
+			</div>
+			<div className="grid gap-4 md:grid-cols-2">
+				{miniTable("Soal paling sulit (akurasi terendah)", hardest)}
+				{miniTable("Soal paling bisa (akurasi tertinggi)", easiest)}
+			</div>
+		</div>
+	);
+}
+
 function ScoreRecapTable({ data }: { data: ScoreRecapData }) {
   return (
     <Card className="overflow-hidden">
@@ -251,7 +327,7 @@ export function AdminAcademicAnalytics() {
   const [to, setTo] = useState("");
   const [search, setSearch] = useState("");
   const [applied, setApplied] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"score" | "answer" | null>("score");
+  const [activeTab, setActiveTab] = useState<"score" | "answer" | "analysis" | null>("score");
   const [expandedQ, setExpandedQ] = useState<string | null>(null);
   const [recapGroupId, setRecapGroupId] = useState("");
 
@@ -390,6 +466,13 @@ export function AdminAcademicAnalytics() {
             >
               Rekap Jawaban
             </Button>
+            <Button
+              variant={activeTab === 'analysis' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setActiveTab('analysis')}
+            >
+              Analisis
+            </Button>
             <select
               className="h-8 rounded-md border border-input bg-background px-2 text-xs"
               value={recapGroupId}
@@ -409,8 +492,10 @@ export function AdminAcademicAnalytics() {
                 size="sm"
                 onClick={() =>
                   downloadBlob(
-                    `/analytics/exam/${selectedExam.examId}/${activeTab === 'score' ? 'score' : 'answer'}-recap.xlsx${recapGroupId ? `?groupId=${recapGroupId}` : ''}`,
-                    `rekap-${activeTab === 'score' ? 'nilai' : 'jawaban'}-${selectedExam.examTitle}.xlsx`,
+                    activeTab === 'analysis'
+                      ? `/analytics/exam/${selectedExam.examId}/analysis.xlsx`
+                      : `/analytics/exam/${selectedExam.examId}/${activeTab === 'score' ? 'score' : 'answer'}-recap.xlsx${recapGroupId ? `?groupId=${recapGroupId}` : ''}`,
+                    `rekap-${activeTab === 'score' ? 'nilai' : activeTab === 'answer' ? 'jawaban' : 'analisis'}-${selectedExam.examTitle}.xlsx`,
                   )
                 }
               >
@@ -421,7 +506,7 @@ export function AdminAcademicAnalytics() {
                 size="sm"
                 onClick={() =>
                   openPrintDoc(
-                    `/analytics/exam/${selectedExam.examId}/print?part=${activeTab === 'score' ? 'scores' : 'answers'}${recapGroupId ? `&groupId=${recapGroupId}` : ''}`,
+                    `/analytics/exam/${selectedExam.examId}/print?part=${activeTab === 'score' ? 'scores' : activeTab === 'answer' ? 'answers' : 'analysis'}${activeTab === 'analysis' ? '' : recapGroupId ? `&groupId=${recapGroupId}` : ''}`,
                   )
                 }
               >
@@ -448,6 +533,10 @@ export function AdminAcademicAnalytics() {
             ) : answerQ.data ? (
               <AnswerRecapTable data={answerQ.data} />
             ) : null
+          ) : null}
+
+          {activeTab === 'analysis' ? (
+            <QuestionAnalysisPanel items={selectedExam.questionAnalytics} />
           ) : null}
         </div>
 

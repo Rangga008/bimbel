@@ -106,6 +106,124 @@ function filterQuery(f: ActiveFilters) {
 }
 
 
+const CHART_PALETTE = [
+	"#0f4c81", "#e8a020", "#2e8b57", "#b03a48", "#6b5b95",
+	"#3a9ab2", "#c9711b", "#5b7f3c", "#8c4a7f", "#777777",
+];
+
+type ChartItem = { label: string; value: number; color?: string };
+
+/** Pie/donut SVG murni (tanpa lib) — samakan warna dengan export Excel/PDF. */
+function PieChart({ items, size = 150 }: { items: ChartItem[]; size?: number }) {
+	const list = items.filter((i) => i.value > 0);
+	const total = list.reduce((s, i) => s + i.value, 0);
+	if (!list.length || total <= 0) {
+		return <p className="text-xs text-muted-foreground">Tidak ada data.</p>;
+	}
+	const r = size / 2;
+	const inner = r * 0.55;
+	let angle = -Math.PI / 2;
+	const wedges = list.map((it, idx) => {
+		const frac = it.value / total;
+		const a0 = angle;
+		const a1 = angle + frac * Math.PI * 2;
+		angle = a1;
+		const large = a1 - a0 > Math.PI ? 1 : 0;
+		const pt = (a: number, rad: number) =>
+			`${(r + rad * Math.cos(a)).toFixed(2)} ${(r + rad * Math.sin(a)).toFixed(2)}`;
+		return {
+			d: `M ${pt(a0, r)} A ${r} ${r} 0 ${large} 1 ${pt(a1, r)} L ${pt(a1, inner)} A ${inner} ${inner} 0 ${large} 0 ${pt(a0, inner)} Z`,
+			color: it.color ?? CHART_PALETTE[idx % CHART_PALETTE.length],
+			it,
+		};
+	});
+	return (
+		<div className="flex flex-wrap items-center gap-4">
+			<svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+				{wedges.map((w, i) => (
+					<path key={i} d={w.d} fill={w.color} stroke="#fff" strokeWidth={1} />
+				))}
+			</svg>
+			<ul className="flex flex-col gap-1 text-xs">
+				{wedges.map((w, i) => (
+					<li key={i} className="flex items-center gap-2">
+						<span className="inline-block size-2.5 rounded-sm" style={{ background: w.color }} />
+						<span className="min-w-28">{w.it.label}</span>
+						<span className="tabular-nums text-muted-foreground">
+							{Math.round((w.it.value / total) * 1000) / 10}%
+						</span>
+					</li>
+				))}
+			</ul>
+		</div>
+	);
+}
+
+/** Bar horizontal sederhana untuk chart bertipe 'bar'. */
+function BarChart({ items, maxValue }: { items: { label: string; value: number; color?: string }[]; maxValue?: number }) {
+	const list = items.filter((i) => i.value > 0);
+	const max = maxValue ?? Math.max(...list.map((i) => i.value), 1);
+	return (
+		<div className="flex flex-col gap-1.5">
+			{list.map((it, i) => (
+				<div key={i} className="flex items-center gap-2 text-xs">
+					<span className="w-36 truncate" title={it.label}>{it.label}</span>
+					<div className="h-3.5 flex-1 rounded bg-muted">
+						<div
+							className="h-full rounded"
+							style={{
+								width: `${Math.max(2, (it.value / max) * 100)}%`,
+								background: it.color ?? CHART_PALETTE[i % CHART_PALETTE.length],
+							}}
+						/>
+					</div>
+					<span className="w-14 text-right tabular-nums">{it.value}</span>
+				</div>
+			))}
+		</div>
+	);
+}
+
+function ReportDataTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
+	return (
+		<div className="overflow-x-auto rounded-xl border">
+			<table className="w-full text-left text-xs">
+				<thead>
+					<tr className="border-b bg-muted">
+						{headers.map((h) => (
+							<th key={h} className="px-3 py-2 font-medium whitespace-nowrap">
+								{h}
+							</th>
+						))}
+					</tr>
+				</thead>
+				<tbody>
+					{rows.length === 0 ? (
+						<tr>
+							<td
+								colSpan={headers.length}
+								className="px-2 py-6 text-center text-muted-foreground"
+							>
+								Belum ada data untuk filter ini.
+							</td>
+						</tr>
+					) : (
+						rows.map((row, i) => (
+							<tr key={i} className="border-b transition-colors last:border-0 hover:bg-muted/50">
+								{row.map((cell, j) => (
+									<td key={j} className="px-3 py-2 whitespace-pre-line tabular-nums align-top">
+										{cell}
+									</td>
+								))}
+							</tr>
+						))
+					)}
+				</tbody>
+			</table>
+		</div>
+	);
+}
+
 /** Render ReportDoc generik — aman untuk dataset kosong. */
 function ReportTable({ doc }: { doc: ReportDoc }) {
 	return (
@@ -119,41 +237,38 @@ function ReportTable({ doc }: { doc: ReportDoc }) {
 				</p>
 			</CardHeader>
 			<CardContent className="flex flex-col gap-3">
-				<div className="overflow-x-auto rounded-xl border">
-					<table className="w-full text-left text-xs">
-						<thead>
-							<tr className="border-b bg-muted">
-								{doc.headers.map((h) => (
-									<th key={h} className="px-3 py-2 font-medium whitespace-nowrap">
-										{h}
-									</th>
-								))}
-							</tr>
-						</thead>
-						<tbody>
-							{doc.rows.length === 0 ? (
-								<tr>
-									<td
-										colSpan={doc.headers.length}
-										className="px-2 py-6 text-center text-muted-foreground"
-									>
-										Belum ada data untuk filter ini.
-									</td>
-								</tr>
-							) : (
-								doc.rows.map((row, i) => (
-									<tr key={i} className="border-b transition-colors last:border-0 hover:bg-muted/50">
-										{row.map((cell, j) => (
-											<td key={j} className="px-3 py-2 whitespace-pre-line tabular-nums align-top">
-												{cell}
-											</td>
-										))}
-									</tr>
-								))
-							)}
-						</tbody>
-					</table>
-				</div>
+				{doc.description ? (
+					<p className="rounded-lg border bg-muted/40 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+						{doc.description}
+					</p>
+				) : null}
+				{doc.charts?.map((c) => (
+					<div key={c.title} className="flex flex-col gap-2">
+						<p className="text-xs font-semibold">{c.title}</p>
+						{c.type === "pie" ? (
+							<PieChart items={c.items} />
+						) : (
+							<BarChart items={c.items} />
+						)}
+					</div>
+				))}
+				{doc.sections?.length ? (
+					<div className="flex flex-col gap-4">
+						{doc.sections.map((sec, i) => (
+							<div key={i} className="flex flex-col gap-1.5">
+								<div>
+									<p className="text-sm font-semibold text-brand-blue-800">{sec.title}</p>
+									{sec.note ? (
+										<p className="text-xs text-muted-foreground">{sec.note}</p>
+									) : null}
+								</div>
+								<ReportDataTable headers={sec.headers} rows={sec.rows} />
+							</div>
+						))}
+					</div>
+				) : (
+					<ReportDataTable headers={doc.headers} rows={doc.rows} />
+				)}
 				{doc.summaryLines.length > 0 ? (
 					<div className="flex flex-wrap gap-2">
 						{doc.summaryLines.map((s) => (
@@ -304,9 +419,24 @@ export function AdvancedReportsManager() {
 			: programsQ.data?.flatMap((p) => p.levels)) ?? [];
 
 	// Export mengikuti filter aktif — Excel/CSV terunduh, "PDF" berupa HTML
-	// siap-print yang dibuka di tab baru (browser: Print → Save as PDF).
+	// siap-print yang dibuka di tab baru (auto window.print → Save as PDF).
 	const exportReport = async (ext: "xlsx" | "csv" | "pdf") => {
 		if (!activeKind) return;
+		// Buka tab SEKARANG (masih dalam gesture klik) — kalau ditunggu sampai
+		// fetch selesai, window.open kerap diblokir popup blocker browser.
+		const pdfTab =
+			ext === "pdf" ? window.open("", "_blank", "noopener") : null;
+		if (ext === "pdf" && !pdfTab) {
+			toast.error(
+				"Tab baru diblokir browser — izinkan popup untuk mencetak/menyimpan PDF.",
+			);
+			return;
+		}
+		if (pdfTab) {
+			pdfTab.document.title = "Menyiapkan laporan…";
+			pdfTab.document.body.innerHTML =
+				'<p style="font-family:sans-serif;color:#555;padding:24px">Menyiapkan dokumen laporan…</p>';
+		}
 		try {
 			const qs = filterQuery(filters);
 			const blob = await apiFetchBlob(
@@ -314,7 +444,7 @@ export function AdvancedReportsManager() {
 			);
 			const url = URL.createObjectURL(blob);
 			if (ext === "pdf") {
-				window.open(url, "_blank", "noopener");
+				pdfTab!.location.href = url;
 				return;
 			}
 			const a = document.createElement("a");
@@ -323,6 +453,7 @@ export function AdvancedReportsManager() {
 			a.click();
 			URL.revokeObjectURL(url);
 		} catch (e) {
+			pdfTab?.close();
 			toast.error(e instanceof Error ? e.message : "Gagal export laporan.");
 		}
 	};

@@ -76,6 +76,23 @@ export function invoiceScopeWhere(filters: ReportFilters): Record<string, unknow
 /** Alias mundur-compatible dengan tipe Fase 2d. */
 export type FinanceReportFilters = ReportFilters;
 
+/** Tabel terpisah dalam satu laporan (mis. satu tabel per bulan/jenjang). */
+export interface ReportSection {
+  /** Judul bagian, mis. "April 2026" atau "SD Kelas 5 · Kelompok A". */
+  title: string;
+  /** Keterangan kecil opsional di bawah judul. */
+  note?: string;
+  headers: string[];
+  rows: string[][];
+}
+
+/** Chart yang ikut dirender di web, HTML-cetak (SVG), dan Excel (PNG). */
+export interface ReportChart {
+  type: 'pie' | 'bar';
+  title: string;
+  items: { label: string; value: number; color?: string }[];
+}
+
 export interface ReportDoc {
   brand: string;
   title: string;
@@ -84,9 +101,17 @@ export interface ReportDoc {
   periodLabel: string;
   generatedAt: string;
   filterText: string;
+  /** Paragraf penjelasan cara membaca laporan — tampil di atas tabel. */
+  description?: string;
   headers: string[];
   /** Seluruh sel sudah berupa string siap-render (angka = plain, bukan formatted). */
   rows: string[][];
+  /**
+   * Bila diisi, renderer menampilkan tabel-tabel ini (bukan headers+rows
+   * tunggal): tiap section = satu tabel dengan judul sendiri.
+   */
+  sections?: ReportSection[];
+  charts?: ReportChart[];
   summaryLines: string[];
   fileBase: string;
 }
@@ -230,4 +255,72 @@ export function buildFilterText(filters: ReportFilters): string {
 export function numCell(n: number): string {
   if (!Number.isFinite(n)) return '0';
   return String(Math.round(n * 100) / 100);
+}
+
+/** Nama bulan lengkap Indonesia (Januari=0 … Desember=11). */
+export const MONTH_FULL_ID = [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+];
+
+/** Kunci sortir bulan "YYYY-MM" dari sebuah tanggal. */
+export function monthKeyOf(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Label bulan Indonesia dari kunci "YYYY-MM" (mis. "2026-04" → "April 2026"). */
+export function monthLabelOf(key: string): string {
+  const [y, m] = key.split('-').map((s) => parseInt(s, 10));
+  if (!y || !m || m < 1 || m > 12) return key;
+  return `${MONTH_FULL_ID[m - 1]} ${y}`;
+}
+
+/**
+ * Kelompokkan baris jadi `ReportSection` per bulan.
+ * `monthOf` menentukan bulan tiap record (null → bucket `noMonthLabel`).
+ * Urutan section mengikuti urutan kunci `YYYY-MM` yang diberikan `order`.
+ * Bila hanya ada satu bulan, tetap dikembalikan sebagai 1 section (judul
+ * bulan tampil konsisten di semua laporan).
+ */
+export function sectionsByMonth<T>(
+  records: T[],
+  monthOf: (rec: T) => Date | null,
+  toRow: (rec: T) => string[],
+  opts: {
+    headers: string[];
+    order?: 'asc' | 'desc';
+    noMonthLabel?: string;
+    /** Judul per bulan: default "Oktober 2026"; bisa override (mis. "Jatuh tempo — …"). */
+    titleOf?: (monthKey: string) => string;
+  },
+): ReportSection[] {
+  const buckets = new Map<string, string[][]>();
+  const noMonth: string[][] = [];
+  for (const rec of records) {
+    const d = monthOf(rec);
+    if (!d || Number.isNaN(d.getTime())) {
+      noMonth.push(toRow(rec));
+      continue;
+    }
+    const key = monthKeyOf(d);
+    const b = buckets.get(key) ?? [];
+    b.push(toRow(rec));
+    buckets.set(key, b);
+  }
+  const keys = [...buckets.keys()].sort((a, b) =>
+    opts.order === 'desc' ? b.localeCompare(a) : a.localeCompare(b),
+  );
+  const sections: ReportSection[] = keys.map((k) => ({
+    title: opts.titleOf ? opts.titleOf(k) : monthLabelOf(k),
+    headers: opts.headers,
+    rows: buckets.get(k)!,
+  }));
+  if (noMonth.length) {
+    sections.push({
+      title: opts.noMonthLabel ?? 'Tanpa tanggal',
+      headers: opts.headers,
+      rows: noMonth,
+    });
+  }
+  return sections;
 }
