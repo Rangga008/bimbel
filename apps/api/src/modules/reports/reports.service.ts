@@ -31,6 +31,14 @@ import {
 const REPORT_KINDS = new Set<string>(Object.keys(REPORT_KIND_META));
 const EMPTY_ROW_TEXT = 'Belum ada data';
 
+/** Nama bulan singkat kalender (Jan=0 … Des=11). */
+const CAL_MONTHS = [
+  'JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN',
+  'JUL', 'AGU', 'SEP', 'OKT', 'NOV', 'DES',
+];
+/** Batas kolom bulan agar rentang sangat panjang tidak membuat tabel melebar. */
+const MAX_MONTH_COLS = 24;
+
 @Injectable()
 export class ReportsService {
   constructor(
@@ -41,6 +49,56 @@ export class ReportsService {
   // =====================================================================
   // Public API
   // =====================================================================
+
+  /**
+   * Kolom bulan laporan mengikuti periode yang dipilih user:
+   * - Ada `period` (YYYY-MM) atau `from`/`to` → kolom = bulan-bulan dalam
+   *   rentang tsb secara kronologis (maks 24; label "MMM", atau "MMM YY" bila
+   *   lintas tahun/lebih dari 12 bulan). `indexOf` mengembalikan -1 untuk
+   *   tanggal di luar rentang — data luar periode tidak masuk sel bulan.
+   * - Tanpa rentang → fallback tahun ajaran 12 kolom mulai `academicStart`
+   *   (7 = AGU..JUL untuk rekap pembayaran, 6 = JUL..JUN untuk rekap program
+   *   & neraca) dan semua tanggal terpetakan — perilaku lama dipertahankan.
+   */
+  private monthColumns(
+    filters: ReportFilters,
+    academicStart: number,
+  ): { labels: string[]; indexOf: (d: Date) => number; scoped: boolean } {
+    const range = effectiveRange(filters);
+    if (range.gte && range.lt && range.lt > range.gte) {
+      const y0 = range.gte.getFullYear();
+      const m0 = range.gte.getMonth();
+      // Bulan terakhir = bulan dari (lt - 1ms) supaya `period` (lt = tanggal 1
+      // bulan berikutnya) tidak ikut menambah satu kolom ekstra.
+      const end = new Date(range.lt.getTime() - 1);
+      const span = Math.min(
+        (end.getFullYear() - y0) * 12 + (end.getMonth() - m0) + 1,
+        MAX_MONTH_COLS,
+      );
+      const crossYear = end.getFullYear() !== y0 || span > 12;
+      const labels = Array.from({ length: span }, (_, i) => {
+        const m = (m0 + i) % 12;
+        const y = y0 + Math.floor((m0 + i) / 12);
+        return crossYear ? `${CAL_MONTHS[m]} ${String(y).slice(2)}` : CAL_MONTHS[m];
+      });
+      return {
+        labels,
+        scoped: true,
+        indexOf: (d) => {
+          const i = (d.getFullYear() - y0) * 12 + (d.getMonth() - m0);
+          return i >= 0 && i < span ? i : -1;
+        },
+      };
+    }
+    return {
+      labels: Array.from(
+        { length: 12 },
+        (_, i) => CAL_MONTHS[(academicStart + i) % 12],
+      ),
+      scoped: false,
+      indexOf: (d) => (((d.getMonth() - academicStart) % 12) + 12) % 12,
+    };
+  }
 
   /** Bangun dokumen laporan (header + rows + summary) untuk 1 jenis laporan. */
   async build(kind: string, filters: ReportFilters = {}): Promise<ReportDoc> {
@@ -468,10 +526,10 @@ ${summary}
 
   /**
    * Rekap pembayaran per jenjang ala rekap Excel lama:
-   * NO | ID | Kelas/Prog | Nama | Harga | Pemb Ke | Sisa | AGU..JUL | Total Masuk.
-   * Kolom bulan mengikuti tahun ajaran (Agustus–Juli); sel bulan = uang masuk
-   * untuk invoice yang jatuh tempo di bulan tsb. Baris diurutkan per jenjang —
-   * tanpa filter jenjang semua jenjang muncul.
+   * NO | ID | Kelas/Prog | Nama | Harga | Pemb Ke | Sisa | <bulan> | Total Masuk.
+   * Kolom bulan mengikuti periode filter (fallback: tahun ajaran AGU–JUL);
+   * sel bulan = uang masuk untuk invoice yang jatuh tempo di bulan tsb.
+   * Baris diurutkan per jenjang — tanpa filter jenjang semua jenjang muncul.
    */
   private async buildPaymentRecap(filters: ReportFilters): Promise<ReportDoc> {
     const where: Record<string, unknown> = {};
@@ -536,15 +594,12 @@ ${summary}
       take: 500,
     });
 
-    // Tahun ajaran: Agustus (index 0) … Juli (index 11).
-    const MONTHS = [
-      'AGU', 'SEP', 'OKT', 'NOV', 'DES', 'JAN',
-      'FEB', 'MAR', 'APR', 'MEI', 'JUN', 'JUL',
-    ];
+    // Kolom bulan mengikuti periode filter; fallback tahun ajaran AGU..JUL.
+    const mcols = this.monthColumns(filters, 7);
     const headers = [
       'NO', 'ID', 'Kelas/Prog', 'Nama', 'No HP', 'Sekolah',
       'Harga', 'Pemb Ke', 'Sisa',
-      ...MONTHS, 'Total Masuk',
+      ...mcols.labels, 'Total Masuk',
     ];
 
     let billed = 0;
@@ -574,14 +629,15 @@ ${summary}
       billed += total;
       paidAll += paid;
       // Sel bulan = uang masuk invoice yang jatuh tempo di bulan tsb.
-      const months = new Array<number>(12).fill(0);
+      // Invoice di luar kolom periode terpilih tidak masuk sel bulan.
+      const months = new Array<number>(mcols.labels.length).fill(0);
       let paidCount = 0;
       for (const inv of all) {
         const p = reportMoney(inv.amountPaid);
         if (p > 0.009) paidCount += 1;
         const d = new Date(inv.dueDate ?? inv.createdAt);
-        const idx = (((d.getMonth() - 7) % 12) + 12) % 12;
-        months[idx] += p;
+        const idx = mcols.indexOf(d);
+        if (idx >= 0) months[idx] += p;
       }
       const kelasProg = e.level?.gradeLevel
         ? `${e.level.gradeLevel.name}/${e.program.code || e.program.name}`
@@ -669,12 +725,10 @@ ${summary}
       take: 1000,
     });
 
-    // Tahun ajaran dimulai Juli (seperti sheet referensi): JUL..JUN.
-    const MONTHS = [
-      'JUL', 'AGU', 'SEP', 'OKT', 'NOV', 'DES',
-      'JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN',
-    ];
-    const monthIdx = (d: Date) => (((d.getMonth() - 6) % 12) + 12) % 12;
+    // Kolom bulan mengikuti periode filter; fallback tahun ajaran JUL..JUN.
+    const mcols = this.monthColumns(filters, 6);
+    const monthIdx = mcols.indexOf;
+    const MONTH_COUNT = mcols.labels.length;
     const REGFEE_RE = /daftar|pendaftaran/i;
 
     // Agregat per program → level.
@@ -701,7 +755,7 @@ ${summary}
       }
       let lvl = prog.levels.get(levelName);
       if (!lvl) {
-        lvl = { name: levelName, sortOrder, students: 0, regFee: 0, billed: 0, paid: 0, months: new Array(12).fill(0) };
+        lvl = { name: levelName, sortOrder, students: 0, regFee: 0, billed: 0, paid: 0, months: new Array(MONTH_COUNT).fill(0) };
         prog.levels.set(levelName, lvl);
       }
       lvl.students += 1;
@@ -722,20 +776,21 @@ ${summary}
           if (al.payment.status !== 'VERIFIED' || !al.payment.paidAt) continue;
           const amt = reportMoney(al.amount);
           lvl.paid += amt;
-          lvl.months[monthIdx(new Date(al.payment.paidAt))] += amt;
+          const mi = monthIdx(new Date(al.payment.paidAt));
+          if (mi >= 0) lvl.months[mi] += amt;
         }
       }
     }
 
     const headers = [
       'PROGRAM', 'KELAS', 'Jml Siswa', 'Biaya Daftar', 'Biaya Les',
-      'TOTAL', ...MONTHS, 'Total Masuk',
+      'TOTAL', ...mcols.labels, 'Total Masuk',
     ];
     const COLS = headers.length;
     const blank = () => Array.from({ length: COLS }, () => '');
 
     const rows: string[][] = [];
-    const grand = { students: 0, regFee: 0, les: 0, billed: 0, paid: 0, months: new Array<number>(12).fill(0) };
+    const grand = { students: 0, regFee: 0, les: 0, billed: 0, paid: 0, months: new Array<number>(MONTH_COUNT).fill(0) };
 
     for (const prog of [...programs.values()].sort((a, b) =>
       a.name.localeCompare(b.name),
@@ -743,7 +798,7 @@ ${summary}
       const levels = [...prog.levels.values()].sort(
         (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
       );
-      const sub = { students: 0, regFee: 0, les: 0, billed: 0, paid: 0, months: new Array<number>(12).fill(0) };
+      const sub = { students: 0, regFee: 0, les: 0, billed: 0, paid: 0, months: new Array<number>(MONTH_COUNT).fill(0) };
       levels.forEach((lvl, i) => {
         const les = lvl.billed - lvl.regFee;
         rows.push([
@@ -856,7 +911,7 @@ ${summary}
    * baris pertama SELISIH (untung/rugi), lalu blok PEMASUKAN per program
    * (dari alokasi payment VERIFIED berdasar paidAt), blok PENGELUARAN per
    * kategori RAB (expense.occurredAt), masing-masing dengan kolom
-   * % | JUMLAH | RATA-RATA/BULAN | JUL..JUN.
+   * % | JUMLAH | RATA-RATA/BULAN | <bulan periode terpilih / JUL..JUN>.
    * Rata-rata = total / jumlah bulan berisi (anti #DIV/0!).
    */
   private async buildNeraca(filters: ReportFilters): Promise<ReportDoc> {
@@ -892,19 +947,19 @@ ${summary}
       select: { category: true, amount: true, occurredAt: true },
     });
 
-    // Tahun ajaran dimulai Juli — konsisten dengan program-recap.
-    const MONTHS = [
-      'JUL', 'AGU', 'SEP', 'OKT', 'NOV', 'DES',
-      'JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN',
-    ];
-    const monthIdx = (d: Date) => (((d.getMonth() - 6) % 12) + 12) % 12;
-    const months = () => new Array<number>(12).fill(0);
+    // Kolom bulan mengikuti periode filter; fallback tahun ajaran JUL..JUN.
+    // Saat periode dipilih, data di luar rentang tidak dihitung sama sekali
+    // (neraca memang laporan per-periode).
+    const mcols = this.monthColumns(filters, 6);
+    const monthIdx = mcols.indexOf;
+    const months = () => new Array<number>(mcols.labels.length).fill(0);
 
     type Bucket = { total: number; months: number[] };
     const income = new Map<string, Bucket>();
     const incomeTotal: Bucket = { total: 0, months: months() };
     for (const p of payments) {
       const idx = monthIdx(new Date(p.paidAt!));
+      if (idx < 0) continue;
       for (const al of p.allocations) {
         const prog =
           al.invoice.enrollmentLink?.program?.name ??
@@ -939,6 +994,7 @@ ${summary}
     const expenseTotal: Bucket = { total: 0, months: months() };
     for (const e of expenses) {
       const idx = monthIdx(new Date(e.occurredAt));
+      if (idx < 0) continue;
       const b = expense.get(e.category) ?? { total: 0, months: months() };
       b.total += reportMoney(e.amount);
       b.months[idx] += reportMoney(e.amount);
@@ -948,7 +1004,7 @@ ${summary}
     }
 
     const headers = [
-      'KETERANGAN', '%', 'JUMLAH', 'RATA-RATA PER-BULAN', ...MONTHS,
+      'KETERANGAN', '%', 'JUMLAH', 'RATA-RATA PER-BULAN', ...mcols.labels,
     ];
     const COLS = headers.length;
     const blank = () => Array.from({ length: COLS }, () => '');

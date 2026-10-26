@@ -120,12 +120,14 @@ export function SiteHeader() {
 					>
 						Info Pendaftaran
 					</Button>
-					<Link
-						href="/login"
-						className="rounded-lg px-2 py-2 text-sm font-medium text-brand-blue-100 transition-colors hover:text-white"
+					<Button
+						variant="ghost"
+						size="sm"
+						render={<Link href="/login" />}
+						className="text-brand-blue-100 hover:bg-white/10 hover:text-white"
 					>
 						Masuk
-					</Link>
+					</Button>
 					<Button
 						render={<Link href="/daftar" />}
 						className="gap-2 bg-brand-gold-400 text-brand-blue-900 hover:bg-brand-gold-300"
@@ -188,7 +190,7 @@ export function SiteHeader() {
 									}
 								>
 									<span className="block rounded-lg border px-3 py-2.5 text-center text-sm font-medium">
-										Buku Tamu
+										Info Pendaftaran (Buku Tamu)
 									</span>
 								</SheetClose>
 								<SheetClose render={<Link href="/daftar" />}>
