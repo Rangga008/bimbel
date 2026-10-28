@@ -4,11 +4,14 @@ import {
   IsString,
   MaxLength,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 
 export class CreateTutorDto {
+  /** Opsional — kosong → email placeholder digenerate dari nomor HP. */
+  @ValidateIf((o: CreateTutorDto) => !!o.email)
   @IsEmail({}, { message: 'Email tutor tidak valid.' })
-  email: string;
+  email?: string;
 
   @IsString()
   @MinLength(3, { message: 'Nama minimal 3 karakter.' })

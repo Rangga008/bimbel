@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, CircleAlert, History } from 'lucide-react';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, resolveAssetUrl } from '@/lib/api-client';
 import type { LatsolAttemptItem, LatsolAttemptDetail } from '@/lib/phase3b-types';
 import { EmptyState } from '@/components/shared/empty-state';
 import { MathContent } from '@/components/shared/math-content';
@@ -130,9 +130,12 @@ export function LatsolAttemptsHistory({ packageId }: { packageId?: string }) {
                             {item.answer.question.options
                               .filter((opt) => item.answer.selectedOptionIds.includes(opt.id))
                               .map((opt) => (
-                                <p key={opt.id} className="text-muted-foreground">
-                                  • <MathContent text={opt.content} />
-                                </p>
+                                <div key={opt.id} className="text-muted-foreground">
+                                  • {opt.imageUrl && (
+                                    <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar opsi" className="my-1 max-h-32 w-auto rounded border object-contain" />
+                                  )}
+                                  <MathContent text={opt.content} />
+                                </div>
                               ))}
                           </div>
                         </div>
@@ -168,9 +171,12 @@ export function LatsolAttemptsHistory({ packageId }: { packageId?: string }) {
                             {item.answer.question.options
                               .filter((opt) => item.answer.question.correctOptionIds.includes(opt.id))
                               .map((opt) => (
-                                <p key={opt.id} className="text-muted-foreground">
-                                  ✓ <MathContent text={opt.content} />
-                                </p>
+                                <div key={opt.id} className="text-muted-foreground">
+                                  ✓ {opt.imageUrl && (
+                                    <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar opsi" className="my-1 max-h-32 w-auto rounded border object-contain" />
+                                  )}
+                                  <MathContent text={opt.content} />
+                                </div>
                               ))}
                           </div>
                         </div>

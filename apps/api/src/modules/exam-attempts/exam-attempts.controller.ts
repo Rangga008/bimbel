@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Put,
   Req,
@@ -122,6 +123,43 @@ export class ExamAttemptsController {
   @RequirePermissions(PERMISSION_CODES.EXAM_VIEW)
   getExamAttempts(@Param('examId') examId: string) {
     return this.attempts.getExamAttempts(examId);
+  }
+
+  /** Detail jawaban attempt untuk koreksi manual (esai/isian singkat). */
+  @Get('exam-attempts/:id/review')
+  @RequirePermissions(PERMISSION_CODES.EXAM_VIEW)
+  getReview(@Param('id') id: string) {
+    return this.attempts.getAttemptReview(id);
+  }
+
+  /**
+   * Koreksi skor satu soal — dipakai proctoring untuk esai/isian singkat.
+   * Skor dibatasi 0..poin soal; total attempt dihitung ulang otomatis.
+   */
+  @Patch('exam-attempts/:id/answers/:questionId/grade')
+  @RequirePermissions(PERMISSION_CODES.EXAM_MANAGE)
+  async gradeAnswer(
+    @Param('id') id: string,
+    @Param('questionId') questionId: string,
+    @Body('score') score: number,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const result = await this.attempts.gradeAnswer(
+      id,
+      questionId,
+      Number(score),
+    );
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'EXAM_ANSWER_GRADED',
+      entity: 'ExamAttempt',
+      entityId: id,
+      newData: { questionId, ...result },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return result;
   }
 
   /**

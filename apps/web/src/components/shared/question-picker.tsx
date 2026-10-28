@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch } from '@/lib/api-client';
 import type { LevelItem, SubjectItem } from '@/lib/phase3b-types';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
-import { MathContent } from '@/components/shared/math-content';
+import { plainPreview } from '@/components/shared/math-content';
 import {
   useContentCategories,
   useContentLevels,
@@ -244,7 +244,7 @@ export function QuestionPicker({
                   className="inline-flex max-w-full items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs"
                 >
                   <span className="min-w-0 max-w-56 truncate">
-                    <MathContent text={q.content.slice(0, 80)} />
+                    {plainPreview(q.content, 80)}
                   </span>
                   <button
                     type="button"
@@ -283,8 +283,7 @@ export function QuestionPicker({
                 />
                 <div className="flex-1 min-w-0">
                   <label className="text-sm font-medium cursor-pointer block" onClick={() => onToggle(q.id)}>
-                    <MathContent text={q.content.slice(0, 120)} />
-                    {q.content.length > 120 ? '...' : ''}
+                    {plainPreview(q.content, 120)}
                   </label>
                   <div className="flex gap-1 mt-1">
                     {q.subject && <Badge variant="default" className="text-xs">{q.subject.name}</Badge>}

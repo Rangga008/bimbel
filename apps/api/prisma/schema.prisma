@@ -261,6 +261,7 @@ model Subject {
   materials      Material[]
   exams          Exam[]
   examSubtes     ExamSubtes[]
+  latsolSubtes   LatsolSubtes[]
   schedules      Schedule[]
   sessions       Session[]     @relation("SessionSubject")
   feedbackEntries FeedbackEntry[]
@@ -484,7 +485,8 @@ enum EnrollmentStatus {
 
 model Enrollment {
   id           String           @id @default(uuid())
-  parentId     String
+  /// Ortu pendaftar — boleh kosong untuk pendaftaran yang dibuat admin langsung.
+  parentId     String?
   studentId    String
   programId    String
   levelId      String
@@ -516,7 +518,7 @@ model Enrollment {
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
-  parent     Parent         @relation(fields: [parentId], references: [id], onDelete: Restrict)
+  parent     Parent?        @relation(fields: [parentId], references: [id], onDelete: Restrict)
   student    Student        @relation(fields: [studentId], references: [id], onDelete: Restrict)
   program    Program        @relation(fields: [programId], references: [id], onDelete: Restrict)
   level      Level          @relation(fields: [levelId], references: [id], onDelete: Restrict)
@@ -1245,6 +1247,7 @@ model LatsolPackage {
   level   Level?   @relation(fields: [levelId], references: [id], onDelete: SetNull)
   subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
   items    LatsolPackageItem[]
+  subtes   LatsolSubtes[]
   attempts LatsolAttempt[]
   materials Material[]
 
@@ -1255,19 +1258,40 @@ model LatsolPackage {
   @@map("latsol_packages")
 }
 
+/// Subtes/bagian di dalam paket latsol — seperti ExamSubtes tapi tanpa
+/// durasi/timer (latsol bebas waktu). Kosong = paket satu bagian biasa.
+model LatsolSubtes {
+  id        String   @id @default(uuid())
+  packageId String
+  name      String
+  subjectId String?
+  sortOrder Int      @default(0)
+
+  package LatsolPackage      @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  subject Subject?           @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  items   LatsolPackageItem[]
+
+  @@index([packageId])
+  @@map("latsol_subtes")
+}
+
 /// 1 baris = 1 soal dalam 1 paket latsol (snapshot sortOrder, bukan copy soal).
 model LatsolPackageItem {
   id        String @id @default(uuid())
   packageId String
   questionId String
+  /// Subtes pemilik soal — null untuk paket satu bagian.
+  subtesId  String?
   sortOrder Int    @default(0)
 
-  package  LatsolPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  package  LatsolPackage  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  subtes   LatsolSubtes?  @relation(fields: [subtesId], references: [id], onDelete: SetNull)
   question Question       @relation(fields: [questionId], references: [id], onDelete: Restrict)
 
   @@unique([packageId, questionId])
   @@index([packageId])
   @@index([questionId])
+  @@index([subtesId])
   @@map("latsol_package_items")
 }
 

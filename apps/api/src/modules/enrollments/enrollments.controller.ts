@@ -24,11 +24,16 @@ import { AuditService } from '../../common/audit/audit.service';
 import { EnrollmentsService } from './enrollments.service';
 import {
   CreateEnrollmentDto,
+  CreateStaffEnrollmentDto,
   PlaceEnrollmentDto,
   ReviewEnrollmentDto,
   SubmitStatementDto,
   UpdateChildDto,
 } from './dto/enrollment.dto';
+
+function ctx(req: Request) {
+  return { ipAddress: req.ip, userAgent: req.headers['user-agent'] };
+}
 
 /**
  * Pendaftaran siswa self-service:
@@ -153,6 +158,34 @@ export class EnrollmentsController {
     @Param('studentId') studentId: string,
   ) {
     return this.enrollments.removeChild(actor, studentId);
+  }
+
+  /**
+   * Admin/staff menambahkan program ke siswa yang sudah ada — termasuk
+   * backfill "sudah lunas sampai angsuran ke-N" (paidInstallments).
+   */
+  @Post('enrollments')
+  @RequirePermissions(PERMISSION_CODES.ENROLLMENT_CREATE)
+  async createForStudent(
+    @Body() dto: CreateStaffEnrollmentDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const created = await this.enrollments.createForStudent(dto);
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'ENROLLMENT_CREATED_BY_STAFF',
+      entity: 'Enrollment',
+      entityId: created.id,
+      newData: {
+        studentId: dto.studentId,
+        programId: dto.programId,
+        levelId: dto.levelId,
+        paidInstallments: dto.paidInstallments,
+      },
+      ...ctx(req),
+    });
+    return created;
   }
 
   @Get('enrollments')

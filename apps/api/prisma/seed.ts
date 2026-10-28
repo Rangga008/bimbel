@@ -200,8 +200,10 @@ const ROLE_PERMISSION_MAP: Record<string, string[]> = {
     // Manajemen akun user (buat/reset password) — tugas admin, bukan owner.
     PERMISSION_CODES.USERS_MANAGE,
     PERMISSION_CODES.USERS_RESET_PASSWORD,
-    // Verifikasi pendaftaran siswa baru setelah pembayaran.
+    // Verifikasi pendaftaran siswa baru setelah pembayaran + tambah
+    // program langsung ke siswa (backfill angsuran).
     PERMISSION_CODES.ENROLLMENT_VIEW,
+    PERMISSION_CODES.ENROLLMENT_CREATE,
     PERMISSION_CODES.ENROLLMENT_REVIEW,
   ],
   [ROLE_NAMES.ADMIN_ACADEMIC]: [
@@ -249,8 +251,10 @@ const ROLE_PERMISSION_MAP: Record<string, string[]> = {
     PERMISSION_CODES.USERS_RESET_PASSWORD,
     // Fase 6: halaman Laporan ada di ROLE_PAGES untuk admin academic.
     PERMISSION_CODES.REPORT_EXPORT,
-    // Penempatan siswa baru ke kelompok setelah pendaftaran diverifikasi.
+    // Penempatan siswa baru ke kelompok + tambah program ke siswa
+    // (halaman detail siswa menampilkan timeline angsurannya).
     PERMISSION_CODES.ENROLLMENT_VIEW,
+    PERMISSION_CODES.ENROLLMENT_CREATE,
     PERMISSION_CODES.ENROLLMENT_PLACE,
     // Pengaturan bersama — kedua admin bisa kontribusi (template reminder,
     // branding, akun kas, dsb).
@@ -319,8 +323,10 @@ const ROLE_PERMISSION_MAP: Record<string, string[]> = {
     // Fase 5a: payroll tutor.
     PERMISSION_CODES.PAYROLL_VIEW,
     PERMISSION_CODES.PAYROLL_MANAGE,
-    // Pendaftaran siswa — owner bisa melihat, verifikasi, dan menempatkan.
+    // Pendaftaran siswa — owner bisa melihat, membuat, verifikasi,
+    // dan menempatkan.
     PERMISSION_CODES.ENROLLMENT_VIEW,
+    PERMISSION_CODES.ENROLLMENT_CREATE,
     PERMISSION_CODES.ENROLLMENT_REVIEW,
     PERMISSION_CODES.ENROLLMENT_PLACE,
   ],

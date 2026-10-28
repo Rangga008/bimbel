@@ -11,6 +11,7 @@ import {
   FileQuestion,
   Lock,
   MonitorCheck,
+  PencilLine,
   RotateCcw,
   Search,
   ShieldAlert,
@@ -35,6 +36,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/shared/empty-state';
+import { MathContent } from '@/components/shared/math-content';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { ExamStatus } from '@/lib/phase3c-types';
 import { useAuthStore } from '@/stores/auth-store';
@@ -120,6 +122,7 @@ function ParticipantRow({
   canReset,
   onUnlock,
   onReset,
+  onGrade,
 }: {
   p: Participant;
   groupName: string;
@@ -127,6 +130,7 @@ function ParticipantRow({
   canReset: boolean;
   onUnlock: (p: Participant) => void;
   onReset: (p: Participant) => void;
+  onGrade: (p: Participant) => void;
 }) {
   const a = p.attempt;
   return (
@@ -173,6 +177,16 @@ function ParticipantRow({
           {canUnlock && a?.status === 'LOCKED' && (
             <Button size="sm" variant="outline" onClick={() => onUnlock(p)}>
               <Unlock /> Unlock
+            </Button>
+          )}
+          {canReset && a && a.status !== 'IN_PROGRESS' && (
+            <Button
+              size="sm"
+              variant="outline"
+              title="Koreksi jawaban esai/isian singkat siswa ini"
+              onClick={() => onGrade(p)}
+            >
+              <PencilLine /> Koreksi
             </Button>
           )}
           {canReset && a && (
@@ -223,6 +237,7 @@ export function ExamProctoringPage({
 
   const [unlockTarget, setUnlockTarget] = useState<Participant | null>(null);
   const [resetTarget, setResetTarget] = useState<Participant | null>(null);
+  const [gradeTarget, setGradeTarget] = useState<Participant | null>(null);
   const [reason, setReason] = useState('');
 
   // Filter peserta — client-side, tidak mengubah data backend.
@@ -507,6 +522,7 @@ export function ExamProctoringPage({
                   canReset={canReset}
                   onUnlock={setUnlockTarget}
                   onReset={setResetTarget}
+                  onGrade={setGradeTarget}
                 />
               ))}
             </tbody>
@@ -585,6 +601,185 @@ export function ExamProctoringPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <GradingDialog
+        target={gradeTarget}
+        onClose={() => setGradeTarget(null)}
+      />
     </div>
+  );
+}
+
+interface ReviewItem {
+  questionId: string;
+  sortOrder: number;
+  points: number;
+  question: {
+    type: string;
+    content: string;
+    answerKey: string | null;
+    options: { id: string; content: string; isCorrect: boolean }[];
+  };
+  answer: {
+    selectedOptionIds: string[];
+    textAnswer: string | null;
+    isCorrect: boolean | null;
+    score: number;
+  } | null;
+}
+
+interface AttemptReview {
+  id: string;
+  status: string;
+  score: number;
+  maxScore: number;
+  examTitle: string;
+  student: { name: string; email: string };
+  items: ReviewItem[];
+}
+
+/** Dialog koreksi manual — menampilkan jawaban esai/isian singkat siswa dan
+ *  input skor (dibatasi poin soal) per pertanyaan. */
+function GradingDialog({
+  target,
+  onClose,
+}: {
+  target: Participant | null;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const attemptId = target?.attempt?.id ?? '';
+  const reviewQ = useQuery({
+    queryKey: ['attempt-review', attemptId],
+    queryFn: () => apiFetch<AttemptReview>(`/exam-attempts/${attemptId}/review`),
+    enabled: !!attemptId,
+  });
+  const [draft, setDraft] = useState<Record<string, string>>({});
+
+  const gradeM = useMutation({
+    mutationFn: ({ questionId, score }: { questionId: string; score: number }) =>
+      apiFetch(`/exam-attempts/${attemptId}/answers/${questionId}/grade`, {
+        method: 'PATCH',
+        body: { score },
+      }),
+    onSuccess: () => {
+      toast.success('Skor tersimpan.');
+      qc.invalidateQueries({ queryKey: ['attempt-review', attemptId] });
+      qc.invalidateQueries({ queryKey: ['exam-proctoring-overview'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal menyimpan skor.')),
+  });
+
+  const manualItems = (reviewQ.data?.items ?? []).filter(
+    (it) => it.question.type === 'ESSAY' || it.question.type === 'SHORT_ANSWER',
+  );
+
+  return (
+    <Dialog open={!!target} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Koreksi Jawaban — {target?.name}</DialogTitle>
+          <DialogDescription>
+            {reviewQ.data
+              ? `${reviewQ.data.examTitle} · total ${reviewQ.data.score}/${reviewQ.data.maxScore}. Isi skor esai/isian singkat (0 s.d. poin soal).`
+              : 'Memuat jawaban…'}
+          </DialogDescription>
+        </DialogHeader>
+
+        {reviewQ.isLoading ? <Skeleton className="h-40 w-full" /> : null}
+        {reviewQ.isError ? (
+          <p className="text-sm text-destructive">
+            {err(reviewQ.error, 'Gagal memuat jawaban.')}
+          </p>
+        ) : null}
+        {reviewQ.data && manualItems.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Ujian ini tidak punya soal esai/isian singkat — semua sudah dinilai otomatis.
+          </p>
+        ) : null}
+
+        <div className="flex flex-col gap-4">
+          {manualItems.map((it) => {
+            const cur = draft[it.questionId] ?? String(it.answer?.score ?? 0);
+            return (
+              <div
+                key={it.questionId}
+                className="flex flex-col gap-2 rounded-md border p-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">
+                    Soal {it.sortOrder + 1} · {it.question.type === 'ESSAY' ? 'Esai' : 'Isian Singkat'}
+                  </p>
+                  <Badge variant="outline" className="tabular-nums">
+                    maks {it.points}
+                  </Badge>
+                </div>
+                <div className="max-h-28 overflow-y-auto rounded bg-muted/40 p-2 text-xs text-muted-foreground">
+                  <MathContent text={it.question.content} />
+                </div>
+                <div className="rounded bg-muted/60 p-2 text-sm">
+                  <p className="mb-1 text-xs font-medium text-muted-foreground">
+                    Jawaban siswa:
+                  </p>
+                  {it.answer?.textAnswer?.trim() ? (
+                    <p>{it.answer.textAnswer}</p>
+                  ) : (
+                    <p className="italic text-muted-foreground">(kosong)</p>
+                  )}
+                </div>
+                {it.question.answerKey ? (
+                  <p className="text-xs text-muted-foreground">
+                    Kunci: <span className="font-medium">{it.question.answerKey}</span>
+                  </p>
+                ) : null}
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs" htmlFor={`score-${it.questionId}`}>
+                    Skor
+                  </Label>
+                  <Input
+                    id={`score-${it.questionId}`}
+                    type="number"
+                    min={0}
+                    max={it.points}
+                    className="h-8 w-24"
+                    value={cur}
+                    onChange={(e) =>
+                      setDraft((d) => ({ ...d, [it.questionId]: e.target.value }))
+                    }
+                  />
+                  <Button
+                    size="sm"
+                    disabled={gradeM.isPending}
+                    onClick={() =>
+                      gradeM.mutate({
+                        questionId: it.questionId,
+                        score: Math.max(0, Math.min(it.points, Number(cur) || 0)),
+                      })
+                    }
+                  >
+                    Simpan
+                  </Button>
+                  {it.answer?.isCorrect === true && (
+                    <Badge className="bg-emerald-600">Benar</Badge>
+                  )}
+                  {it.answer?.isCorrect === false && (
+                    <Badge variant="destructive">Salah</Badge>
+                  )}
+                  {it.answer?.isCorrect === null && it.answer && (
+                    <Badge variant="secondary">Parsial</Badge>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Tutup
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

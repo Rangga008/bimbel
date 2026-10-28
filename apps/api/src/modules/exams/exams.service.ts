@@ -567,6 +567,7 @@ export class ExamsService {
                   select: {
                     id: true,
                     content: true,
+                    imageUrl: true,
                     sortOrder: true,
                     // Fase 3d anti-leak: jangan kirim isCorrect ke student
                     isCorrect: false,

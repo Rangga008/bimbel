@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
+import { UserAvatar } from '@/components/shared/user-avatar';
 import { useAuthStore } from '@/stores/auth-store';
 import { SessionCalendar } from '@/components/shared/session-calendar';
 import { fmtDateTime } from '@/lib/phase1c-types';
@@ -120,13 +121,16 @@ export function AttendanceMarker({ sessionsEndpoint }: { sessionsEndpoint: strin
           <CardContent className="flex flex-col gap-3">
             {rosterQ.data.tutor ? (
               <div className="flex flex-col gap-1.5 rounded-md border border-brand-blue-200 bg-brand-blue-50/40 p-3 sm:flex-row sm:items-center sm:gap-3">
-                <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                  <UserAvatar name={rosterQ.data.tutor.name} avatarUrl={rosterQ.data.tutor.avatarUrl} className="size-9 shrink-0" />
+                  <div className="min-w-0">
                   <p className="truncate font-medium">{rosterQ.data.tutor.name} <span className="text-xs font-normal text-muted-foreground">(kehadiran tutor — memengaruhi payroll)</span></p>
                   {rosterQ.data.tutorAttendance ? (
                     <p className="text-xs text-muted-foreground">Tersimpan: {ATTENDANCE_LABELS[rosterQ.data.tutorAttendance.status] ?? rosterQ.data.tutorAttendance.status}</p>
                   ) : (
                     <p className="text-xs text-muted-foreground">Belum diisi — otomatis HADIR saat absen siswa disimpan</p>
                   )}
+                  </div>
                 </div>
                 <select
                   className="h-10 rounded-md border px-3 text-sm"
@@ -190,17 +194,46 @@ export function AttendanceMarker({ sessionsEndpoint }: { sessionsEndpoint: strin
             {rosterQ.data.members.length === 0 ? (
               <p className="text-sm text-muted-foreground">Kelompok ini belum punya siswa.</p>
             ) : null}
+            {rosterQ.data.members.length > 0 && !locked ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
+                <span className="text-xs font-medium text-muted-foreground">Cepat:</span>
+                {ATTENDANCE_STATUSES.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className="rounded-full border px-2.5 py-1 text-xs hover:bg-muted"
+                    onClick={() =>
+                      setDraft((d) => {
+                        const next = { ...d };
+                        for (const m of rosterQ.data!.members) {
+                          next[m.studentId] = {
+                            status: s,
+                            note: s === 'HADIR' ? '' : next[m.studentId]?.note ?? '',
+                          };
+                        }
+                        return next;
+                      })
+                    }
+                  >
+                    Semua {ATTENDANCE_LABELS[s]}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {rosterQ.data.members.map((m) => {
               const cur = draft[m.studentId]?.status ?? m.attendance?.status ?? 'HADIR';
               return (
                 <div key={m.studentId} className="flex flex-col gap-1.5 rounded-md border p-3 sm:flex-row sm:items-center sm:gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{m.name}</p>
-                    {m.attendance ? (
-                      <p className="text-xs text-muted-foreground">Tersimpan: {ATTENDANCE_LABELS[m.attendance.status as AttendanceStatus] ?? m.attendance.status}</p>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">Belum diisi</p>
-                    )}
+                  <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                    <UserAvatar name={m.name} avatarUrl={m.avatarUrl} className="size-9 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{m.name}</p>
+                      {m.attendance ? (
+                        <p className="text-xs text-muted-foreground">Tersimpan: {ATTENDANCE_LABELS[m.attendance.status as AttendanceStatus] ?? m.attendance.status}</p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Belum diisi</p>
+                      )}
+                    </div>
                   </div>
                   <select
                     className="h-10 rounded-md border px-3 text-sm"

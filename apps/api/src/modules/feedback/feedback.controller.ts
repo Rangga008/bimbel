@@ -168,6 +168,80 @@ export class FeedbackController {
   }
 
   /**
+   * `POST /students/:id/reminders/:type` — reminder WA ke ortu siswa ini
+   * saja (pesan hanya tentang anak tersebut) dari halaman detail siswa.
+   */
+  @Post('students/:id/reminders/:type')
+  @RequireAnyPermissions(
+    PERMISSION_CODES.GROUP_MANAGE,
+    PERMISSION_CODES.PAYMENT_VERIFY,
+  )
+  async sendStudentReminder(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('id') studentId: string,
+    @Param('type') type: string,
+    @Req() req: Request,
+  ) {
+    if (!GROUP_REMINDER_TYPES.includes(type as GroupReminderType)) {
+      throw new BadRequestException(
+        'Jenis reminder tidak valid — gunakan payment-due, weekly-schedule, monthly-performance, atau feedback.',
+      );
+    }
+    const result = await this.feedback.sendStudentReminder(
+      actor,
+      studentId,
+      type as GroupReminderType,
+    );
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'STUDENT_REMINDER_SENT',
+      entity: 'Student',
+      entityId: studentId,
+      newData: { ...result, type },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return result;
+  }
+
+  /**
+   * `POST /parents/:id/reminders/:type` — reminder WA ke satu ortu untuk
+   * semua anaknya; anak yang tidak relevan (mis. sudah lunas) tak dimuat.
+   */
+  @Post('parents/:id/reminders/:type')
+  @RequireAnyPermissions(
+    PERMISSION_CODES.GROUP_MANAGE,
+    PERMISSION_CODES.PAYMENT_VERIFY,
+  )
+  async sendParentReminder(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('id') parentId: string,
+    @Param('type') type: string,
+    @Req() req: Request,
+  ) {
+    if (!GROUP_REMINDER_TYPES.includes(type as GroupReminderType)) {
+      throw new BadRequestException(
+        'Jenis reminder tidak valid — gunakan payment-due, weekly-schedule, monthly-performance, atau feedback.',
+      );
+    }
+    const result = await this.feedback.sendParentReminder(
+      actor,
+      parentId,
+      type as GroupReminderType,
+    );
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'PARENT_REMINDER_SENT',
+      entity: 'Parent',
+      entityId: parentId,
+      newData: { ...result, type },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return result;
+  }
+
+  /**
    * `POST /reminders/tutor-weekly-schedule` — antrekan WA jadwal mengajar
    * minggu ini ke semua tutor (satu pesan per tutor, lintas kelompok).
    * Dedupe per tutor+minggu ditangani unique index outbox.
@@ -187,6 +261,33 @@ export class FeedbackController {
       action: 'TUTOR_WEEKLY_REMINDER_SENT',
       entity: 'Tutor',
       entityId: result.periodKey,
+      newData: result,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return result;
+  }
+
+  /**
+   * `POST /tutors/:id/reminders/weekly-schedule` — WA jadwal mengajar
+   * minggu ini ke SATU tutor saja dari halaman detail tutor.
+   */
+  @Post('tutors/:id/reminders/weekly-schedule')
+  @RequireAnyPermissions(
+    PERMISSION_CODES.GROUP_MANAGE,
+    PERMISSION_CODES.SCHEDULE_MANAGE,
+  )
+  async sendTutorReminder(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('id') tutorId: string,
+    @Req() req: Request,
+  ) {
+    const result = await this.feedback.sendTutorWeeklyReminders(tutorId);
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'TUTOR_WEEKLY_REMINDER_SENT',
+      entity: 'Tutor',
+      entityId: tutorId,
       newData: result,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],

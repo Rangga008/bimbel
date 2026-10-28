@@ -568,7 +568,12 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
               >
                 <RadioGroupItem value={option.id} id={`opt-${option.id}`} className="mt-0.5" />
                 <Label htmlFor={`opt-${option.id}`} className="flex-1 cursor-pointer font-normal">
-                  <MathContent text={option.content} />
+                  <span className="flex flex-col gap-1">
+                    {option.imageUrl && (
+                      <img src={resolveAssetUrl(option.imageUrl)} alt="Gambar opsi" className="max-h-40 w-auto rounded border object-contain" />
+                    )}
+                    <MathContent text={option.content} />
+                  </span>
                 </Label>
               </div>
             ))}
@@ -597,7 +602,12 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                   disabled={!isInProgress}
                 />
                 <Label htmlFor={`opt-${option.id}`} className="flex-1 cursor-pointer font-normal">
-                  <MathContent text={option.content} />
+                  <span className="flex flex-col gap-1">
+                    {option.imageUrl && (
+                      <img src={resolveAssetUrl(option.imageUrl)} alt="Gambar opsi" className="max-h-40 w-auto rounded border object-contain" />
+                    )}
+                    <MathContent text={option.content} />
+                  </span>
                 </Label>
               </div>
             ))}
@@ -1131,6 +1141,9 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                                 : 'bg-muted'
                             }`}
                           >
+                            {opt.imageUrl && (
+                              <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar opsi" className="mb-1 max-h-40 w-auto rounded border object-contain" />
+                            )}
                             <MathContent text={opt.content} />
                             {opt.isCorrect && <Badge className="ml-2">Kunci</Badge>}
                             {isSelected && !opt.isCorrect && <Badge variant="destructive" className="ml-2">Jawaban Anda</Badge>}

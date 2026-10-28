@@ -1,5 +1,6 @@
 "use client";
 
+import Link from 'next/link';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -228,6 +229,9 @@ export function TutorsManager({ canManage }: { canManage: boolean }) {
                   {canManage ? (
                     <td className={`${td} text-right`}>
                       <span className="inline-flex items-center gap-1">
+                        <Link href={`/admin-academic/tutor/${tutor.id}`}>
+                          <Button variant="ghost" size="sm">Detail</Button>
+                        </Link>
                         <Button
                           variant="ghost"
                           size="sm"

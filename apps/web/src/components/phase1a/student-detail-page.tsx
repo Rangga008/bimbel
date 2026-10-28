@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, BadgePercent, ClipboardCheck, GraduationCap, Layers, MapPin, Pencil, School, Trash2, Users, Wallet } from 'lucide-react';
+import { ArrowLeft, BadgePercent, ClipboardCheck, GraduationCap, Layers, MapPin, Pencil, Plus, School, Trash2, Users, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/shared/empty-state';
+import { ReminderButtons } from '@/components/shared/reminder-buttons';
 import { UserAvatar } from '@/components/shared/user-avatar';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { SessionCalendar } from '@/components/shared/session-calendar';
@@ -43,6 +44,33 @@ interface ActivityItem {
   status: string;
   score: number | null;
   maxScore: number | null;
+}
+
+interface PlanInstallment {
+  no: number;
+  label: string;
+  amount: number;
+  sisa: number;
+  dueDate: string | null;
+  state: string;
+}
+interface PlanEnrollment {
+  id: string;
+  program: string;
+  level: string;
+  total: number;
+  sisa: number;
+  installments: PlanInstallment[];
+}
+interface PlanStudent {
+  studentId: string;
+  enrollments: PlanEnrollment[];
+}
+interface CatalogProgram {
+  id: string;
+  name: string;
+  category: string;
+  levels: { id: string; name: string }[];
 }
 
 const ACTIVITY_BADGE: Record<ActivityItem['kind'], 'secondary' | 'warning' | 'outline'> = {
@@ -94,6 +122,8 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
   const [discountAmount, setDiscountAmount] = useState('');
   const [discountReason, setDiscountReason] = useState('');
   const [discountMonths, setDiscountMonths] = useState('');
+  const [addProgramOpen, setAddProgramOpen] = useState(false);
+  const [addForm, setAddForm] = useState({ programId: '', levelId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', paidInstallments: '0' });
 
   const studentQ = useQuery({
     queryKey: ['students', studentId],
@@ -111,6 +141,47 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
     queryKey: ['students', studentId, 'enrollments'],
     queryFn: () =>
       apiFetch<StaffEnrollment[]>(`/enrollments?studentId=${studentId}`),
+  });
+
+  // Timeline angsuran per paket (endpoint sama seperti tampilan ortu) +
+  // katalog program untuk dialog "Tambah Program".
+  const planQ = useQuery({
+    queryKey: ['students', studentId, 'payment-plan'],
+    queryFn: () =>
+      apiFetch<PlanStudent[]>(`/payment-plan/student/${studentId}`),
+    enabled: canManage,
+  });
+  const programsQ = useQuery({
+    queryKey: ['programs-catalog'],
+    queryFn: () => apiFetch<CatalogProgram[]>('/programs/catalog'),
+    enabled: canManage,
+  });
+  const addProgramSel = programsQ.data?.find((x) => x.id === addForm.programId);
+  const addProgramIsReguler = addProgramSel?.category === 'REGULER';
+  const addProgramIsPrivat = addProgramSel?.category === 'PRIVAT';
+  const addProgramM = useMutation({
+    mutationFn: () =>
+      apiFetch(`/enrollments`, {
+        method: 'POST',
+        body: {
+          studentId,
+          programId: addForm.programId,
+          levelId: addForm.levelId,
+          paymentPlan: addProgramIsReguler ? addForm.paymentPlan : undefined,
+          studentCount: addProgramIsPrivat ? Number(addForm.studentCount) : undefined,
+          sessionCount: addProgramIsPrivat ? Number(addForm.sessionCount) : undefined,
+          paidInstallments: Number(addForm.paidInstallments) || 0,
+        },
+      }),
+    onSuccess: () => {
+      toast.success('Program ditambahkan — jadwal angsuran sudah dibuat.');
+      setAddProgramOpen(false);
+      setAddForm({ programId: '', levelId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', paidInstallments: '0' });
+      qc.invalidateQueries({ queryKey: ['students', studentId] });
+      qc.invalidateQueries({ queryKey: ['enrollments'] });
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal menambahkan program.')),
   });
 
   // Diskon/bantuan/promo per siswa pada paket yang diambil — disebar ke
@@ -209,6 +280,9 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
           <h1 className="truncate text-2xl font-semibold tracking-tight">{s ? s.user.name : 'Detail Siswa'}</h1>
           <p className="truncate text-sm text-muted-foreground">{s?.user.email ?? 'Memuat...'}</p>
         </div>
+        {canManage && s ? (
+          <ReminderButtons targetType="students" targetId={s.id} />
+        ) : null}
       </div>
 
       {studentQ.isLoading ? <Skeleton className="h-40 w-full" /> : null}
@@ -366,6 +440,16 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
         <div className="flex flex-col gap-2">
           <h2 className="flex items-center gap-2 text-lg font-semibold">
             <Wallet className="size-5" /> Paket &amp; Rincian Harga
+            {canManage ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="ml-auto gap-1"
+                onClick={() => setAddProgramOpen(true)}
+              >
+                <Plus className="size-3.5" /> Tambah Program
+              </Button>
+            ) : null}
           </h2>
           {enrollmentsQ.isLoading ? <Skeleton className="h-20 w-full" /> : null}
           {(enrollmentsQ.data?.length ?? 0) === 0 && !enrollmentsQ.isLoading ? (
@@ -430,6 +514,34 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                         );
                       })}
                     </div>
+                    {(() => {
+                      const plan = planQ.data?.[0]?.enrollments.find(
+                        (x) => x.id === e.id,
+                      );
+                      if (!plan) return null;
+                      const paidN = plan.installments.filter(
+                        (i) => i.state === 'PAID',
+                      ).length;
+                      const dues = plan.installments
+                        .map((i) => i.dueDate)
+                        .filter(Boolean) as string[];
+                      const fmtM = (d: string) =>
+                        new Date(d).toLocaleDateString('id-ID', {
+                          month: 'short',
+                          year: 'numeric',
+                        });
+                      return (
+                        <p className="text-xs text-muted-foreground">
+                          {paidN >= plan.installments.length
+                            ? `Lunas ${plan.installments.length} angsuran`
+                            : `Angsuran ke-${paidN + 1} dari ${plan.installments.length}`}
+                          {` · Terbayar ${rp(plan.total - plan.sisa)} · Sisa ${rp(plan.sisa)}`}
+                          {dues.length
+                            ? ` · Periode ${fmtM(dues[0])} – ${fmtM(dues[dues.length - 1])}`
+                            : ''}
+                        </p>
+                      );
+                    })()}
                   </CardContent>
                 </Card>
               );
@@ -437,6 +549,108 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
           </div>
         </div>
       ) : null}
+
+      <Dialog open={addProgramOpen} onOpenChange={setAddProgramOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Tambah Program ke Siswa</DialogTitle>
+            <DialogDescription>
+              Daftarkan siswa ke program/jenjang baru — jadwal angsuran
+              langsung dibuat. Isi &quot;lunas sampai angsuran ke-N&quot; bila
+              siswa sudah membayar sebagian; sisanya jadi tagihan berjalan +
+              rencana bulanan.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <Phase1aSelectField
+              id="ap-program"
+              label="Program *"
+              value={addForm.programId}
+              onChange={(v) => setAddForm({ ...addForm, programId: v, levelId: '' })}
+              options={(programsQ.data ?? []).map((x) => ({
+                value: x.id,
+                label: `${x.name} (${x.category})`,
+              }))}
+              placeholder="Pilih program"
+            />
+            <Phase1aSelectField
+              id="ap-level"
+              label="Jenjang *"
+              value={addForm.levelId}
+              onChange={(v) => setAddForm({ ...addForm, levelId: v })}
+              options={(addProgramSel?.levels ?? []).map((l) => ({
+                value: l.id,
+                label: l.name,
+              }))}
+              placeholder="Pilih jenjang"
+            />
+            {addProgramIsReguler ? (
+              <Phase1aSelectField
+                id="ap-plan"
+                label="Cara bayar"
+                value={addForm.paymentPlan}
+                onChange={(v) => setAddForm({ ...addForm, paymentPlan: v })}
+                options={[
+                  { value: 'FULL', label: 'Lunas di awal' },
+                  { value: 'TWO_TIMES', label: '2× angsuran' },
+                  { value: 'MONTHLY', label: 'Bulanan' },
+                ]}
+              />
+            ) : null}
+            {addProgramIsPrivat ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="ap-students">Jumlah siswa privat</Label>
+                  <Input
+                    id="ap-students"
+                    type="number"
+                    min={1}
+                    max={5}
+                    value={addForm.studentCount}
+                    onChange={(e) => setAddForm({ ...addForm, studentCount: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="ap-sessions">Pertemuan di awal</Label>
+                  <Input
+                    id="ap-sessions"
+                    type="number"
+                    min={1}
+                    max={48}
+                    value={addForm.sessionCount}
+                    onChange={(e) => setAddForm({ ...addForm, sessionCount: e.target.value })}
+                  />
+                </div>
+              </div>
+            ) : null}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="ap-paid">Sudah lunas sampai angsuran ke-</Label>
+              <Input
+                id="ap-paid"
+                type="number"
+                min={0}
+                value={addForm.paidInstallments}
+                onChange={(e) => setAddForm({ ...addForm, paidInstallments: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">
+                0 = belum bayar apa pun. N = angsuran 1 s.d. N ditandai lunas,
+                angsuran berikutnya jadi tagihan berjalan.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAddProgramOpen(false)}>
+              Batal
+            </Button>
+            <Button
+              disabled={!addForm.programId || !addForm.levelId || addProgramM.isPending}
+              onClick={() => addProgramM.mutate()}
+            >
+              {addProgramM.isPending ? 'Menyimpan…' : 'Simpan'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!discountTarget} onOpenChange={(o) => !o && setDiscountTarget(null)}>
         <DialogContent>

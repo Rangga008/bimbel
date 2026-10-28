@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { ContentCategoriesService } from '../content-categories/content-categories.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PhoneVerificationService } from '../../common/phone-verification/phone-verification.service';
@@ -31,14 +32,14 @@ export class LatsolWriteService {
     private readonly phoneVerification: PhoneVerificationService,
   ) {}
 
-  async createPackage(actor: AuthenticatedUser, dto: CreateLatsolPackageDto) {
-    if (!dto.questionIds.length)
-      throw new BadRequestException('Paket latsol minimal berisi 1 soal.');
-    await this.read.assertRefs(dto.programId, dto.levelId, actor, dto.subjectId);
-    await this.contentCategories.assertUsable(dto.category);
-    const subjectId = await this.read.resolveSubjectId(dto.subjectId, dto.levelId, dto.programId);
-    const uniq = [...new Set(dto.questionIds)];
-    const found = await this.prisma.question.findMany({
+  /**
+   * Validasi semua questionId di seluruh subtes/daftar flat — harus ada &
+   * aktif di bank soal. Dipakai create maupun update.
+   */
+  private async assertQuestions(client: Prisma.TransactionClient | PrismaService, ids: string[]) {
+    const uniq = [...new Set(ids)];
+    if (!uniq.length) return uniq;
+    const found = await client.question.findMany({
       where: { id: { in: uniq }, isActive: true },
       select: { id: true },
     });
@@ -46,6 +47,57 @@ export class LatsolWriteService {
       throw new BadRequestException(
         'Salah satu soal tidak ditemukan atau nonaktif.',
       );
+    return uniq;
+  }
+
+  /** Tulis ulang subtes + items — dipakai create (tx) dan update (tx). */
+  private async writeContents(
+    tx: Prisma.TransactionClient,
+    packageId: string,
+    questionIds: string[] | undefined,
+    subtes: { name: string; subjectId?: string; questionIds: string[] }[] | undefined,
+  ) {
+    let order = 0;
+    if (subtes?.length) {
+      for (const [i, s] of subtes.entries()) {
+        const row = await tx.latsolSubtes.create({
+          data: {
+            packageId,
+            name: s.name.trim(),
+            subjectId: s.subjectId || null,
+            sortOrder: i,
+          },
+        });
+        await tx.latsolPackageItem.createMany({
+          data: s.questionIds.map((questionId) => ({
+            packageId,
+            subtesId: row.id,
+            questionId,
+            sortOrder: order++,
+          })),
+        });
+      }
+      return;
+    }
+    await tx.latsolPackageItem.createMany({
+      data: (questionIds ?? []).map((questionId) => ({
+        packageId,
+        questionId,
+        sortOrder: order++,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
+  async createPackage(actor: AuthenticatedUser, dto: CreateLatsolPackageDto) {
+    const allIds = [
+      ...(dto.questionIds ?? []),
+      ...(dto.subtes ?? []).flatMap((s) => s.questionIds),
+    ];
+    await this.assertQuestions(this.prisma, allIds);
+    await this.read.assertRefs(dto.programId, dto.levelId, actor, dto.subjectId);
+    await this.contentCategories.assertUsable(dto.category);
+    const subjectId = await this.read.resolveSubjectId(dto.subjectId, dto.levelId, dto.programId);
     return this.prisma.$transaction(async (tx) => {
       const pkg = await tx.latsolPackage.create({
         data: {
@@ -58,14 +110,7 @@ export class LatsolWriteService {
           createdBy: actor.id,
         },
       });
-      await tx.latsolPackageItem.createMany({
-        data: uniq.map((questionId, idx) => ({
-          packageId: pkg.id,
-          questionId,
-          sortOrder: idx,
-        })),
-        skipDuplicates: true,
-      });
+      await this.writeContents(tx, pkg.id, dto.questionIds, dto.subtes);
       return tx.latsolPackage.findUniqueOrThrow({
         where: { id: pkg.id },
         include: this.read.detailInclude(),
@@ -97,26 +142,16 @@ export class LatsolWriteService {
     await this.contentCategories.assertUsable(dto.category);
 
     return this.prisma.$transaction(async (tx) => {
-      if (dto.questionIds) {
-        if (!dto.questionIds.length)
-          throw new BadRequestException('Paket latsol minimal berisi 1 soal.');
-        const uniq = [...new Set(dto.questionIds)];
-        const found = await tx.question.findMany({
-          where: { id: { in: uniq }, isActive: true },
-          select: { id: true },
-        });
-        if (found.length !== uniq.length)
-          throw new BadRequestException(
-            'Salah satu soal tidak ditemukan atau nonaktif.',
-          );
+      // questionIds/subtes keduanya "payload konten" — salah satu cukup untuk
+      // menulis ulang isi; yang lain diabaikan bila keduanya terkirim.
+      if (dto.questionIds || dto.subtes) {
+        const allIds = dto.subtes?.length
+          ? dto.subtes.flatMap((s) => s.questionIds)
+          : (dto.questionIds ?? []);
+        await this.assertQuestions(tx, allIds);
         await tx.latsolPackageItem.deleteMany({ where: { packageId: id } });
-        await tx.latsolPackageItem.createMany({
-          data: uniq.map((questionId, idx) => ({
-            packageId: id,
-            questionId,
-            sortOrder: idx,
-          })),
-        });
+        await tx.latsolSubtes.deleteMany({ where: { packageId: id } });
+        await this.writeContents(tx, id, dto.questionIds, dto.subtes);
       }
       return tx.latsolPackage.update({
         where: { id },
@@ -242,6 +277,7 @@ export class LatsolWriteService {
         where: { packageId: attempt.packageId },
         orderBy: { sortOrder: 'asc' },
         include: {
+          subtes: { select: { id: true, name: true, sortOrder: true } },
           question: { include: { options: { orderBy: { sortOrder: 'asc' } } } },
         },
       }),

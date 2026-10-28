@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { NotebookPen, Pencil, Play, Plus, Search, Settings2, Tag, Trash2 } from 'lucide-react';
+import { FileQuestion, NotebookPen, Pencil, Play, Plus, Search, Settings2, Tag, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -217,6 +217,9 @@ export function LatsolPackagesManager({
                   )}
                   {canManage && (
                     <>
+                      <Button variant="outline" size="sm" onClick={() => router.push(`${basePath}/${pkg.id}/soal`)}>
+                        <FileQuestion /> Soal
+                      </Button>
                       <Button variant="outline" size="sm" onClick={() => router.push(`${basePath}/${pkg.id}/edit${drillQuery(drill)}`)}>
                         <Pencil /> Edit
                       </Button>

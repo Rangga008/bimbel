@@ -191,3 +191,49 @@ export class SubmitStatementDto {
   @MaxLength(400_000, { message: 'Data tanda tangan terlalu besar.' })
   signatureData?: string;
 }
+
+/**
+ * Admin/staff menambahkan program ke siswa yang sudah ada (backfill):
+ * tanpa data ortu/anak — `paidInstallments` menandai berapa angsuran yang
+ * SUDAH lunas saat enrollment dibuat ("sedang angsuran ke-N dari total").
+ */
+export class CreateStaffEnrollmentDto {
+  @IsUUID('4', { message: 'studentId tidak valid.' })
+  studentId: string;
+
+  @IsUUID('4', { message: 'programId tidak valid.' })
+  programId: string;
+
+  @IsUUID('4', { message: 'levelId tidak valid.' })
+  levelId: string;
+
+  /** Cara bayar kelas reguler: FULL (lunas di awal) | TWO_TIMES | MONTHLY. */
+  @IsOptional()
+  @IsIn(['FULL', 'TWO_TIMES', 'MONTHLY'], { message: 'Cara bayar tidak valid.' })
+  paymentPlan?: 'FULL' | 'TWO_TIMES' | 'MONTHLY';
+
+  /** Privat: jumlah siswa dalam satu kelas privat (tier harga brosur). */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  studentCount?: number;
+
+  /** Privat: jumlah pertemuan yang dibayar di awal. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(48)
+  sessionCount?: number;
+
+  /**
+   * Jumlah angsuran yang SUDAH lunas saat ini (0 = belum bayar apa pun).
+   * Invoice cicilan 1..N ditandai lunas; cicilan berikutnya diterbitkan
+   * sebagai tagihan berjalan, sisanya tetap rencana bulanan.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(120)
+  paidInstallments?: number;
+}

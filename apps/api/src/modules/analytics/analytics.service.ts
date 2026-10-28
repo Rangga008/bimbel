@@ -20,6 +20,30 @@ function esc(s: unknown): string {
     .replace(/"/g, '&quot;');
 }
 
+/**
+ * Teks soal/opsi → HTML cetak: blok `[TABEL]…[/TABEL]` (hasil import Word)
+ * jadi <table> asli; teks lain di-escape dan newline jadi <br>.
+ */
+function richText(s: unknown): string {
+  return String(s ?? '')
+    .split(/(\[TABEL\][\s\S]*?\[\/TABEL\])/g)
+    .map((part) => {
+      const m = part.match(/^\[TABEL\]\s*\n([\s\S]*?)\n?\s*\[\/TABEL\]$/);
+      if (!m) return esc(part).replace(/\n/g, '<br>');
+      const rows = m[1]
+        .split('\n')
+        .map((l) => l.split('|').map((c) => c.trim()))
+        .filter((r) => r.some(Boolean));
+      if (!rows.length) return '';
+      const [head, ...rest] = rows;
+      return (
+        `<table class="dt"><thead><tr>${head.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>` +
+        `<tbody>${rest.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`
+      );
+    })
+    .join('');
+}
+
 const MONTH_ID = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
@@ -1065,6 +1089,8 @@ th{background:#eee;font-size:11px}.num{text-align:center;width:26px}.ctr{text-al
 .opts{margin:4px 0 0 34px}.opt{margin:2px 0}.opt .ltr{font-weight:bold;display:inline-block;width:16px}
 .key{background:#f3f6ff;padding:6px 8px;margin:6px 0 0 34px;font-size:11px}
 img{max-width:320px;max-height:200px;display:block;margin:6px 0}
+table.dt{border-collapse:collapse;font-size:11px;margin:4px 0}
+.dt th,.dt td{border:1px solid #999;padding:2px 6px;text-align:left}
 .hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:12px}
 @media print{body{padding:0}.noprint{display:none}}`;
   }
@@ -1089,14 +1115,14 @@ img{max-width:320px;max-height:200px;display:block;margin:6px 0}
         const opts = q.options
           .map(
             (o) =>
-              `<div class="opt"><span class="ltr">${o.letter}.</span> ${esc(o.content)}${sheet.withKey && o.isCorrect ? ' <b class="ok">✓</b>' : ''}</div>`,
+              `<div class="opt"><span class="ltr">${o.letter}.</span> ${richText(o.content)}${sheet.withKey && o.isCorrect ? ' <b class="ok">✓</b>' : ''}</div>`,
           )
           .join('');
         const key =
           sheet.withKey && (q.answerKey || q.explanation)
             ? `<div class="key">${q.answerKey ? `<b>Kunci:</b> ${esc(q.answerKey)}<br>` : ''}${q.explanation ? `<b>Pembahasan:</b> ${esc(q.explanation)}` : ''}</div>`
             : '';
-        return `<div class="q"><div class="qh"><span class="qn">${q.no}.</span><div><div>${esc(q.content)}</div>${q.imageUrl ? `<img src="${esc(q.imageUrl)}">` : ''}<div class="opts">${opts}</div>${key}</div></div></div>`;
+        return `<div class="q"><div class="qh"><span class="qn">${q.no}.</span><div><div>${richText(q.content)}</div>${q.imageUrl ? `<img src="${esc(q.imageUrl)}">` : ''}<div class="opts">${opts}</div>${key}</div></div></div>`;
       })
       .join('');
     return this.printDoc(

@@ -74,6 +74,14 @@ export class PaymentsController {
       .then((count) => ({ count }));
   }
 
+  /** Staff: timeline angsuran satu siswa — sama seperti yang dilihat ortu,
+   *  dipakai di Kelola Siswa → Paket & Rincian Harga. */
+  @Get('payment-plan/student/:studentId')
+  @RequirePermissions(PERMISSION_CODES.ENROLLMENT_VIEW)
+  studentPaymentPlan(@Param('studentId') studentId: string) {
+    return this.payments.adminPaymentPlan(studentId);
+  }
+
   @Get('payments/:id')
   @RequirePermissions(PERMISSION_CODES.PAYMENT_VIEW)
   get(@Param('id') id: string) {

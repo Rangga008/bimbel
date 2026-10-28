@@ -49,7 +49,7 @@ export class AttendanceService {
               orderBy: { joinedAt: 'asc' },
               select: {
                 student: {
-                  select: { id: true, user: { select: { name: true } } },
+                  select: { id: true, user: { select: { name: true, avatarUrl: true } } },
                 },
               },
             },
@@ -58,7 +58,7 @@ export class AttendanceService {
         attendances: true,
         tutorAttendances: true,
         tutor: {
-          select: { id: true, user: { select: { name: true } } },
+          select: { id: true, user: { select: { name: true, avatarUrl: true } } },
         },
       },
     });
@@ -75,12 +75,13 @@ export class AttendanceService {
       },
       group: { id: session.group.id, name: session.group.name },
       tutor: session.tutor
-        ? { id: session.tutor.id, name: session.tutor.user.name }
+        ? { id: session.tutor.id, name: session.tutor.user.name, avatarUrl: session.tutor.user.avatarUrl }
         : null,
       tutorAttendance: session.tutorAttendances[0] ?? null,
       members: session.group.members.map((m) => ({
         studentId: m.student.id,
         name: m.student.user.name,
+        avatarUrl: m.student.user.avatarUrl,
         attendance: byStudent.get(m.student.id) ?? null,
       })),
     };

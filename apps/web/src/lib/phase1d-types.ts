@@ -32,9 +32,9 @@ export interface AttendanceRow {
 export interface AttendanceRoster {
   session: { id: string; groupId: string; tutorId: string | null; startsAt: string; endsAt: string; status: string };
   group: { id: string; name: string };
-  tutor: { id: string; name: string } | null;
+  tutor: { id: string; name: string; avatarUrl?: string | null } | null;
   tutorAttendance: { id: string; status: AttendanceStatus; note: string | null } | null;
-  members: Array<{ studentId: string; name: string; attendance: { id: string; status: AttendanceStatus; note: string | null } | null }>;
+  members: Array<{ studentId: string; name: string; avatarUrl?: string | null; attendance: { id: string; status: AttendanceStatus; note: string | null } | null }>;
 }
 
 export interface AttendanceRecap {

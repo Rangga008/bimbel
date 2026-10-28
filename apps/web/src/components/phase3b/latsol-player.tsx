@@ -26,9 +26,16 @@ interface PackagePlayData {
   id: string;
   title: string;
   description: string | null;
+  subtes?: Array<{
+    id: string;
+    name: string;
+    subject?: { id: string; name: string } | null;
+    _count: { items: number };
+  }>;
   items: Array<{
     id: string;
     sortOrder: number;
+    subtes: { id: string; name: string; sortOrder: number } | null;
     question: LatsolQuestionPlay;
   }>;
 }
@@ -248,6 +255,9 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
               {current.question.points ? ` · ${current.question.points} poin` : ''}
             </span>
           </span>
+          {current.subtes ? (
+            <Badge variant="secondary" className="shrink-0">{current.subtes.name}</Badge>
+          ) : null}
           {feedback && (
             <Badge variant={feedback.isCorrect === true ? 'default' : 'destructive'}>
               {feedback.isCorrect === null
@@ -446,6 +456,41 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
           </Button>
         </div>
       </div>
+
+      {/* Navigasi subtes — latsol bebas waktu, siswa boleh lompat bagian
+          mana saja. Chip menandai subtes yang sedang dilihat. */}
+      {pkg.subtes?.length ? (
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+          {pkg.subtes.map((st) => {
+            const firstIdx = items.findIndex((it) => it.subtes?.id === st.id);
+            const active = current?.subtes?.id === st.id;
+            const answered = items.filter(
+              (it) => it.subtes?.id === st.id && feedbackMap[it.question.id],
+            ).length;
+            return (
+              <button
+                key={st.id}
+                type="button"
+                onClick={() => firstIdx >= 0 && jumpTo(firstIdx)}
+                className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                  active
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'bg-muted/40 hover:bg-muted'
+                }`}
+              >
+                {st.name}
+                <span
+                  className={`rounded-full px-1.5 text-[10px] ${
+                    active ? 'bg-primary-foreground/20' : 'bg-muted text-muted-foreground'
+                  }`}
+                >
+                  {answered}/{st._count.items}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_260px] lg:items-start lg:gap-6">
         <div className="flex flex-col gap-4">

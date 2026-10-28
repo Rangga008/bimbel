@@ -221,6 +221,7 @@ export class ExamAttemptsService {
                 select: {
                   id: true,
                   content: true,
+                  imageUrl: true,
                   sortOrder: true,
                   isCorrect: reveal,
                 },
@@ -979,5 +980,114 @@ export class ExamAttemptsService {
       studentName: attempt.student.user?.name ?? null,
       status: attempt.status,
     };
+  }
+
+  /**
+   * Review attempt untuk penilaian manual (staff/proctoring): semua soal +
+   * jawaban siswa + poin tiap item — tanpa batasan anti-leak karena dipakai
+   * admin/tutor yang mengoreksi esai/isian singkat.
+   */
+  async getAttemptReview(attemptId: string) {
+    const attempt = await this.prisma.examAttempt.findUnique({
+      where: { id: attemptId },
+      include: {
+        exam: {
+          select: {
+            id: true,
+            title: true,
+            items: {
+              orderBy: { sortOrder: 'asc' },
+              include: {
+                question: {
+                  include: { options: { orderBy: { sortOrder: 'asc' } } },
+                },
+              },
+            },
+          },
+        },
+        student: {
+          select: { id: true, user: { select: { name: true, email: true } } },
+        },
+        answers: true,
+      },
+    });
+    if (!attempt) throw new NotFoundException('Attempt tidak ditemukan.');
+    const byQ = new Map(attempt.answers.map((a) => [a.questionId, a]));
+    return {
+      id: attempt.id,
+      status: attempt.status,
+      score: attempt.score,
+      maxScore: attempt.maxScore,
+      examTitle: attempt.exam.title,
+      student: attempt.student.user,
+      items: attempt.exam.items.map((it) => {
+        const ans = byQ.get(it.questionId);
+        return {
+          questionId: it.questionId,
+          sortOrder: it.sortOrder,
+          points: it.points,
+          question: {
+            type: it.question.type,
+            content: it.question.content,
+            answerKey: it.question.answerKey,
+            options: it.question.options.map((o) => ({
+              id: o.id,
+              content: o.content,
+              isCorrect: o.isCorrect,
+            })),
+          },
+          answer: ans
+            ? {
+                selectedOptionIds: ans.selectedOptionIds,
+                textAnswer: ans.textAnswer,
+                isCorrect: ans.isCorrect,
+                score: ans.score,
+              }
+            : null,
+        };
+      }),
+    };
+  }
+
+  /**
+   * Koreksi manual skor satu jawaban (esai/isian singkat, tapi boleh juga
+   * untuk tipe lain) — dibatasi 0 s.d. poin soal di ujian ini, lalu total
+   * skor attempt dihitung ulang dari semua jawaban.
+   */
+  async gradeAnswer(attemptId: string, questionId: string, score: number) {
+    const attempt = await this.prisma.examAttempt.findUnique({
+      where: { id: attemptId },
+      include: { exam: { select: { items: true } } },
+    });
+    if (!attempt) throw new NotFoundException('Attempt tidak ditemukan.');
+    const item = attempt.exam.items.find((i) => i.questionId === questionId);
+    if (!item) throw new NotFoundException('Soal tidak ada di ujian ini.');
+    if (!Number.isFinite(score)) {
+      throw new BadRequestException('Skor harus berupa angka.');
+    }
+    const clamped = Math.max(0, Math.min(item.points, Math.round(score)));
+    await this.prisma.examAnswer.upsert({
+      where: { attemptId_questionId: { attemptId, questionId } },
+      create: {
+        attemptId,
+        questionId,
+        score: clamped,
+        isCorrect: clamped >= item.points ? true : clamped === 0 ? false : null,
+      },
+      update: {
+        score: clamped,
+        isCorrect: clamped >= item.points ? true : clamped === 0 ? false : null,
+      },
+    });
+    const agg = await this.prisma.examAnswer.aggregate({
+      _sum: { score: true },
+      where: { attemptId },
+    });
+    const total = agg._sum.score ?? 0;
+    await this.prisma.examAttempt.update({
+      where: { id: attemptId },
+      data: { score: total },
+    });
+    return { answerScore: clamped, score: total, maxScore: attempt.maxScore };
   }
 }

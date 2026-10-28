@@ -1,0 +1,1 @@
+ALTER TABLE "enrollments" ALTER COLUMN "parentId" DROP NOT NULL;

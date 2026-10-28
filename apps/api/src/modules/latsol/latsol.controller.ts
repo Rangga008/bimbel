@@ -99,7 +99,12 @@ export class LatsolController {
       action: 'LATSOL_PACKAGE_CREATED',
       entity: 'LatsolPackage',
       entityId: created.id,
-      newData: { title: dto.title, questionCount: dto.questionIds.length },
+      newData: {
+        title: dto.title,
+        questionCount:
+          (dto.questionIds?.length ?? 0) +
+          (dto.subtes ?? []).reduce((n, s) => n + s.questionIds.length, 0),
+      },
       ...ctx(req),
     });
     return created;

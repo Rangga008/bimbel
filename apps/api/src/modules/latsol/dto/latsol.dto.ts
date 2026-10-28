@@ -16,6 +16,22 @@ import {
 // bukan tipe UUID yang dipaksa DB — data seed/demo memakai literal non-UUID (mis. "seed-q1").
 // Validasi referensial sebenarnya (soal/opsi ada & aktif) tetap dilakukan di service layer.
 
+/** Satu subtes dalam paket latsol — nama wajib, mapel opsional, soalnya sendiri. */
+export class LatsolSubtesInputDto {
+  @IsString()
+  @IsNotEmpty({ message: 'Nama subtes wajib diisi.' })
+  @MaxLength(120, { message: 'Nama subtes maksimal 120 karakter.' })
+  name: string;
+
+  @IsOptional()
+  @IsUUID('4', { message: 'subjectId tidak valid.' })
+  subjectId?: string;
+
+  @IsArray({ message: 'questionIds harus berupa array.' })
+  @IsString({ each: true, message: 'Setiap questionId harus string valid.' })
+  questionIds: string[];
+}
+
 export class CreateLatsolPackageDto {
   @IsOptional()
   @IsUUID('4', { message: 'programId tidak valid.' })
@@ -44,10 +60,17 @@ export class CreateLatsolPackageDto {
   @MaxLength(1000, { message: 'Deskripsi maksimal 1000 karakter.' })
   description?: string;
 
+  @IsOptional()
   @IsArray({ message: 'questionIds harus berupa array.' })
   @IsString({ each: true, message: 'Setiap questionId harus string valid.' })
-  @IsNotEmpty({ message: 'Paket latsol minimal berisi 1 soal.' })
-  questionIds: string[];
+  questionIds?: string[];
+
+  /** Mode subtes — bila terisi, questionIds flat diabaikan. */
+  @IsOptional()
+  @IsArray({ message: 'subtes harus berupa array.' })
+  @ValidateNested({ each: true })
+  @Type(() => LatsolSubtesInputDto)
+  subtes?: LatsolSubtesInputDto[];
 }
 
 export class UpdateLatsolPackageDto {
@@ -85,6 +108,13 @@ export class UpdateLatsolPackageDto {
   @IsArray({ message: 'questionIds harus berupa array.' })
   @IsString({ each: true, message: 'Setiap questionId harus string valid.' })
   questionIds?: string[];
+
+  /** Mode subtes — bila terisi, questionIds flat diabaikan. */
+  @IsOptional()
+  @IsArray({ message: 'subtes harus berupa array.' })
+  @ValidateNested({ each: true })
+  @Type(() => LatsolSubtesInputDto)
+  subtes?: LatsolSubtesInputDto[];
 }
 
 export class AnswerItemDto {

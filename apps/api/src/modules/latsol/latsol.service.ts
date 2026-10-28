@@ -25,6 +25,7 @@ const DETAIL_INCLUDE = {
   items: {
     orderBy: { sortOrder: 'asc' as const },
     include: {
+      subtes: { select: { id: true, name: true, sortOrder: true } },
       question: {
         include: {
           program: { select: { id: true, name: true, code: true } },
@@ -32,6 +33,13 @@ const DETAIL_INCLUDE = {
           options: { orderBy: { sortOrder: 'asc' as const } },
         },
       },
+    },
+  },
+  subtes: {
+    orderBy: { sortOrder: 'asc' as const },
+    include: {
+      subject: { select: { id: true, name: true, code: true } },
+      _count: { select: { items: true } },
     },
   },
 } as const;
@@ -123,9 +131,20 @@ export class LatsolService {
       include: {
         program: { select: { id: true, name: true, code: true } },
         level: { select: { id: true, name: true, code: true } },
+        subtes: {
+          orderBy: { sortOrder: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            sortOrder: true,
+            subject: { select: { id: true, name: true } },
+            _count: { select: { items: true } },
+          },
+        },
         items: {
           orderBy: { sortOrder: 'asc' },
           include: {
+            subtes: { select: { id: true, name: true, sortOrder: true } },
             question: {
               // Anti-leak: select eksplisit — TANPA answerKey/explanation, dan opsi TANPA isCorrect.
               // Jangan ganti ke `include` polos di sini karena Prisma include tanpa select akan

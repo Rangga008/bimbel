@@ -301,11 +301,11 @@ export class QuestionsImportService {
       pendingLines = [];
     };
 
-    // Walk elemen body berurutan: paragraf teks ATAU tabel.
-    const elRe = /<w:tbl[\s>][\s\S]*?<\/w:tbl>|<w:p[\s>][\s\S]*?<\/w:p>/g;
-    let m: RegExpExecArray | null;
-    while ((m = elRe.exec(xml))) {
-      const frag = m[0];
+    // Walk elemen body berurutan (depth-aware): paragraf ATAU tabel.
+    // <w:p/> self-closing (paragraf kosong khas Word) tidak boleh menelan
+    // tag berikutnya, dan <w:tbl> bersarang di dalam sel tidak boleh
+    // memotong fragmen tabel induk.
+    for (const frag of this.walkTopElements(xml)) {
       if (frag.startsWith('<w:tbl')) {
         flushLines();
         rows.push(...this.parseTable(frag, usedRelIds, rows.length));
@@ -339,6 +339,133 @@ export class QuestionsImportService {
     return { rows, images };
   }
 
+  /**
+   * Pecah XML jadi fragmen elemen top-level <w:p> / <w:tbl> secara
+   * depth-aware: <w:tbl> bersarang dihitung supaya penutupnya tidak memotong
+   * tabel induk, dan tag self-closing (<w:p/>) dikembalikan apa adanya.
+   */
+  private walkTopElements(xml: string): string[] {
+    const frags: string[] = [];
+    const re = /<w:(tbl|p)\b[^>]*?>/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(xml))) {
+      const tag = m[1];
+      if (m[0].endsWith('/>')) {
+        frags.push(m[0]); // self-closing — paragraf kosong
+        continue;
+      }
+      let depth = 1;
+      const inner = new RegExp(`<w:${tag}\\b[^>]*?>|<\\/w:${tag}>`, 'g');
+      inner.lastIndex = re.lastIndex;
+      let mm: RegExpExecArray | null;
+      while ((mm = inner.exec(xml))) {
+        if (mm[0].startsWith('</')) depth--;
+        else if (!mm[0].endsWith('/>')) depth++;
+        if (depth === 0) break;
+      }
+      frags.push(xml.slice(m.index, inner.lastIndex));
+      re.lastIndex = inner.lastIndex;
+    }
+    return frags;
+  }
+
+  /**
+   * Pecah isi container jadi daftar fragmen <w:tag>…</w:tag> pada kedalaman
+   * tabel 0 — <w:tr>/<w:tc> di dalam <w:tbl> bersarang diabaikan. `tag`
+   * diasumsikan tidak bersarang pada dirinya sendiri (tr/tc tidak menampung
+   * tr/tc secara langsung; hanya lewat tabel bersarang).
+   */
+  private splitTopLevel(xml: string, tag: 'tr' | 'tc'): string[] {
+    const out: string[] = [];
+    const openRe = new RegExp(`<w:(?:tbl|${tag})\\b[^>]*?>|<\\/w:tbl>`, 'g');
+    let depth = 0;
+    let m: RegExpExecArray | null;
+    while ((m = openRe.exec(xml))) {
+      const tok = m[0];
+      if (tok === '</w:tbl>') {
+        depth = Math.max(0, depth - 1);
+        continue;
+      }
+      if (tok.startsWith('<w:tbl')) {
+        if (!tok.endsWith('/>')) depth++;
+        continue;
+      }
+      if (depth !== 0) continue; // tr/tc di dalam tabel bersarang
+      if (tok.endsWith('/>')) {
+        out.push(tok);
+        continue;
+      }
+      // Cari </w:tag> dengan tetap mengabaikan isi tabel bersarang.
+      const closeRe = new RegExp(
+        `<w:tbl\\b[^>]*?>|<\\/w:tbl>|<\\/w:${tag}>`,
+        'g',
+      );
+      closeRe.lastIndex = openRe.lastIndex;
+      let dd = 0;
+      let cm: RegExpExecArray | null;
+      let end = xml.length;
+      while ((cm = closeRe.exec(xml))) {
+        if (cm[0].startsWith('</')) {
+          if (cm[0] === '</w:tbl>') dd = Math.max(0, dd - 1);
+          else if (dd === 0) {
+            end = closeRe.lastIndex;
+            break;
+          }
+          // </w:tag> di dalam tabel bersarang — abaikan.
+          continue;
+        }
+        if (!cm[0].endsWith('/>')) dd++;
+      }
+      out.push(xml.slice(m.index, end));
+      openRe.lastIndex = end;
+    }
+    return out;
+  }
+
+  /** Lepas tag pembungkus <w:xxx>…</w:xxx> di ujung fragmen. */
+  private unwrapTag(xml: string, tag: string): string {
+    return xml
+      .replace(new RegExp(`^<w:${tag}\\b[^>]*?>`), '')
+      .replace(new RegExp(`<\\/w:${tag}>\\s*$`), '');
+  }
+
+  /**
+   * Teks satu sel: paragraf langsung + isi <w:tbl> bersarang. Tabel dalam
+   * ditulis sebagai blok `[TABEL]…[/TABEL]` (satu baris tabel = satu baris
+   * "sel | sel") — dirender ulang jadi tabel asli oleh MathContent di web.
+   */
+  private cellText(tcXml: string, usedRelIds: Set<string>): string {
+    const inner = this.unwrapTag(tcXml, 'tc');
+    const parts: string[] = [];
+    for (const child of this.walkTopElements(inner)) {
+      if (child.startsWith('<w:tbl')) {
+        const tblInner = this.unwrapTag(child, 'tbl');
+        const lines: string[] = [];
+        for (const trFrag of this.splitTopLevel(tblInner, 'tr')) {
+          const trInner = this.unwrapTag(trFrag, 'tr');
+          const cells = this.splitTopLevel(trInner, 'tc')
+            .map((tc2) => {
+              const pRe = /<w:p\b[^>]*?\/>|<w:p\b[^>]*?>[\s\S]*?<\/w:p>/g;
+              const sub: string[] = [];
+              let pm: RegExpExecArray | null;
+              while ((pm = pRe.exec(tc2))) {
+                const t = this.extractText(pm[0], usedRelIds);
+                if (t) sub.push(t);
+              }
+              return sub.join(' ');
+            })
+            .filter(Boolean);
+          if (cells.length) lines.push(cells.join(' | '));
+        }
+        if (lines.length) parts.push(`[TABEL]\n${lines.join('\n')}\n[/TABEL]`);
+      } else {
+        const t = this.extractText(child, usedRelIds);
+        if (t) parts.push(t);
+      }
+    }
+    return parts.join('\n');
+  }
+
   /** Ekstrak teks + token [IMG:rId] dari fragmen XML (paragraf/sel). */
   private extractText(frag: string, usedRelIds: Set<string>): string {
     let out = '';
@@ -365,24 +492,15 @@ export class QuestionsImportService {
     usedRelIds: Set<string>,
     baseNo: number,
   ): ParsedRow[] {
-    const trRe = /<w:tr[\s>][\s\S]*?<\/w:tr>/g;
+    // Split baris/sel secara depth-aware — <w:tr> dan <w:tc> milik <w:tbl>
+    // bersarang di dalam sel tidak ikut terhitung sebagai baris/sel tabel ini.
+    const tblInner = this.unwrapTag(tblXml, 'tbl');
     const tableRows: string[][] = [];
-    let tm: RegExpExecArray | null;
-    while ((tm = trRe.exec(tblXml))) {
-      const tcRe = /<w:tc[\s>][\s\S]*?<\/w:tc>/g;
-      const cells: string[] = [];
-      let cm: RegExpExecArray | null;
-      while ((cm = tcRe.exec(tm[0]))) {
-        // Gabung paragraf dalam sel dengan newline.
-        const pRe = /<w:p[\s>][\s\S]*?<\/w:p>/g;
-        const parts: string[] = [];
-        let pm: RegExpExecArray | null;
-        while ((pm = pRe.exec(cm[0]))) {
-          const t = this.extractText(pm[0], usedRelIds);
-          if (t) parts.push(t);
-        }
-        cells.push(parts.join('\n'));
-      }
+    for (const trFrag of this.splitTopLevel(tblInner, 'tr')) {
+      const trInner = this.unwrapTag(trFrag, 'tr');
+      const cells = this.splitTopLevel(trInner, 'tc').map((tc) =>
+        this.cellText(tc, usedRelIds),
+      );
       if (cells.some((c) => c.trim())) tableRows.push(cells);
     }
     if (!tableRows.length) return [];
@@ -494,20 +612,26 @@ export class QuestionsImportService {
     return hasField || row.content ? [row] : [];
   }
 
-  /** Buang slot opsi kosong dan rapikan indeks gambar opsi ke posisi padat. */
+  /**
+   * Buang slot opsi kosong dan rapikan indeks gambar opsi ke posisi padat.
+   * Slot yang hanya berisi gambar (opsi bergambar, mis. opsi tabel/gambar
+   * di Word) tetap dipertahankan — kontennya kosong tapi imageUrl-nya ada.
+   */
   private compactOptions(r: ParsedRow) {
     const sparse = r.options;
     const denseOptions: string[] = [];
     const denseImages: Record<number, string[]> = {};
     for (let i = 0; i < sparse.length; i++) {
       const v = sparse[i];
+      const hasImg = (r.optionImages[i]?.length ?? 0) > 0;
       if (v === undefined || v === '' || v === null) {
-        // Slot huruf kosong — gambar di slot ini ikut terbuang.
-        continue;
+        if (!hasImg) continue;
+        denseOptions.push('');
+      } else {
+        denseOptions.push(v);
       }
-      const di = denseOptions.length;
-      denseOptions.push(v);
-      if (r.optionImages[i]?.length) denseImages[di] = r.optionImages[i];
+      const di = denseOptions.length - 1;
+      if (hasImg) denseImages[di] = r.optionImages[i];
     }
     r.options = denseOptions;
     r.optionImages = denseImages;
@@ -672,15 +796,43 @@ export class QuestionsImportService {
         sortOrder: i,
       }));
     } else if (type === 'TRUE_FALSE') {
-      const k = row.kunci.trim().toLowerCase();
-      const benar = ['benar', 'true', 'b'].includes(k);
-      const salah = ['salah', 'false', 's'].includes(k);
-      if (!benar && !salah)
-        errors.push('Kunci soal Benar/Salah harus berisi "Benar" atau "Salah".');
-      dto.options = [
-        { content: 'Benar', isCorrect: benar, sortOrder: 0 },
-        { content: 'Salah', isCorrect: salah, sortOrder: 1 },
-      ];
+      // Kunci multi-pernyataan "BENAR, SALAH, ..." → soal BS kompleks, setara
+      // PGK: opsi ke-i bernilai benar bila kunci ke-i "Benar".
+      const parts = row.kunci
+        .split(/[,;|]+/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+      if (parts.length >= 2) {
+        const marks = parts.map((p) => {
+          const k = p.toLowerCase();
+          if (['benar', 'true', 'b'].includes(k)) return true;
+          if (['salah', 'false', 's'].includes(k)) return false;
+          return null;
+        });
+        if (marks.includes(null) || marks.length !== row.options.length) {
+          errors.push(
+            'Kunci Benar/Salah per-pernyataan harus "Benar"/"Salah" dipisah koma dan sama banyak dengan jumlah opsi.',
+          );
+        } else {
+          type = 'MULTIPLE_CHOICE';
+          dto.type = type;
+          dto.options = row.options.map((o, i) => ({
+            content: o,
+            isCorrect: marks[i] === true,
+            sortOrder: i,
+          }));
+        }
+      } else {
+        const k = row.kunci.trim().toLowerCase();
+        const benar = ['benar', 'true', 'b'].includes(k);
+        const salah = ['salah', 'false', 's'].includes(k);
+        if (!benar && !salah)
+          errors.push('Kunci soal Benar/Salah harus berisi "Benar" atau "Salah".');
+        dto.options = [
+          { content: 'Benar', isCorrect: benar, sortOrder: 0 },
+          { content: 'Salah', isCorrect: salah, sortOrder: 1 },
+        ];
+      }
     } else if (type === 'SHORT_ANSWER') {
       if (!row.kunci.trim())
         errors.push('Kunci jawaban isian singkat wajib diisi.');

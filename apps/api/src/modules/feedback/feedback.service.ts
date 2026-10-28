@@ -532,7 +532,11 @@ export class FeedbackService {
       }
     }
 
-    const body = await this.composeReminderBody(group, memberIds, type);
+    const body = await this.composeReminderBody(
+      { groupIds: [group.id], label: `${group.name}${group.code ? ` (${group.code})` : ''}` },
+      memberIds,
+      type,
+    );
     const periodKey = body.periodKey;
     const eventType = `GROUP_REMINDER_${type.toUpperCase().replace(/-/g, '_')}`;
 
@@ -575,19 +579,212 @@ export class FeedbackService {
     };
   }
 
+  /** Reminder ke ortu dari SATU siswa — dipicu dari detail siswa admin.
+   *  Ortu menerima pesan seperti reminder kelompok tapi hanya anak ini. */
+  async sendStudentReminder(
+    actor: AuthenticatedUser,
+    studentId: string,
+    type: GroupReminderType,
+  ) {
+    const student = await this.prisma.student.findUnique({
+      where: { id: studentId },
+      select: {
+        id: true,
+        user: { select: { name: true } },
+        groupMembers: { select: { groupId: true } },
+        parentStudents: {
+          select: {
+            parent: {
+              select: {
+                id: true,
+                isActive: true,
+                user: { select: { id: true, name: true, phone: true, isActive: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!student) throw new NotFoundException('Siswa tidak ditemukan.');
+    return this.dispatchReminder(
+      [{ id: student.id, name: student.user.name, groupIds: student.groupMembers.map((g) => g.groupId), parentStudents: student.parentStudents }],
+      type,
+      'Student',
+      studentId,
+      `Siswa ${student.user.name}`,
+    );
+  }
+
+  /** Reminder ke SATU ortu untuk semua anaknya — dipicu dari detail ortu.
+   *  Isi pesan hanya memuat anak yang relevan (mis. belum bayar). */
+  async sendParentReminder(
+    actor: AuthenticatedUser,
+    parentId: string,
+    type: GroupReminderType,
+  ) {
+    const parent = await this.prisma.parent.findUnique({
+      where: { id: parentId },
+      select: {
+        id: true,
+        isActive: true,
+        user: { select: { id: true, name: true, phone: true, isActive: true } },
+        parentStudents: {
+          select: {
+            student: {
+              select: {
+                id: true,
+                user: { select: { name: true } },
+                groupMembers: { select: { groupId: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!parent) throw new NotFoundException('Orang tua tidak ditemukan.');
+    const memberIds = new Set(parent.parentStudents.map((ps) => ps.student.id));
+    const groupIds = [
+      ...new Set(
+        parent.parentStudents.flatMap((ps) =>
+          ps.student.groupMembers.map((g) => g.groupId),
+        ),
+      ),
+    ];
+    const children = parent.parentStudents.map((ps) => ps.student.user.name);
+    const label = `Ortu ${parent.user.name}`;
+    const body = await this.composeReminderBody(
+      { groupIds, label },
+      memberIds,
+      type,
+    );
+    const u = parent.user;
+    const parents = new Map<
+      string,
+      { userId: string; name: string; phone: string | null; children: string[] }
+    >();
+    if (parent.isActive && u.isActive)
+      parents.set(u.id, { userId: u.id, name: u.name, phone: u.phone, children });
+    const eventType = `PARENT_REMINDER_${type.toUpperCase().replace(/-/g, '_')}`;
+    const stats = await this.enqueueToParents(
+      parents,
+      body,
+      eventType,
+      'Parent',
+      `${parentId}:${body.periodKey}`,
+    );
+    return { type, label, periodKey: body.periodKey, ...stats };
+  }
+
+  /** Inti pengiriman ke ortu sekumpulan siswa — dipakai reminder per-siswa. */
+  private async dispatchReminder(
+    students: Array<{
+      id: string;
+      name: string;
+      groupIds: string[];
+      parentStudents: Array<{
+        parent: {
+          isActive: boolean;
+          user: { id: string; name: string; phone: string | null; isActive: boolean };
+        };
+      }>;
+    }>,
+    type: GroupReminderType,
+    referenceType: string,
+    referenceId: string,
+    label: string,
+  ) {
+    const memberIds = new Set(students.map((s) => s.id));
+    const groupIds = [...new Set(students.flatMap((s) => s.groupIds))];
+    const parents = new Map<
+      string,
+      { userId: string; name: string; phone: string | null; children: string[] }
+    >();
+    for (const s of students) {
+      for (const ps of s.parentStudents) {
+        const u = ps.parent.user;
+        if (!ps.parent.isActive || !u.isActive) continue;
+        const cur = parents.get(u.id) ?? {
+          userId: u.id,
+          name: u.name,
+          phone: u.phone,
+          children: [],
+        };
+        cur.children.push(s.name);
+        parents.set(u.id, cur);
+      }
+    }
+    const body = await this.composeReminderBody({ groupIds, label }, memberIds, type);
+    const eventType = `STUDENT_REMINDER_${type.toUpperCase().replace(/-/g, '_')}`;
+    const stats = await this.enqueueToParents(
+      parents,
+      body,
+      eventType,
+      referenceType,
+      `${referenceId}:${body.periodKey}`,
+    );
+    return { type, label, periodKey: body.periodKey, ...stats };
+  }
+
+  /** Loop enqueue ke ortu — render(null) → dilewati (mis. anak sudah lunas). */
+  private async enqueueToParents(
+    parents: Map<
+      string,
+      { userId: string; name: string; phone: string | null; children: string[] }
+    >,
+    body: {
+      periodKey: string;
+      perParent: boolean;
+      render: (children?: string[]) => string | null;
+    },
+    eventType: string,
+    referenceType: string,
+    referenceId: string,
+  ) {
+    let queued = 0;
+    let skippedNoPhone = 0;
+    let skippedPref = 0;
+    let skippedNothing = 0;
+    for (const p of parents.values()) {
+      const message = body.perParent ? body.render(p.children) : body.render();
+      if (!message) {
+        skippedNothing += 1;
+        continue;
+      }
+      const row = await this.waOutbox.enqueue({
+        phone: p.phone,
+        name: p.name,
+        userId: p.userId,
+        eventType,
+        referenceType,
+        referenceId,
+        message,
+      });
+      if (row) queued += 1;
+      else if (!p.phone?.trim()) skippedNoPhone += 1;
+      else skippedPref += 1;
+    }
+    return {
+      recipients: parents.size,
+      queued,
+      skippedNoPhone,
+      skippedPref,
+      skippedNothing,
+    };
+  }
+
   /**
    * Reminder jadwal mengajar minggu berjalan ke SEMUA tutor — satu pesan per
    * tutor berisi seluruh sesinya lintas kelompok (bukan per kelompok seperti
    * reminder ortu). Dipanggil admin dari POST /reminders/tutor-weekly-schedule;
    * dedupe per tutor+minggu ditangani unique index outbox.
    */
-  async sendTutorWeeklyReminders() {
+  async sendTutorWeeklyReminders(tutorId?: string) {
     const now = new Date();
     const weekStart = this.weekStartOf(now);
     const weekEnd = this.weekEndOf(weekStart);
     const sessions = await this.prisma.session.findMany({
       where: {
-        tutorId: { not: null },
+        tutorId: tutorId ?? { not: null },
         startsAt: { gte: weekStart, lt: weekEnd },
       },
       orderBy: { startsAt: 'asc' },
@@ -691,7 +888,7 @@ export class FeedbackService {
   }
 
   private async composeReminderBody(
-    group: { id: string; name: string; code: string | null },
+    scope: { groupIds: string[]; label: string },
     memberIds: Set<string>,
     type: GroupReminderType,
   ) {
@@ -699,7 +896,7 @@ export class FeedbackService {
     const weekStart = this.weekStartOf(now);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const groupLabel = `${group.name}${group.code ? ` (${group.code})` : ''}`;
+    const groupLabel = scope.label;
 
     const tpl = await this.settings.get('reminders');
 
@@ -707,7 +904,7 @@ export class FeedbackService {
       const weekEnd = this.weekEndOf(weekStart);
       const sessions = await this.prisma.session.findMany({
         where: {
-          groupId: group.id,
+          groupId: { in: scope.groupIds },
           startsAt: { gte: weekStart, lt: weekEnd },
         },
         orderBy: { startsAt: 'asc' },
@@ -846,7 +1043,7 @@ export class FeedbackService {
         where: {
           studentId: { in: [...memberIds] },
           session: {
-            groupId: group.id,
+            groupId: { in: scope.groupIds },
             startsAt: { gte: monthStart, lt: monthEnd },
           },
         },

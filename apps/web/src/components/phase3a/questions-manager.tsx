@@ -16,7 +16,7 @@ import { QUESTION_TYPES, DIFFICULTY_LEVELS } from '@/lib/phase3a-types';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { EmptyState } from '@/components/shared/empty-state';
-import { MathContent } from '@/components/shared/math-content';
+import { MathContent, plainPreview } from '@/components/shared/math-content';
 import { ContentDrilldown, DrillBreadcrumb, useContentCategories, useContentLevels, useDrillState } from '@/components/shared/content-drilldown';
 import { ContentCategoriesManager } from '@/components/shared/content-categories-manager';
 import { QuestionImportDialog } from '@/components/phase3a/question-import-dialog';
@@ -248,7 +248,7 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
               <div className="flex min-w-0 flex-1 flex-col gap-2">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <p className="flex-1 text-sm font-medium leading-snug">
-                    {q.content.slice(0, 100)}{q.content.length > 100 ? '…' : ''}
+                    {plainPreview(q.content, 100)}
                   </p>
                   <div className="flex flex-wrap gap-1">
                     {q.category && <Badge variant="default"><Tag />{categoryLabel(q.category, catsQ.data)}</Badge>}

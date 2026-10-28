@@ -19,6 +19,7 @@ import {
   ReviewEnrollmentDto,
   SubmitStatementDto,
   UpdateChildDto,
+  CreateStaffEnrollmentDto,
 } from './dto/enrollment.dto';
 
 const PASSWORD_SALT_ROUNDS = 12;
@@ -335,6 +336,122 @@ export class EnrollmentsService {
       });
     });
     return { ...enrollment, studentLogin };
+  }
+
+  /**
+   * Admin/staff menambahkan program ke siswa yang SUDAH ADA (backfill):
+   * `paidInstallments` menandai N angsuran pertama sudah lunas; cicilan
+   * berikutnya diterbitkan sebagai tagihan berjalan; sisanya tetap rencana
+   * bulanan via billingPlan → ensureDueInstallments().
+   */
+  async createForStudent(dto: CreateStaffEnrollmentDto) {
+    const student = await this.prisma.student.findUnique({
+      where: { id: dto.studentId },
+      include: {
+        user: { select: { name: true } },
+        parentStudents: { select: { parentId: true }, take: 1 },
+      },
+    });
+    if (!student) throw new BadRequestException('Siswa tidak ditemukan.');
+    const [program, level] = await Promise.all([
+      this.prisma.program.findUnique({ where: { id: dto.programId } }),
+      this.prisma.level.findUnique({ where: { id: dto.levelId } }),
+    ]);
+    if (!program || !program.isActive) {
+      throw new BadRequestException('Program tidak ditemukan atau nonaktif.');
+    }
+    if (!level || !level.isActive || level.programId !== program.id) {
+      throw new BadRequestException('Jenjang tidak valid untuk program ini.');
+    }
+    const regFee = level.registrationFee
+      ? Number(level.registrationFee)
+      : program.registrationFee
+        ? Number(program.registrationFee)
+        : 0;
+    const basePrice = level.price ? Number(level.price) : 0;
+    if (regFee + basePrice <= 0) {
+      throw new BadRequestException(
+        'Harga pendaftaran untuk jenjang ini belum diatur.',
+      );
+    }
+    const dup = await this.prisma.enrollment.findFirst({
+      where: {
+        studentId: student.id,
+        programId: program.id,
+        status: { in: ['PENDING_PAYMENT', 'PAID', 'ACCEPTED', 'PLACED'] },
+      },
+    });
+    if (dup) {
+      throw new ConflictException(
+        `Siswa sudah terdaftar di ${program.name} — cek pendaftaran sebelumnya.`,
+      );
+    }
+    const plans = this.buildInvoiceSchedule(
+      program,
+      level,
+      dto as unknown as CreateEnrollmentDto,
+      regFee,
+      basePrice,
+    );
+    const paid = Math.min(
+      Math.max(0, dto.paidInstallments ?? 0),
+      plans.length,
+    );
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const enrollment = await tx.enrollment.create({
+        data: {
+          // Siswa tanpa akun ortu → parentId null (kolom sudah nullable).
+          parentId: student.parentStudents[0]?.parentId ?? null,
+          studentId: student.id,
+          programId: program.id,
+          levelId: level.id,
+          childName: student.user.name,
+          paymentPlan:
+            program.category === 'REGULER'
+              ? (dto.paymentPlan ?? 'MONTHLY')
+              : null,
+          studentCount: dto.studentCount ?? null,
+          sessionCount: dto.sessionCount ?? null,
+          billingPlan:
+            plans.length > 1
+              ? (plans as unknown as Prisma.InputJsonValue)
+              : undefined,
+          status: paid >= plans.length ? 'PAID' : 'PENDING_PAYMENT',
+          notes: 'Ditambahkan oleh admin/staff.',
+        },
+      });
+      const issue = async (idx: number, settled: boolean) => {
+        const plan = plans[idx];
+        const items = [...plan.items];
+        const total = items.reduce((s, it) => s + it.amount, 0);
+        const due = new Date(enrollment.createdAt.getTime() + 7 * 86400000);
+        due.setMonth(due.getMonth() + plan.dueOffsetMonths);
+        return tx.invoice.create({
+          data: {
+            number: await this.generateInvoiceNumber(tx),
+            studentId: student.id,
+            enrollmentId: enrollment.id,
+            status: 'ISSUED',
+            totalAmount: new Prisma.Decimal(total),
+            amountPaid: new Prisma.Decimal(settled ? total : 0),
+            dueDate: due,
+            issuedAt: now,
+            notes: `${idx === 0 ? 'Pendaftaran ' : ''}${enrollment.childName} — ${program.name} / ${level.name} (${plan.label})`,
+            items: { create: items },
+          },
+        });
+      };
+      const first = await issue(0, paid >= 1);
+      await tx.enrollment.update({
+        where: { id: enrollment.id },
+        data: { invoiceId: first.id },
+      });
+      // Cicilan 2..N (idx 1..paid-1) → lunas; cicilan idx=paid → berjalan.
+      for (let i = 1; i < paid; i += 1) await issue(i, true);
+      if (paid >= 1 && paid < plans.length) await issue(paid, false);
+      return enrollment;
+    });
   }
 
   /**
@@ -667,8 +784,8 @@ export class EnrollmentsService {
       statement: e.statement,
       status: e.status,
       form: {
-        parentName: e.parent.user.name,
-        phone: e.parent.user.phone ?? '',
+        parentName: e.parent?.user.name ?? '',
+        phone: e.parent?.user.phone ?? '',
         studentName: e.student?.user.name ?? e.childName,
         levelName: e.level.name,
         schoolOrigin: e.student?.schoolOrigin ?? '',
@@ -709,7 +826,7 @@ export class EnrollmentsService {
     const data = {
       parentName: dto.parentName.trim(),
       address: dto.address?.trim() || null,
-      phone: dto.phone?.trim() || e.parent.user.phone || null,
+      phone: dto.phone?.trim() || e.parent?.user.phone || null,
       studentName: e.student?.user.name ?? e.childName,
       levelName: e.level.name,
       schoolOrigin: dto.schoolOrigin?.trim() || e.student?.schoolOrigin || null,
@@ -747,8 +864,8 @@ export class EnrollmentsService {
       statement: e.statement,
       status: e.status,
       form: {
-        parentName: e.parent.user.name,
-        phone: e.parent.user.phone ?? '',
+        parentName: e.parent?.user.name ?? '',
+        phone: e.parent?.user.phone ?? '',
         studentName: e.student?.user.name ?? e.childName,
         levelName: e.level.name,
         schoolOrigin: e.student?.schoolOrigin ?? '',

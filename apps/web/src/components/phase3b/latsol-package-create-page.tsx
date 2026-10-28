@@ -55,7 +55,7 @@ export function LatsolPackageCreatePage({
 
   const saveM = useMutation({
     mutationFn: () =>
-      apiFetch('/latsol/packages', {
+      apiFetch<{ id: string }>('/latsol/packages', {
         method: 'POST',
         body: {
           programId: form.programId || undefined,
@@ -64,35 +64,27 @@ export function LatsolPackageCreatePage({
           category: form.category || undefined,
           title: form.title,
           description: form.description || undefined,
-          questionIds: form.questionIds,
         },
       }),
-    onSuccess: () => {
-      toast.success('Paket latsol berhasil dibuat.');
+    onSuccess: (pkg) => {
+      toast.success('Paket latsol berhasil dibuat — lanjut pilih soalnya.');
       qc.invalidateQueries({ queryKey: ['latsol-packages'] });
-      router.push(
-        drillBackFromUrl(basePath, (k) => searchParams.get(k), {
-          tingkat: form.tingkat,
-          levelId: form.levelId,
-          subjectId: form.subjectId,
-          category: form.category,
-        }),
-      );
+      // Sama seperti ujian: soal dikelola di halaman terpisah.
+      router.push(`${basePath}/${pkg.id}/soal`);
     },
     onError: (e) => toast.error(err(e, 'Gagal membuat paket latsol.')),
   });
 
   // Jenjang + tipe wajib; mapel opsional (paket campuran boleh tanpa mapel).
-  const isValid =
-    !!form.title.trim() && !!form.levelId && !!form.category &&
-    form.questionIds.length > 0;
+  // Soal diisi nanti di halaman Kelola Soal — paket boleh kosong dulu.
+  const isValid = !!form.title.trim() && !!form.levelId && !!form.category;
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Buat Paket Latsol</h1>
-          <p className="text-sm text-muted-foreground">Pilih soal dari bank soal untuk dikumpulkan menjadi paket latihan.</p>
+          <p className="text-sm text-muted-foreground">Isi detail paket — soal dipilih di halaman Kelola Soal setelahnya.</p>
         </div>
         <Button
           variant="outline"
@@ -111,7 +103,7 @@ export function LatsolPackageCreatePage({
         </Button>
       </div>
 
-      <LatsolPackageForm form={form} onChange={setForm} />
+      <LatsolPackageForm form={form} onChange={setForm} withQuestions={false} />
 
       <div className="flex items-center justify-end gap-2 sticky bottom-0 bg-background py-3 border-t">
         <Button disabled={!isValid || saveM.isPending} onClick={() => saveM.mutate()}>

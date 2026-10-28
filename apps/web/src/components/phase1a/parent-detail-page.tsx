@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/shared/empty-state';
+import { ReminderButtons } from '@/components/shared/reminder-buttons';
 import { UserAvatar } from '@/components/shared/user-avatar';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
@@ -123,6 +124,9 @@ export function ParentDetailPage({ parentId, basePath, canManage = false }: { pa
           <h1 className="truncate text-2xl font-semibold tracking-tight">{p ? p.user.name : 'Detail Orang Tua'}</h1>
           <p className="truncate text-sm text-muted-foreground">{p?.user.email ?? 'Memuat...'}</p>
         </div>
+        {canManage && p ? (
+          <ReminderButtons targetType="parents" targetId={p.id} />
+        ) : null}
       </div>
       {parentQ.isLoading ? <Skeleton className="h-40 w-full" /> : null}
       {parentQ.isError ? (

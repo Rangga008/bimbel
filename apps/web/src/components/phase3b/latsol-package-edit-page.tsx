@@ -3,13 +3,14 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { FileQuestion } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { drillBackFromUrl, tingkatCode } from '@/lib/content-taxonomy';
 import { useContentLevels } from '@/components/shared/content-drilldown';
-import { LatsolPackageForm, type LatsolPackageFormState } from './latsol-package-form';
+import { LatsolPackageForm, emptyLatsolPackageForm, type LatsolPackageFormState } from './latsol-package-form';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 
 function err(e: unknown, fb: string) {
@@ -30,6 +31,7 @@ interface LatsolPackageDetail {
 
 function toForm(pkg: LatsolPackageDetail): LatsolPackageFormState {
   return {
+    ...emptyLatsolPackageForm(),
     tingkat: '',
     programId: pkg.programId ?? '',
     levelId: pkg.levelId ?? '',
@@ -82,7 +84,6 @@ function LatsolPackageEditForm({
           category: form.category || undefined,
           title: form.title,
           description: form.description || undefined,
-          questionIds: form.questionIds,
         },
       }),
     onSuccess: () => {
@@ -104,24 +105,31 @@ function LatsolPackageEditForm({
     onError: (e) => toast.error(err(e, 'Gagal menghapus paket latsol.')),
   });
 
-  // Jenjang + tipe wajib; mapel opsional (paket campuran boleh tanpa mapel).
-  const isValid =
-    !!form.title.trim() && !!form.levelId && !!form.category &&
-    form.questionIds.length > 0;
+  // Jenjang + tipe wajib; mapel opsional. Soal dikelola di halaman
+  // Kelola Soal terpisah — boleh kosong di sini.
+  const isValid = !!form.title.trim() && !!form.levelId && !!form.category;
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Edit Paket Latsol</h1>
-          <p className="text-sm text-muted-foreground">Perbarui detail paket atau daftar soal di dalamnya.</p>
+          <p className="text-sm text-muted-foreground">Perbarui detail paket — soal &amp; subtes diatur di halaman Kelola Soal.</p>
         </div>
-        <Button variant="outline" onClick={() => router.push(backUrl)}>
-          Batal
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => router.push(`${basePath}/${packageId}/soal`)}
+          >
+            <FileQuestion className="mr-1 h-4 w-4" /> Kelola Soal
+          </Button>
+          <Button variant="outline" onClick={() => router.push(backUrl)}>
+            Batal
+          </Button>
+        </div>
       </div>
 
-      <LatsolPackageForm form={form} onChange={setForm} />
+      <LatsolPackageForm form={form} onChange={setForm} withQuestions={false} />
 
       <div className="flex items-center justify-between gap-2 sticky bottom-0 bg-background py-3 border-t">
         <Button

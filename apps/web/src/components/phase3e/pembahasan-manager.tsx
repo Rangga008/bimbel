@@ -41,6 +41,7 @@ interface Question {
     id: string;
     content: string;
     isCorrect: boolean;
+    imageUrl?: string;
   }>;
 }
 
@@ -79,6 +80,9 @@ function QuestionAnswerKey({ question }: { question: Question }) {
                 key={option.id}
                 className={`p-2 rounded ${option.isCorrect ? 'bg-success-50 border border-success-300' : 'bg-muted'}`}
               >
+                {option.imageUrl && (
+                  <img src={resolveAssetUrl(option.imageUrl)} alt="Gambar opsi" className="mb-1 max-h-40 w-auto rounded border object-contain" />
+                )}
                 <MathContent text={option.content} />
                 {option.isCorrect && <Badge className="ml-2">Benar</Badge>}
               </div>

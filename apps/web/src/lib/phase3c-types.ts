@@ -178,6 +178,7 @@ export interface ExamAttemptItem {
     options: {
       id: string;
       content: string;
+      imageUrl: string | null;
       isCorrect: boolean;
       sortOrder: number;
     }[];

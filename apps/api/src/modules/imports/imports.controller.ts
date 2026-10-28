@@ -54,15 +54,17 @@ export class ImportsController {
     this.imports.assertEntity(entity);
     const t = this.imports.template(entity);
     const comment = (s: string) => `# ${s}`;
-    // Baris "#" diabaikan parser — contoh & catatan aman ikut ter-upload.
+    // Baris "#" diabaikan parser — catatan aman ikut ter-upload.
     // Baris `sep=;` diabaikan parser import tapi dibaca Excel sebagai petunjuk
     // delimiter — template selalu terbuka sebagai kolom di semua locale.
+    // Baris contoh BUKAN komentar — langsung terlihat sebagai tabel di Excel
+    // dan bisa diimport apa adanya (hapus/ganti sesuai data asli).
     const csv = [
       'sep=;',
-      comment(`TEMPLATE IMPORT ${entity.toUpperCase()} — hapus abaikan baris berawalan #`),
+      comment(`TEMPLATE IMPORT ${entity.toUpperCase()} — baris contoh di bawah header bisa langsung diimport; ganti dengan data asli`),
       comment(`Format: ${t.notes}`),
       t.header,
-      ...t.samples.map(comment),
+      ...t.samples,
       '',
     ].join('\r\n');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');

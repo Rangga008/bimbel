@@ -629,6 +629,17 @@ export class PaymentsService {
     if (studentId && ids.length === 0)
       throw new ForbiddenException('Anak tersebut tidak terhubung ke akun ini.');
     const scope = ids.length ? ids : ['__none__'];
+    return this.paymentPlanForScope(scope);
+  }
+
+  /** Staff/admin: timeline angsuran satu siswa — dipakai detail "Paket &
+   *  Rincian Harga" di Kelola Siswa (sama seperti tampilan ortu). */
+  async adminPaymentPlan(studentId: string) {
+    await this.enrollments.ensureDueInstallments().catch(() => undefined);
+    return this.paymentPlanForScope([studentId]);
+  }
+
+  private async paymentPlanForScope(scope: string[]) {
     const today = new Date(new Date().toDateString());
     const endOfMonth = new Date();
     endOfMonth.setMonth(endOfMonth.getMonth() + 1, 0);

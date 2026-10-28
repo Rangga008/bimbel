@@ -1,4 +1,5 @@
 "use client";
+import Link from 'next/link';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -295,15 +296,18 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
                 <tr key={inv.id} className="border-b last:border-0">
                   <td className={`${td} font-medium whitespace-nowrap`}>{inv.number}</td>
                   <td className={td}>
-                    <span className="flex items-center gap-2">
+                    <Link
+                      href={`/admin-finance/siswa/${inv.student.id}`}
+                      className="flex items-center gap-2 rounded hover:text-primary"
+                    >
                       <UserAvatar name={inv.student.user.name} avatarUrl={inv.student.user.avatarUrl} className="size-7" />
                       <span className="min-w-0">
-                        <span className="block truncate">{inv.student.user.name}</span>
+                        <span className="block truncate underline-offset-2 hover:underline">{inv.student.user.name}</span>
                         <span className="block truncate text-xs text-muted-foreground">
                           {(inv.student.parentStudents ?? []).map((p) => p.parent.user.name).join(', ') || '—'}
                         </span>
                       </span>
-                    </span>
+                    </Link>
                   </td>
                   <td className={`${td} max-w-56 text-muted-foreground`}>
                     {(() => {
@@ -391,7 +395,7 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
         fields={[
           { name: 'desc', label: 'Deskripsi item', placeholder: 'Biaya pendaftaran...', required: true },
           { name: 'amount', label: 'Nominal (Rp)', type: 'number', placeholder: '500000', required: true },
-          { name: 'dueDate', label: 'Jatuh tempo (opsional YYYY-MM-DD)' },
+          { name: 'dueDate', label: 'Jatuh tempo (opsional)', type: 'date' },
         ]}
         values={{ desc, amount, dueDate }}
         onChange={(n, v) => {
