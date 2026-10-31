@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookOpenText, Pencil, Plus } from 'lucide-react';
+import { BookOpenText, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { ImagePickerField } from '@/components/shared/image-picker-field';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { plainPreview } from '@/components/shared/math-content';
 import { apiFetch, ApiError, resolveAssetUrl } from '@/lib/api-client';
 import type { ExamFormState } from '@/components/phase3c/exam-form';
@@ -49,6 +50,7 @@ interface BacaanGroup {
 export function ExamBacaanPanel({ form }: { form: ExamFormState }) {
   const qc = useQueryClient();
   const [editGroup, setEditGroup] = useState<BacaanGroup | 'new' | null>(null);
+  const [deleteGroup, setDeleteGroup] = useState<BacaanGroup | null>(null);
 
   // Urutan soal = gabungan semua subtes (atau daftar flat) sesuai urutan form.
   const orderedIds = useMemo(() => {
@@ -181,9 +183,19 @@ export function ExamBacaanPanel({ form }: { form: ExamFormState }) {
                       )}
                     </div>
                   </div>
-                  <Button size="sm" variant="outline" onClick={() => setEditGroup(g)}>
-                    <Pencil className="mr-1 size-3.5" /> Edit
-                  </Button>
+                  <div className="flex shrink-0 gap-1">
+                    <Button size="sm" variant="outline" onClick={() => setEditGroup(g)}>
+                      <Pencil className="mr-1 size-3.5" /> Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      title="Lepas bacaan dari semua soal"
+                      onClick={() => setDeleteGroup(g)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-1">
                   <span className="text-xs text-muted-foreground">Dipakai soal:</span>
@@ -199,6 +211,27 @@ export function ExamBacaanPanel({ form }: { form: ExamFormState }) {
         )}
       </CardContent>
 
+      <ConfirmDialog
+        open={deleteGroup !== null}
+        onOpenChange={(o) => { if (!o) setDeleteGroup(null); }}
+        title={`Hapus ${deleteGroup?.code ?? 'bacaan'}?`}
+        description="Bacaan dilepas dari semua soal yang memakainya — soal itu sendiri tidak dihapus."
+        confirmLabel="Ya, hapus bacaan"
+        pending={bulkM.isPending}
+        onConfirm={async () => {
+          if (!deleteGroup) return;
+          try {
+            await bulkM.mutateAsync({
+              ids: deleteGroup.members.map((m) => m.questionId),
+              stimulus: null,
+            });
+            toast.success('Bacaan dihapus dari soal-soalnya.');
+            setDeleteGroup(null);
+            await qc.invalidateQueries({ queryKey: ['exam-bacaan-questions'] });
+            await qc.invalidateQueries({ queryKey: ['questions'] });
+          } catch { /* toast dari onError */ }
+        }}
+      />
       {editGroup !== null && (
         <BacaanEditDialog
           group={editGroup === 'new' ? null : editGroup}

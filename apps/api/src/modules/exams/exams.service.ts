@@ -176,12 +176,15 @@ export class ExamsService {
       return { items: [], maxScore: 0 };
     }
     const qids = [...new Set(effective.map((i) => i.questionId))];
+    // Validasi eksistensi saja — soal nonaktif/soft-deleted yang memang sudah
+    // terpasang di ujian harus tetap bisa disimpan (hapus soal tidak boleh
+    // merusak ujian lama). Soal baru yang terhapus tak bisa dipilih dari UI.
     const found = await this.prisma.question.findMany({
-      where: { id: { in: qids }, isActive: true },
+      where: { id: { in: qids } },
       select: { id: true, points: true },
     });
     if (found.length !== qids.length) {
-      throw new BadRequestException('Salah satu soal tidak ditemukan atau nonaktif.');
+      throw new BadRequestException('Salah satu soal tidak ditemukan.');
     }
     const qPoints = new Map(found.map((q) => [q.id, q.points || 1]));
     const items = effective.map((it, idx) => ({

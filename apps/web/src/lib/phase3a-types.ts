@@ -12,6 +12,7 @@ export interface MaterialRow {
   fileType: string | null;
   fileSize: number | null;
   isActive: boolean;
+  deletedAt?: string | null;
   category?: string | null;
   createdAt: string;
   updatedAt: string;

@@ -65,11 +65,11 @@ export class QuestionsService {
     answerKey?: string | null;
     options?: { content?: string | null; imageUrl?: string | null; isCorrect?: boolean }[];
   }): string {
+    // imageUrl sengaja TIDAK ikut fingerprint — tiap import meng-upload
+    // gambar ke media baru (uuid beda) sehingga file yang sama diimport
+    // ulang selalu tampak "baru" dan membuat duplikat.
     const opts = (q.options ?? [])
-      .map(
-        (o) =>
-          `${this.normText(o.content)}|${this.normText(o.imageUrl)}|${o.isCorrect ? 1 : 0}`,
-      )
+      .map((o) => `${this.normText(o.content)}|${o.isCorrect ? 1 : 0}`)
       .sort();
     return createHash('sha1')
       .update(
@@ -77,7 +77,6 @@ export class QuestionsService {
           q.type,
           this.normText(q.stimulus),
           this.normText(q.content),
-          this.normText(q.imageUrl),
           this.normText(q.answerKey),
           ...opts,
         ].join(''),
@@ -174,14 +173,18 @@ export class QuestionsService {
       ids?: string;
     },
   ) {
-    const where: Record<string, unknown> = { deletedAt: null };
+    const where: Record<string, unknown> = {};
     if (query.ids) {
+      // Ambil id eksplisit — termasuk soal soft-deleted supaya daftar
+      // "terpilih" di pemilih soal tetap bisa menampilkan & melepasnya.
       where.id = {
         in: query.ids
           .split(',')
           .map((s) => s.trim())
           .filter(Boolean),
       };
+    } else {
+      where.deletedAt = null;
     }
     if (query.programId) where.programId = query.programId;
     if (query.levelId) where.levelId = query.levelId;

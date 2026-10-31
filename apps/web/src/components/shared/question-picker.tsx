@@ -45,6 +45,8 @@ interface QuestionSelectItem {
   points: number | null;
   category?: string | null;
   subject?: { id: string; name: string } | null;
+  /** Terisi bila soal sudah dihapus (soft-delete) — tampil agar bisa dilepas. */
+  deletedAt?: string | null;
 }
 
 /**
@@ -181,6 +183,17 @@ export function QuestionPicker({
     .map((id) => knownRef.current.get(id))
     .filter((q): q is QuestionSelectItem => !!q);
 
+  // Soal tercentang naik ke atas daftar supaya gampang dicari/diuncheck.
+  const selectedSet = new Set(selectedIds);
+  const sortedQuestions = (questionsQ.data ?? [])
+    .map((q, i) => ({ q, i }))
+    .sort(
+      (a, b) =>
+        Number(selectedSet.has(b.q.id)) - Number(selectedSet.has(a.q.id)) ||
+        a.i - b.i,
+    )
+    .map((x) => x.q);
+
   return (
     <div className="flex flex-col gap-3">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -251,6 +264,11 @@ export function QuestionPicker({
                   <span className="min-w-0 max-w-56 truncate">
                     {plainPreview(q.content, 80)}
                   </span>
+                  {q.deletedAt && (
+                    <span className="shrink-0 rounded bg-destructive/10 px-1 text-[10px] font-medium text-destructive">
+                      Dihapus
+                    </span>
+                  )}
                   <a
                     href={`${editBase}/${q.id}/edit`}
                     target="_blank"
@@ -289,7 +307,7 @@ export function QuestionPicker({
           {questionsQ.isLoading ? <Skeleton className="h-24 w-full" /> : null}
           {questionsQ.isError ? <p className="text-sm text-destructive">Gagal memuat soal.</p> : null}
           <div className="max-h-96 overflow-y-auto border rounded-md p-2">
-            {questionsQ.data?.map((q) => (
+            {sortedQuestions.map((q) => (
               <div key={q.id} className="flex items-start gap-2 p-2 hover:bg-muted/50">
                 <Checkbox
                   checked={selectedIds.includes(q.id)}
