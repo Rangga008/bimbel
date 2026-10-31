@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { mediaStorage } from './media-storage';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PERMISSION_CODES } from '../rbac/permissions.constants';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
@@ -190,16 +191,21 @@ export class MediaService {
         `Ukuran file melebihi batas ${Math.round(maxSize / 1024 / 1024)}MB.`,
       );
     }
-    // Bytes disimpan di DB — filesystem container bisa ephemeral (Railway/
-    // Fly) jadi disk tidak bisa diandalkan. Disk tetap ditulis sebagai cache
-    // lokal agar aset lama & dev tetap jalan; failure diabaikan.
-    await mkdir(this.mediaDir, { recursive: true }).catch(() => undefined);
     const filename = `${randomUUID()}${ext}`;
-    await writeFile(join(this.mediaDir, filename), buffer).catch(() => undefined);
+    if (mediaStorage.enabled) {
+      // MinIO/S3 dikonfigurasi: file hanya di bucket, bukan di DB/disk.
+      await mediaStorage.put(filename, buffer, opts.mime);
+    } else {
+      // Bytes disimpan di DB — filesystem container bisa ephemeral (Railway/
+      // Fly) jadi disk tidak bisa diandalkan. Disk tetap ditulis sebagai cache
+      // lokal agar aset lama & dev tetap jalan; failure diabaikan.
+      await mkdir(this.mediaDir, { recursive: true }).catch(() => undefined);
+      await writeFile(join(this.mediaDir, filename), buffer).catch(() => undefined);
+    }
     const asset = await this.prisma.mediaAsset.create({
       data: {
         filename,
-        data: new Uint8Array(buffer),
+        data: mediaStorage.enabled ? undefined : new Uint8Array(buffer),
         // Nama asli bisa mengandung karakter aneh — pangkas wajar saja.
         originalName: opts.originalName?.slice(0, 200) || filename,
         mime: opts.mime,
@@ -317,6 +323,7 @@ export class MediaService {
     if (!asset) throw new NotFoundException('Gambar tidak ditemukan.');
     this.assertCategoryAllowed(actor, asset.category as MediaCategory);
     await this.prisma.mediaAsset.delete({ where: { id } });
+    await mediaStorage.remove(asset.filename);
     await unlink(join(this.mediaDir, asset.filename)).catch(() => undefined);
     return { ok: true };
   }
@@ -326,12 +333,27 @@ export class MediaService {
     const asset = await this.prisma.mediaAsset.findUnique({ where: { id } });
     if (!asset) return;
     await this.prisma.mediaAsset.delete({ where: { id } });
+    await mediaStorage.remove(asset.filename);
     await unlink(join(this.mediaDir, asset.filename)).catch(() => undefined);
   }
 
   async getFile(id: string) {
     const asset = await this.prisma.mediaAsset.findUnique({ where: { id } });
     if (!asset) throw new NotFoundException('Gambar tidak ditemukan.');
+    // Aset di MinIO/S3 (tanpa bytes di DB): sajikan dari bucket.
+    if (mediaStorage.enabled && !asset.data) {
+      try {
+        const body = await mediaStorage.stream(asset.filename);
+        return {
+          contentType: asset.mime,
+          disposition: asset.mime === 'image/svg+xml' ? 'attachment' : 'inline',
+          data: null,
+          stream: () => body,
+        };
+      } catch {
+        // Tidak ada di bucket (aset lama) — lanjut ke jalur disk di bawah.
+      }
+    }
     // Self-heal aset lama: bytes belum ada di DB — baca dari disk sekali,
     // simpan ke DB (async), sajikan langsung dari buffer.
     if (!asset.data) {

@@ -11,6 +11,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { mediaStorage } from '../media/media-storage';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { WHATSAPP_PROVIDER } from './whatsapp.provider';
@@ -232,12 +233,14 @@ export class WhatsAppOutboxService {
     });
     if (!asset) return null;
     try {
-      const content = await readFile(
-        join(process.cwd(), 'uploads', 'media', asset.filename),
-      );
+      const content = asset.data
+        ? Buffer.from(asset.data)
+        : mediaStorage.enabled
+          ? await mediaStorage.read(asset.filename)
+          : await readFile(join(process.cwd(), 'uploads', 'media', asset.filename));
       return { content, filename: asset.originalName, mime: asset.mime };
     } catch {
-      this.logger.warn(`File lampiran ${assetId} tidak ada di disk.`);
+      this.logger.warn(`File lampiran ${assetId} tidak ada di storage.`);
       return null;
     }
   }
