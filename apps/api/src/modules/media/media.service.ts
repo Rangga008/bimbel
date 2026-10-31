@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PERMISSION_CODES } from '../rbac/permissions.constants';
@@ -190,12 +190,16 @@ export class MediaService {
         `Ukuran file melebihi batas ${Math.round(maxSize / 1024 / 1024)}MB.`,
       );
     }
-    await mkdir(this.mediaDir, { recursive: true });
+    // Bytes disimpan di DB — filesystem container bisa ephemeral (Railway/
+    // Fly) jadi disk tidak bisa diandalkan. Disk tetap ditulis sebagai cache
+    // lokal agar aset lama & dev tetap jalan; failure diabaikan.
+    await mkdir(this.mediaDir, { recursive: true }).catch(() => undefined);
     const filename = `${randomUUID()}${ext}`;
-    await writeFile(join(this.mediaDir, filename), buffer);
+    await writeFile(join(this.mediaDir, filename), buffer).catch(() => undefined);
     const asset = await this.prisma.mediaAsset.create({
       data: {
         filename,
+        data: new Uint8Array(buffer),
         // Nama asli bisa mengandung karakter aneh — pangkas wajar saja.
         originalName: opts.originalName?.slice(0, 200) || filename,
         mime: opts.mime,
@@ -328,11 +332,32 @@ export class MediaService {
   async getFile(id: string) {
     const asset = await this.prisma.mediaAsset.findUnique({ where: { id } });
     if (!asset) throw new NotFoundException('Gambar tidak ditemukan.');
+    // Self-heal aset lama: bytes belum ada di DB — baca dari disk sekali,
+    // simpan ke DB (async), sajikan langsung dari buffer.
+    if (!asset.data) {
+      try {
+        const buf = await readFile(join(this.mediaDir, asset.filename));
+        this.prisma.mediaAsset
+          .update({ where: { id }, data: { data: new Uint8Array(buf) } })
+          .catch(() => undefined);
+        return {
+          contentType: asset.mime,
+          disposition: asset.mime === 'image/svg+xml' ? 'attachment' : 'inline',
+          data: buf,
+          stream: () => createReadStream(join(this.mediaDir, asset.filename)),
+        };
+      } catch {
+        // File juga tidak ada di disk — biarkan stream mencoba & error natural.
+      }
+    }
     return {
       path: join(this.mediaDir, asset.filename),
       contentType: asset.mime,
       // SVG disajikan inline bisa membawa script — paksa download agar aman.
       disposition: asset.mime === 'image/svg+xml' ? 'attachment' : 'inline',
+      // Prefer bytes dari DB (tahan filesystem ephemeral); aset lama tanpa
+      // `data` jatuh ke stream disk.
+      data: asset.data ? Buffer.from(asset.data) : null,
       stream: () => createReadStream(join(this.mediaDir, asset.filename)),
     };
   }

@@ -1996,6 +1996,8 @@ model MediaAsset {
   originalName String
   mime         String
   size         Int
+  /// Bytes file — fallback disk dipakai hanya untuk aset lama tanpa kolom ini.
+  data         Bytes?
   uploadedById String?
   /// ACADEMIC = pustaka materi/soal (admin akademik, tutor) · FINANCE = bukti
   /// pembayaran, kwitansi hasil generate, dokumen keuangan (admin finance).

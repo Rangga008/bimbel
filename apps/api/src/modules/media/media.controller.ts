@@ -118,7 +118,8 @@ export class MediaController {
     res.setHeader('Content-Type', file.contentType);
     res.setHeader('Content-Disposition', file.disposition);
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    file.stream().pipe(res);
+    if (file.data) res.end(file.data);
+    else file.stream().pipe(res);
   }
 
   @Delete(':id')

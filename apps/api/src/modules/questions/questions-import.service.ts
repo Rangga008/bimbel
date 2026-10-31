@@ -618,8 +618,18 @@ export class QuestionsImportService {
         else if (c.key === 'difficulty') row.difficulty = cell.trim() || undefined;
         else if (c.key === 'explanation')
           row.explanation = this.stripImgTokens(cell, row.explanationImages);
-        else if (c.key === 'stimulus' && cell.trim())
-          row.stimulus = cell.trim();
+        else if (c.key === 'stimulus' && cell.trim()) {
+          const v = cell.trim();
+          const hit = namedStimuli.get(v);
+          // Nilai pendek bergaya nama (mis. "B2") yang tidak terdefinisi
+          // kemungkinan salah ketik referensi — tetap simpan apa adanya tapi
+          // beri peringatan supaya mudah dilacak.
+          if (!hit && namedStimuli.size > 0 && /^[A-Za-z]{1,3}\d{1,3}$/.test(v))
+            row.warnings.push(
+              `Bacaan "${v}" tidak ada definisinya — dipakai sebagai teks langsung.`,
+            );
+          row.stimulus = hit ?? v;
+        }
         else if (c.key === 'image')
           this.stripImgTokens(cell, row.contentImages);
       });
