@@ -101,7 +101,7 @@ const DOCX_TEMPLATE_LINES = [
   '  teks jawaban untuk ISIAN, dan dikosongkan untuk ESSAY.',
   '- Opsi hanya diisi untuk PG/PGK/BSK (maksimal E). Tipe lain boleh dikosongkan.',
   '- BSK = tabel benar/salah seperti di kertas ujian: tiap pernyataan di Opsi A..E,',
-  '  kunci per-pernyataan dipisah koma, mis. "Benar,Salah,Benar,Salah".',
+  '  kunci per-pernyataan dipisah koma — "Benar,Salah,Benar,Salah" atau singkat "B,S,B,S".',
   '  Siswa menjawab B atau S per pernyataan; nilai dihitung per-pernyataan.',
   '- BACAAN BERSAMA: tulis teks SEKALI di baris Tipe "BACAAN" + beri nama di',
   '  kolom No (mis. B1). Soal yang memakainya cukup isi kolom Bacaan = nama itu',
