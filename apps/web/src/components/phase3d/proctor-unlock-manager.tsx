@@ -136,7 +136,7 @@ export function ProctorUnlockPanel() {
       )}
 
       <Dialog open={!!target} onOpenChange={(open) => !open && setTarget(null)}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Unlock Attempt</DialogTitle>
             <DialogDescription>

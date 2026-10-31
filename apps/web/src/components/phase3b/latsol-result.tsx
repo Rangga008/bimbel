@@ -53,7 +53,7 @@ function OptionReview({
     >
       {opt.imageUrl && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar opsi" className="mb-1 max-h-40 w-auto rounded border object-contain" />
+        <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar opsi" className="max-w-full mb-1 max-h-40 w-auto rounded border object-contain" />
       )}
       <MathContent text={opt.content} />
       {isKey && <Badge className="ml-2">Kunci</Badge>}
@@ -129,7 +129,7 @@ export function LatsolResultView({
                   <MathContent text={q.stimulus} />
                   {q.stimulusImageUrl && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={resolveAssetUrl(q.stimulusImageUrl)} alt="Gambar bacaan" className="mt-2 max-h-64 w-auto rounded border object-contain" />
+                    <img src={resolveAssetUrl(q.stimulusImageUrl)} alt="Gambar bacaan" className="max-w-full mt-2 max-h-64 w-auto rounded border object-contain" />
                   )}
                 </div>
               )}
@@ -161,7 +161,7 @@ export function LatsolResultView({
                         <div className="flex-1 min-w-0">
                           {opt.imageUrl && (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar pernyataan" className="mb-1 max-h-40 w-auto rounded border object-contain" />
+                            <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar pernyataan" className="max-w-full mb-1 max-h-40 w-auto rounded border object-contain" />
                           )}
                           <MathContent text={opt.content} />
                         </div>
@@ -207,7 +207,7 @@ export function LatsolResultView({
                   {q.explanation && <MathContent text={q.explanation} />}
                   {q.explanationImageUrl && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={resolveAssetUrl(q.explanationImageUrl)} alt="Gambar pembahasan" className="mt-2 max-h-80 w-auto rounded border object-contain" />
+                    <img src={resolveAssetUrl(q.explanationImageUrl)} alt="Gambar pembahasan" className="max-w-full mt-2 max-h-80 w-auto rounded border object-contain" />
                   )}
                 </div>
               )}

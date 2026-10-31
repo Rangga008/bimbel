@@ -75,9 +75,21 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
   const [stimText, setStimText] = useState('');
   const levels = levelsQ.data;
 
+  // Bacaan di-scope per mapel — kalau soal yang dipilih satu mapel,
+  // datalist hanya menawarkan bacaan mapel itu.
+  const selSubjects = new Set(
+    (listQ.data ?? [])
+      .filter((q) => selIds.has(q.id))
+      .map((q) => q.subject?.id)
+      .filter((s): s is string => !!s),
+  );
+  const stimSubject = selSubjects.size === 1 ? [...selSubjects][0] : '';
   const stimuliQ = useQuery({
-    queryKey: ['question-stimuli'],
-    queryFn: () => apiFetch<string[]>('/questions/stimuli'),
+    queryKey: ['question-stimuli', stimSubject],
+    queryFn: () =>
+      apiFetch<string[]>(
+        `/questions/stimuli${stimSubject ? `?subjectId=${stimSubject}` : ''}`,
+      ),
     enabled: stimOpen,
   });
 
@@ -182,7 +194,7 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
         <QuestionImportDialog open={importOpen} onOpenChange={setImportOpen} />
         <QuestionTemplateDialog open={tplOpen} onOpenChange={setTplOpen} />
         <Dialog open={stimOpen} onOpenChange={setStimOpen}>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-xl">
             <DialogHeader>
               <DialogTitle>Atur Bacaan — {selIds.size} soal</DialogTitle>
             </DialogHeader>
@@ -442,7 +454,7 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
         <QuestionImportDialog open={importOpen} onOpenChange={setImportOpen} />
         <QuestionTemplateDialog open={tplOpen} onOpenChange={setTplOpen} />
         <Dialog open={stimOpen} onOpenChange={setStimOpen}>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-xl">
             <DialogHeader>
               <DialogTitle>Atur Bacaan — {selIds.size} soal</DialogTitle>
             </DialogHeader>

@@ -36,7 +36,7 @@ export function AccountRoleDialog({
 
   return (
     <Dialog open={!!user} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Kelola Role</DialogTitle>
           <DialogDescription>

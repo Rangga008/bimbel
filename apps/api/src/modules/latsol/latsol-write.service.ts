@@ -9,6 +9,8 @@ import { ContentCategoriesService } from '../content-categories/content-categori
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PhoneVerificationService } from '../../common/phone-verification/phone-verification.service';
 import { PointTransactionsService } from '../point-transactions/point-transactions.service';
+import { POINT_AWARD_QUEUE } from '../point-transactions/point-award.consumer';
+import { QueueService } from '../../common/queue/queue.service';
 import { gradeLatsolQuestion } from './latsol-grading';
 import { sanitizeQuestion, toFeedbackAnswer, revealQuestion } from './latsol-feedback.service';
 import {
@@ -28,6 +30,7 @@ export class LatsolWriteService {
     private readonly prisma: PrismaService,
     private readonly read: LatsolService,
     private readonly pointTransactions: PointTransactionsService,
+    private readonly queue: QueueService,
     private readonly contentCategories: ContentCategoriesService,
     private readonly phoneVerification: PhoneVerificationService,
   ) {}
@@ -39,14 +42,14 @@ export class LatsolWriteService {
   private async assertQuestions(client: Prisma.TransactionClient | PrismaService, ids: string[]) {
     const uniq = [...new Set(ids)];
     if (!uniq.length) return uniq;
+    // Cek keberadaan saja — soal nonaktif/soft-deleted yang SUDAH terpasang
+    // harus tetap bisa dilepas/disimpan (pola sama dengan validasi ujian).
     const found = await client.question.findMany({
-      where: { id: { in: uniq }, isActive: true },
+      where: { id: { in: uniq } },
       select: { id: true },
     });
     if (found.length !== uniq.length)
-      throw new BadRequestException(
-        'Salah satu soal tidak ditemukan atau nonaktif.',
-      );
+      throw new BadRequestException('Salah satu soal tidak ditemukan.');
     return uniq;
   }
 
@@ -426,16 +429,37 @@ export class LatsolWriteService {
       where: { attemptId },
       select: { score: true },
     });
-    await this.prisma.latsolAttempt.update({
-      where: { id: attemptId },
+    // Klaim atomik: dua submit paralel hanya satu yang memenangkan
+    // transisi IN_PROGRESS -> SUBMITTED (pola yang sama dengan exam).
+    const claimed = await this.prisma.latsolAttempt.updateMany({
+      where: { id: attemptId, status: 'IN_PROGRESS' },
       data: {
         status: 'SUBMITTED',
         submittedAt: new Date(),
         score: all.reduce((s, a) => s + a.score, 0),
       },
     });
-    // Fase 4b: catat poin berdasar score_rules aktif (idempotent; kegagalan
-    // poin tidak boleh menggagalkan submit yang sudah final).
+    if (!claimed.count) {
+      throw new BadRequestException('Attempt ini sudah dikumpulkan.');
+    }
+    // Fase 4b: catat poin berdasar score_rules aktif — lewat antrean
+    // RabbitMQ bila aktif (submit tidak menunggu hitung poin), fallback
+    // in-process. Idempotent + race-safe di sisi consumer; kegagalan tidak
+    // mengubah submit yang sudah final.
+    if (this.queue.enabled) {
+      try {
+        await this.queue.publish(POINT_AWARD_QUEUE, {
+          kind: 'latsol',
+          attemptId,
+        });
+        return this.attemptDetail(userId, attemptId);
+      } catch (error) {
+        console.error(
+          `[LatsolWrite] Publish poin ${attemptId} gagal — jalur in-process:`,
+          error,
+        );
+      }
+    }
     try {
       await this.pointTransactions.createLatsolTransaction(attemptId);
     } catch (error) {

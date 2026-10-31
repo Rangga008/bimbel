@@ -113,7 +113,7 @@ export default function MaterialViewPage() {
 									<img
 										src={resolveAssetUrl(m.fileUrl)}
 										alt={m.title}
-										className="mx-auto max-h-[80vh] w-auto object-contain"
+										className="max-w-full mx-auto max-h-[80vh] w-auto object-contain"
 									/>
 								) : isPdf(m.fileType) ? (
 									<>

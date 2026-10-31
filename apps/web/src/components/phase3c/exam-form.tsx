@@ -26,6 +26,7 @@ import { useContentCategories } from '@/components/shared/content-drilldown';
 import { apiFetch } from '@/lib/api-client';
 import type { GroupListItem } from '@/lib/phase1b-types';
 import { QuestionImportDialog } from '@/components/phase3a/question-import-dialog';
+import { ExamBacaanPanel } from '@/components/phase3c/exam-bacaan-panel';
 
 /** Satu subtes di form — nama, durasi sendiri, mapel, dan soalnya sendiri. */
 export interface ExamSubtesForm {
@@ -191,25 +192,13 @@ export function ExamForm({
   // Blok alat soal per subtes — dipakai di form penuh maupun mode questionsOnly.
   const subtesQuestionTools = (idx: number, s: ExamSubtesForm) => (
     <>
-      <QuestionPicker
-        filters={{ ...s.pickerFilters, category: form.category }}
-        onFiltersChange={(pickerFilters) => updateSubtes(idx, { pickerFilters })}
-        selectedIds={s.questionIds}
-        onToggle={(qid) =>
-          updateSubtes(idx, {
-            questionIds: s.questionIds.includes(qid)
-              ? s.questionIds.filter((id) => id !== qid)
-              : [...s.questionIds, qid],
-          })
-        }
-      />
       <div className="flex flex-wrap items-center gap-2">
         <QuickQuestionCreate
           seed={{
             tingkat: s.pickerFilters.tingkat,
             programId: s.pickerFilters.programId,
             levelId: s.pickerFilters.levelId,
-            subjectId: s.pickerFilters.subjectId,
+            subjectId: s.pickerFilters.subjectId || s.subjectId,
             category: form.category,
           }}
           onCreated={(qid) =>
@@ -225,22 +214,35 @@ export function ExamForm({
           <FileUp className="mr-1 h-4 w-4" /> Import Soal (Word/Excel)
         </Button>
       </div>
+      <QuestionPicker
+        // Default mapel modal = mapel subtes — soal subtes Matematika
+        // otomatis tersaring Matematika (tetap bisa diubah di dalam modal).
+        filters={{
+          ...s.pickerFilters,
+          category: form.category,
+          subjectId: s.pickerFilters.subjectId || s.subjectId,
+        }}
+        onFiltersChange={(pickerFilters) => updateSubtes(idx, { pickerFilters })}
+        selectedIds={s.questionIds}
+        onToggle={(qid) =>
+          updateSubtes(idx, {
+            questionIds: s.questionIds.includes(qid)
+              ? s.questionIds.filter((id) => id !== qid)
+              : [...s.questionIds, qid],
+          })
+        }
+        onAdd={(ids) =>
+          updateSubtes(idx, {
+            questionIds: [...new Set([...s.questionIds, ...ids])],
+          })
+        }
+      />
     </>
   );
 
   // Blok alat soal mode biasa (tanpa subtes).
   const mainQuestionTools = (
     <>
-      <QuestionPicker
-        // Tipe di picker disinkronkan dengan kategori ujian — soal yang
-        // ditawarkan selalu se-tipe dengan ujian yang dibuat.
-        filters={{ ...form.pickerFilters, category: form.category }}
-        onFiltersChange={(pickerFilters) =>
-          onChange({ ...form, pickerFilters, category: pickerFilters.category })
-        }
-        selectedIds={form.questionIds}
-        onToggle={toggleQuestionSelection}
-      />
       <div className="flex flex-wrap items-center gap-2">
         <QuickQuestionCreate
           seed={{
@@ -263,6 +265,22 @@ export function ExamForm({
           <FileUp className="mr-1 h-4 w-4" /> Import Soal (Word/Excel)
         </Button>
       </div>
+      <QuestionPicker
+        // Tipe di picker disinkronkan dengan kategori ujian — soal yang
+        // ditawarkan selalu se-tipe dengan ujian yang dibuat.
+        filters={{ ...form.pickerFilters, category: form.category }}
+        onFiltersChange={(pickerFilters) =>
+          onChange({ ...form, pickerFilters, category: pickerFilters.category })
+        }
+        selectedIds={form.questionIds}
+        onToggle={toggleQuestionSelection}
+        onAdd={(ids) =>
+          onChange({
+            ...form,
+            questionIds: [...new Set([...form.questionIds, ...ids])],
+          })
+        }
+      />
     </>
   );
 
@@ -365,6 +383,9 @@ export function ExamForm({
                       {s.durationMinutes ? ` · ${s.durationMinutes} menit` : ''}
                     </span>
                     {subtesQuestionTools(idx, s)}
+                    {/* Bacaan milik subtes ini saja — tidak dicampur dengan
+                        subtes lain. */}
+                    <ExamBacaanPanel ids={s.questionIds} title={s.name || `Subtes ${idx + 1}`} />
                   </div>
                 </>
               );
@@ -376,6 +397,7 @@ export function ExamForm({
                 Word/Excel — perubahan berlaku setelah disimpan.
               </p>
               {mainQuestionTools}
+              <ExamBacaanPanel ids={form.questionIds} />
             </>
           )}
           {importDialog}
@@ -695,7 +717,14 @@ export function ExamForm({
                       <SubtesSubjectSelect
                         levelId={form.pickerFilters.levelId}
                         value={s.subjectId}
-                        onChange={(subjectId) => updateSubtes(idx, { subjectId })}
+                        onChange={(subjectId) =>
+                          updateSubtes(idx, {
+                            subjectId,
+                            // Filter picker mengikuti mapel baru supaya
+                            // modal Tambah Soal langsung menyaringnya.
+                            pickerFilters: { ...s.pickerFilters, subjectId },
+                          })
+                        }
                       />
                     </div>
                   </div>

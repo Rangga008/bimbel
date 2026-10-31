@@ -83,7 +83,7 @@ export function VerifyDialog({ verifyId, onClose }: { verifyId: string | null; o
   const verifyM = useVerifyPayment(verifyId, rejectReason, () => { setRejectReason(''); onClose(); });
   return (
     <Dialog open={verifyId !== null} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Verifikasi Bukti</DialogTitle>
           <DialogDescription>Setujui (terbit kwitansi) atau tolak dengan alasan wajib.</DialogDescription>

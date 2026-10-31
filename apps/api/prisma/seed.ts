@@ -75,6 +75,7 @@ const PERMISSION_CODES = {
   WHATSAPP_OUTBOX_MANAGE: 'whatsapp_outbox.manage',
   AUDIT_VIEW: 'audit.view',
   SETTINGS_MANAGE: 'settings.manage',
+  BACKUP_MANAGE: 'backup.manage',
   MEDIA_MANAGE: 'media.manage',
   MEDIA_FINANCE_MANAGE: 'media.finance.manage',
   ENROLLMENT_CREATE: 'enrollment.create',
@@ -193,6 +194,8 @@ const ROLE_PERMISSION_MAP: Record<string, string[]> = {
     // Fase 6: halaman Pengaturan (identitas, default finance, WA admin).
     // SETTINGS_MANAGE juga membuka kategori media BRANDING (logo aplikasi).
     PERMISSION_CODES.SETTINGS_MANAGE,
+    // Backup & restore database dari halaman Pengaturan.
+    PERMISSION_CODES.BACKUP_MANAGE,
     // Baca sesi — dipakai halaman detail siswa (sesi terdekat). Tanpa *_MANAGE.
     PERMISSION_CODES.SESSION_VIEW,
     // Pustaka media finance (kwitansi, bukti pembayaran, dokumen keuangan).
@@ -259,6 +262,8 @@ const ROLE_PERMISSION_MAP: Record<string, string[]> = {
     // Pengaturan bersama — kedua admin bisa kontribusi (template reminder,
     // branding, akun kas, dsb).
     PERMISSION_CODES.SETTINGS_MANAGE,
+    // Backup & restore database dari halaman Pengaturan.
+    PERMISSION_CODES.BACKUP_MANAGE,
   ],
   [ROLE_NAMES.OWNER]: [
     PERMISSION_CODES.DASHBOARD_OWNER_VIEW,
@@ -329,6 +334,8 @@ const ROLE_PERMISSION_MAP: Record<string, string[]> = {
     PERMISSION_CODES.ENROLLMENT_CREATE,
     PERMISSION_CODES.ENROLLMENT_REVIEW,
     PERMISSION_CODES.ENROLLMENT_PLACE,
+    // Backup & restore database — halaman Pengaturan milik owner.
+    PERMISSION_CODES.BACKUP_MANAGE,
   ],
 };
 

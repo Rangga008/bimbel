@@ -359,6 +359,8 @@ export class AnalyticsController {
     @Query('programId') programId?: string,
     @Query('levelId') levelId?: string,
     @Query('groupId') groupId?: string,
+    @Query('subjectId') subjectId?: string,
+    @Query('category') category?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
@@ -366,6 +368,8 @@ export class AnalyticsController {
     if (programId) filters.programId = programId;
     if (levelId) filters.levelId = levelId;
     if (groupId) filters.groupId = groupId;
+    if (subjectId) filters.subjectId = subjectId;
+    if (category) filters.category = category;
     if (startDate) filters.startDate = new Date(startDate);
     if (endDate) filters.endDate = new Date(endDate);
 

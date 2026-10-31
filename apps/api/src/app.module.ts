@@ -8,6 +8,7 @@ import { PrismaModule } from './common/prisma/prisma.module';
 import { AuditModule } from './common/audit/audit.module';
 import { RedisModule } from './common/redis/redis.module';
 import { RedisThrottlerStorage } from './common/redis/redis-throttler.storage';
+import { QueueModule } from './common/queue/queue.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { RbacModule } from './modules/rbac/rbac.module';
@@ -45,6 +46,7 @@ import { MasterDataModule } from './modules/master-data/master-data.module';
 import { FeedbackModule } from './modules/feedback/feedback.module';
 import { TutorScopeModule } from './common/tutor-scope/tutor-scope.module';
 import { PhoneVerificationModule } from './common/phone-verification/phone-verification.module';
+import { BackupModule } from './common/backup/backup.module';
 
 @Module({
   imports: [
@@ -70,6 +72,7 @@ import { PhoneVerificationModule } from './common/phone-verification/phone-verif
     PrismaModule,
     AuditModule,
     RedisModule,
+    QueueModule,
     AuthModule,
     UsersModule,
     RbacModule,
@@ -107,6 +110,7 @@ import { PhoneVerificationModule } from './common/phone-verification/phone-verif
     FeedbackModule,
     TutorScopeModule,
     PhoneVerificationModule,
+    BackupModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

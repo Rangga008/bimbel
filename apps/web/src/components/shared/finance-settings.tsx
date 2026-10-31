@@ -22,6 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Pencil, Send, Trash2, ChevronRight, ArrowLeft } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { BackupPanel } from "@/components/shared/backup-panel";
 import {
 	ImagePickerField,
 	MediaLibraryDialog,
@@ -266,6 +267,7 @@ const SETTING_SECTIONS = [
 	{ key: "mail", title: "Email (SMTP)", desc: "Server email untuk notifikasi & reset password." },
 	{ key: "midtrans", title: "Payment Gateway (Midtrans)", desc: "Kunci server/client & mode sandbox/produksi." },
 	{ key: "accounts", title: "Akun Kas / Bank", desc: "Rekening & kas yang menerima pembayaran." },
+	{ key: "backup", title: "Cadangan & Pemulihan Database", desc: "Unduh/restore seluruh data — untuk pindah hosting, migrasi, atau recovery insiden." },
 ] as const;
 
 /**
@@ -2091,6 +2093,8 @@ export function FinanceSettings() {
 
 			) : null}
 
+			{/* ---- Cadangan & Pemulihan Database ---- */}
+			{section === "backup" ? <BackupPanel /> : null}
 
 			<ConfirmDialog
 				open={accToDelete !== null}

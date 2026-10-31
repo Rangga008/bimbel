@@ -133,7 +133,7 @@ export function LatsolAttemptsHistory({ packageId }: { packageId?: string }) {
                               .map((opt) => (
                                 <div key={opt.id} className="text-muted-foreground">
                                   • {opt.imageUrl && (
-                                    <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar opsi" className="my-1 max-h-32 w-auto rounded border object-contain" />
+                                    <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar opsi" className="max-w-full my-1 max-h-32 w-auto rounded border object-contain" />
                                   )}
                                   <MathContent text={opt.content} />
                                 </div>
@@ -174,7 +174,7 @@ export function LatsolAttemptsHistory({ packageId }: { packageId?: string }) {
                               .map((opt) => (
                                 <div key={opt.id} className="text-muted-foreground">
                                   ✓ {opt.imageUrl && (
-                                    <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar opsi" className="my-1 max-h-32 w-auto rounded border object-contain" />
+                                    <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar opsi" className="max-w-full my-1 max-h-32 w-auto rounded border object-contain" />
                                   )}
                                   <MathContent text={opt.content} />
                                 </div>

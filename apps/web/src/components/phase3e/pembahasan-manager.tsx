@@ -86,7 +86,7 @@ function QuestionAnswerKey({ question }: { question: Question }) {
                 <span className="shrink-0 text-sm font-medium">{i + 1}.</span>
                 <div className="flex-1 min-w-0">
                   {option.imageUrl && (
-                    <img src={resolveAssetUrl(option.imageUrl)} alt="Gambar pernyataan" className="mb-1 max-h-40 w-auto rounded border object-contain" />
+                    <img src={resolveAssetUrl(option.imageUrl)} alt="Gambar pernyataan" className="max-w-full mb-1 max-h-40 w-auto rounded border object-contain" />
                   )}
                   <MathContent text={option.content} />
                 </div>
@@ -104,7 +104,7 @@ function QuestionAnswerKey({ question }: { question: Question }) {
                 className={`p-2 rounded ${option.isCorrect ? 'bg-success-50 border border-success-300' : 'bg-muted'}`}
               >
                 {option.imageUrl && (
-                  <img src={resolveAssetUrl(option.imageUrl)} alt="Gambar opsi" className="mb-1 max-h-40 w-auto rounded border object-contain" />
+                  <img src={resolveAssetUrl(option.imageUrl)} alt="Gambar opsi" className="max-w-full mb-1 max-h-40 w-auto rounded border object-contain" />
                 )}
                 <MathContent text={option.content} />
                 {option.isCorrect && <Badge className="ml-2">Benar</Badge>}

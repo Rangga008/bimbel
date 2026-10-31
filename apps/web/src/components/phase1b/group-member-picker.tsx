@@ -144,7 +144,7 @@ export function AddGroupStudentsDialog({
         onOpenChange(o);
       }}
     >
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Tambah Siswa ke Kelompok</DialogTitle>
           <DialogDescription>
@@ -339,7 +339,7 @@ export function AddGroupTutorDialog({
         onOpenChange(o);
       }}
     >
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Tugaskan Tutor ke Kelompok</DialogTitle>
           <DialogDescription>

@@ -140,8 +140,11 @@ export class QuestionsController {
 
   @Get('questions/stimuli')
   @RequirePermissions(PERMISSION_CODES.QUESTION_MANAGE)
-  async stimuli(@CurrentUser() actor: AuthenticatedUser) {
-    return this.questions.stimuli(actor);
+  async stimuli(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Query('subjectId') subjectId?: string,
+  ) {
+    return this.questions.stimuli(actor, subjectId);
   }
 
   @Post('questions/stimulus/bulk')

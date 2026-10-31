@@ -105,6 +105,8 @@ export const PERMISSION_CODES = {
   AUDIT_VIEW: 'audit.view',
   // --- Fase 6: Pengaturan aplikasi (identitas, default finance, notifikasi WA) ---
   SETTINGS_MANAGE: 'settings.manage',
+  // --- Backup & restore database penuh (export/import di halaman Pengaturan) ---
+  BACKUP_MANAGE: 'backup.manage',
   // --- Pustaka gambar (upload/pilih/hapus) — hanya admin akademik, tutor, owner ---
   MEDIA_MANAGE: 'media.manage',
   // --- Pustaka media keuangan (bukti bayar, kwitansi, dokumen finance) ---

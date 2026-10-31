@@ -300,7 +300,7 @@ export function MediaLibraryDialog({
 							<img
 								src={linkUrl}
 								alt="Pratinjau link"
-								className="max-h-48 w-auto self-start rounded-lg border object-contain"
+								className="max-w-full max-h-48 w-auto self-start rounded-lg border object-contain"
 								onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
 								onLoad={(e) => ((e.target as HTMLImageElement).style.display = "")}
 							/>

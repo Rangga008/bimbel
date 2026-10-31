@@ -511,7 +511,7 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
         }}
       />
       <Dialog open={reopenTarget !== null} onOpenChange={(o) => { if (!o) setReopenTarget(null); }}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Buka kembali ujian?</DialogTitle>
             <DialogDescription>

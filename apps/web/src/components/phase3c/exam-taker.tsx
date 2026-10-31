@@ -552,7 +552,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                 <img
                   src={resolveAssetUrl(item.question.stimulusImageUrl)}
                   alt="Gambar bacaan"
-                  className="max-h-64 w-auto rounded border object-contain"
+                  className="max-w-full max-h-64 w-auto rounded border object-contain"
                 />
               )}
             </div>
@@ -585,7 +585,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                 <Label htmlFor={`opt-${option.id}`} className="flex-1 cursor-pointer font-normal">
                   <span className="flex flex-col gap-1">
                     {option.imageUrl && (
-                      <img src={resolveAssetUrl(option.imageUrl)} alt="Gambar opsi" className="max-h-40 w-auto rounded border object-contain" />
+                      <img src={resolveAssetUrl(option.imageUrl)} alt="Gambar opsi" className="max-w-full max-h-40 w-auto rounded border object-contain" />
                     )}
                     <MathContent text={option.content} />
                   </span>
@@ -635,7 +635,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                   </span>
                   <div className="flex-1 min-w-0">
                     {option.imageUrl && (
-                      <img src={resolveAssetUrl(option.imageUrl)} alt="Gambar pernyataan" className="mb-1 max-h-40 w-auto rounded border object-contain" />
+                      <img src={resolveAssetUrl(option.imageUrl)} alt="Gambar pernyataan" className="max-w-full mb-1 max-h-40 w-auto rounded border object-contain" />
                     )}
                     <MathContent text={option.content} />
                   </div>
@@ -689,7 +689,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                 <Label htmlFor={`opt-${option.id}`} className="flex-1 cursor-pointer font-normal">
                   <span className="flex flex-col gap-1">
                     {option.imageUrl && (
-                      <img src={resolveAssetUrl(option.imageUrl)} alt="Gambar opsi" className="max-h-40 w-auto rounded border object-contain" />
+                      <img src={resolveAssetUrl(option.imageUrl)} alt="Gambar opsi" className="max-w-full max-h-40 w-auto rounded border object-contain" />
                     )}
                     <MathContent text={option.content} />
                   </span>
@@ -1233,7 +1233,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                             <span className="text-muted-foreground">{oi + 1}.</span>
                             <div className="flex-1 min-w-0">
                               {opt.imageUrl && (
-                                <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar pernyataan" className="mb-1 max-h-40 w-auto rounded border object-contain" />
+                                <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar pernyataan" className="max-w-full mb-1 max-h-40 w-auto rounded border object-contain" />
                               )}
                               <MathContent text={opt.content} />
                             </div>
@@ -1263,7 +1263,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                             }`}
                           >
                             {opt.imageUrl && (
-                              <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar opsi" className="mb-1 max-h-40 w-auto rounded border object-contain" />
+                              <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar opsi" className="max-w-full mb-1 max-h-40 w-auto rounded border object-contain" />
                             )}
                             <MathContent text={opt.content} />
                             {opt.isCorrect && <Badge className="ml-2">Kunci</Badge>}

@@ -13,8 +13,13 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { QueueService } from '../../common/queue/queue.service';
 import { WHATSAPP_PROVIDER } from './whatsapp.provider';
 import type { WhatsAppProvider } from './whatsapp.provider';
+
+/** Antrean RabbitMQ pemicu pemrosesan outbox — isi pesan tidak relevan,
+ *  kehadirannya saja yang berarti "ada PENDING baru". */
+export const WA_OUTBOX_KICK_QUEUE = 'whatsapp.outbox.kick';
 
 export interface EnqueueWhatsAppArgs {
   /** Nomor tujuan. Kosong/null -> dilewati (tidak semua user punya phone). */
@@ -43,6 +48,7 @@ export class WhatsAppOutboxService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     @Inject(WHATSAPP_PROVIDER) private readonly provider: WhatsAppProvider,
+    private readonly queue: QueueService,
   ) {
     this.maxAttempts = Math.max(
       1,
@@ -119,11 +125,23 @@ export class WhatsAppOutboxService {
 
   /**
    * Picu pemrosesan segera (fire-and-forget) supaya pesan tidak menunggu
-   * interval worker. Aman dipanggil berulang: klaim baris bersifat atomik
+   * interval worker. Bila RabbitMQ aktif, trigger lewat antrean (durable +
+   * terdistribusi antar instance); fallback ke pemrosesan in-process bila
+   * publish gagal. Aman dipanggil berulang: klaim baris bersifat atomik
    * (updateMany PENDING->SENDING) sehingga dua pemanggil tidak mengirim
    * pesan yang sama dua kali.
    */
   kick() {
+    if (this.queue.enabled) {
+      void this.queue
+        .publish(WA_OUTBOX_KICK_QUEUE, { at: Date.now() })
+        .catch(() => this.kickInProcess());
+      return;
+    }
+    this.kickInProcess();
+  }
+
+  private kickInProcess() {
     void this.processPending().catch((err) =>
       this.logger.warn(
         `Kick outbox gagal: ${err instanceof Error ? err.message : err}`,

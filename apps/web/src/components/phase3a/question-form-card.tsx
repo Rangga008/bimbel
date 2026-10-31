@@ -137,10 +137,13 @@ export function QuestionFormCard({
     : (subjectsQ.data?.map((s) => ({ value: s.id, label: `${s.code} — ${s.name}` })) || []);
 
   const [optionImageIdx, setOptionImageIdx] = useState<number | null>(null);
-  // Daftar bacaan yang sudah ada — pilih untuk memakai teks yang sama.
+  // Daftar bacaan yang sudah ada (per mapel) — pilih untuk memakai teks sama.
   const stimuliQ = useQuery({
-    queryKey: ['question-stimuli'],
-    queryFn: () => apiFetch<string[]>('/questions/stimuli'),
+    queryKey: ['question-stimuli', draft.subjectId],
+    queryFn: () =>
+      apiFetch<string[]>(
+        `/questions/stimuli${draft.subjectId ? `?subjectId=${draft.subjectId}` : ''}`,
+      ),
     staleTime: 60_000,
   });
   const stimuli = stimuliQ.data ?? [];

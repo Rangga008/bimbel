@@ -9,6 +9,8 @@ import { AuditService } from '../../common/audit/audit.service';
 import { PhoneVerificationService } from '../../common/phone-verification/phone-verification.service';
 import { ExamsService } from '../exams/exams.service';
 import { PointTransactionsService } from '../point-transactions/point-transactions.service';
+import { POINT_AWARD_QUEUE } from '../point-transactions/point-award.consumer';
+import { QueueService } from '../../common/queue/queue.service';
 import { SaveExamAnswerDto, SubmitExamDto } from './dto/exam-attempt.dto';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 
@@ -23,6 +25,7 @@ export class ExamAttemptsService {
     private readonly prisma: PrismaService,
     private readonly exams: ExamsService,
     private readonly pointTransactions: PointTransactionsService,
+    private readonly queue: QueueService,
     private readonly audit: AuditService,
     private readonly phoneVerification: PhoneVerificationService,
   ) {}
@@ -588,10 +591,25 @@ export class ExamAttemptsService {
 
   /**
    * Fase 4b: award poin untuk attempt yang sudah SUBMITTED.
-   * Dibungkus try/catch supaya kegagalan pencatatan poin tidak mengubah
-   * hasil submit — transaksi poin bisa dibuat ulang via endpoint admin.
+   * Lewat antrean RabbitMQ bila aktif (submit tidak menunggu hitung poin);
+   * fallback in-process. Kegagalan tidak mengubah hasil submit yang sudah
+   * final — transaksi poin bisa dibuat ulang via endpoint admin.
    */
   private async safeAwardExamPoints(attemptId: string) {
+    if (this.queue.enabled) {
+      try {
+        await this.queue.publish(POINT_AWARD_QUEUE, {
+          kind: 'exam',
+          attemptId,
+        });
+        return;
+      } catch (error) {
+        console.error(
+          `[ExamAttempts] Publish poin ${attemptId} gagal — jalur in-process:`,
+          error,
+        );
+      }
+    }
     try {
       await this.pointTransactions.createExamTransaction(attemptId);
     } catch (error) {

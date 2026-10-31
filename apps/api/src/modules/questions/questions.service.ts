@@ -492,13 +492,16 @@ export class QuestionsService {
     });
   }
 
-  /** Daftar bacaan yang sudah ada — untuk datalist "pakai bacaan yang sama". */
-  async stimuli(actor?: AuthenticatedUser) {
+  /** Daftar bacaan yang sudah ada — untuk datalist "pakai bacaan yang sama".
+   *  Di-scope per mapel supaya bacaan Bahasa Indonesia tidak tercampur
+   *  dengan Matematika dsb. */
+  async stimuli(actor?: AuthenticatedUser, subjectId?: string) {
     const scope = actor ? await this.tutorScope.for(actor) : null;
     const rows = await this.prisma.question.findMany({
       where: {
         deletedAt: null,
         stimulus: { not: null },
+        ...(subjectId ? { subjectId } : {}),
         ...(scope
           ? {
               OR: [

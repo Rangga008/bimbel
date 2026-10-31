@@ -351,7 +351,7 @@ export function ParentStatementDialog({
 									<img
 										src={s.signatureData}
 										alt="Tanda tangan orang tua"
-										className="h-20 w-auto rounded-md border bg-white object-contain p-1"
+										className="max-w-full h-20 w-auto rounded-md border bg-white object-contain p-1"
 									/>
 								</Field>
 							) : null}

@@ -178,18 +178,6 @@ export function LatsolPackageForm({
   // Blok alat soal per subtes — picker + buat baru + import.
   const subtesQuestionTools = (idx: number, s: LatsolSubtesForm) => (
     <>
-      <QuestionPicker
-        filters={{ ...s.pickerFilters, category: form.category }}
-        onFiltersChange={(pickerFilters) => updateSubtes(idx, { pickerFilters })}
-        selectedIds={s.questionIds}
-        onToggle={(qid) =>
-          updateSubtes(idx, {
-            questionIds: s.questionIds.includes(qid)
-              ? s.questionIds.filter((id) => id !== qid)
-              : [...s.questionIds, qid],
-          })
-        }
-      />
       <div className="flex flex-wrap items-center gap-2">
         <QuickQuestionCreate
           seed={{
@@ -212,20 +200,34 @@ export function LatsolPackageForm({
           <FileUp className="mr-1 h-4 w-4" /> Import Soal (Word/Excel)
         </Button>
       </div>
+      <QuestionPicker
+        // Default mapel modal = mapel subtes (pola sama dengan ujian).
+        filters={{
+          ...s.pickerFilters,
+          category: form.category,
+          subjectId: s.pickerFilters.subjectId || s.subjectId,
+        }}
+        onFiltersChange={(pickerFilters) => updateSubtes(idx, { pickerFilters })}
+        selectedIds={s.questionIds}
+        onToggle={(qid) =>
+          updateSubtes(idx, {
+            questionIds: s.questionIds.includes(qid)
+              ? s.questionIds.filter((id) => id !== qid)
+              : [...s.questionIds, qid],
+          })
+        }
+        onAdd={(ids) =>
+          updateSubtes(idx, {
+            questionIds: [...new Set([...s.questionIds, ...ids])],
+          })
+        }
+      />
     </>
   );
 
   // Blok alat soal mode biasa (tanpa subtes).
   const mainQuestionTools = (
     <>
-      <QuestionPicker
-        filters={{ ...form.pickerFilters, category: form.category }}
-        onFiltersChange={(pickerFilters) =>
-          onChange({ ...form, pickerFilters, category: pickerFilters.category })
-        }
-        selectedIds={form.questionIds}
-        onToggle={toggleQuestion}
-      />
       <div className="flex flex-wrap items-center gap-2">
         <QuickQuestionCreate
           seed={{
@@ -248,6 +250,20 @@ export function LatsolPackageForm({
           <FileUp className="mr-1 h-4 w-4" /> Import Soal (Word/Excel)
         </Button>
       </div>
+      <QuestionPicker
+        filters={{ ...form.pickerFilters, category: form.category }}
+        onFiltersChange={(pickerFilters) =>
+          onChange({ ...form, pickerFilters, category: pickerFilters.category })
+        }
+        selectedIds={form.questionIds}
+        onToggle={toggleQuestion}
+        onAdd={(ids) =>
+          onChange({
+            ...form,
+            questionIds: [...new Set([...form.questionIds, ...ids])],
+          })
+        }
+      />
     </>
   );
 

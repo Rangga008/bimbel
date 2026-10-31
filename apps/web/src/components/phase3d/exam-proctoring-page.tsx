@@ -537,7 +537,7 @@ export function ExamProctoringPage({
           if (!open) setUnlockTarget(null);
         }}
       >
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Unlock Attempt</DialogTitle>
             <DialogDescription>
@@ -580,7 +580,7 @@ export function ExamProctoringPage({
           if (!open) setResetTarget(null);
         }}
       >
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Reset sesi pengerjaan?</DialogTitle>
             <DialogDescription>

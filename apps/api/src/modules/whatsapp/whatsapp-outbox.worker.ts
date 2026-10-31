@@ -8,7 +8,11 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { WhatsAppOutboxService } from './whatsapp-outbox.service';
+import { QueueService } from '../../common/queue/queue.service';
+import {
+  WhatsAppOutboxService,
+  WA_OUTBOX_KICK_QUEUE,
+} from './whatsapp-outbox.service';
 
 @Injectable()
 export class WhatsAppOutboxWorker implements OnModuleInit, OnModuleDestroy {
@@ -19,6 +23,7 @@ export class WhatsAppOutboxWorker implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly outbox: WhatsAppOutboxService,
     private readonly config: ConfigService,
+    private readonly queue: QueueService,
   ) {}
 
   onModuleInit() {
@@ -29,6 +34,22 @@ export class WhatsAppOutboxWorker implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `Outbox worker aktif — interval ${intervalMs}ms, provider "${this.outbox.providerName()}"`,
     );
+    // Bila RabbitMQ aktif: trigger enqueue diproses lewat antrean (durabel +
+    // terdistribusi antar instance). Interval tetap jalan sebagai backstop.
+    if (this.queue.enabled) {
+      this.queue.consume(
+        WA_OUTBOX_KICK_QUEUE,
+        async () => {
+          const batch = Math.max(
+            1,
+            Number(this.config.get('WHATSAPP_OUTBOX_BATCH', '10')),
+          );
+          await this.outbox.processPending(batch);
+        },
+        1, // satu pemroses per waktu — urutan + delay anti-ban tetap terjaga
+      );
+      this.logger.log('Trigger outbox via RabbitMQ aktif.');
+    }
     void this.tick();
     this.timer = setInterval(() => void this.tick(), intervalMs);
   }

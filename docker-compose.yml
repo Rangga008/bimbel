@@ -29,6 +29,23 @@ services:
       timeout: 5s
       retries: 10
 
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-bimbel}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-bimbel_secret}
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # Management UI (http://localhost:15672)
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   minio:
     # minio/minio images are no longer published (community edition is source-only);
     # older Bitnami tags moved to the bitnamilegacy namespace, which remains publicly pullable.
@@ -60,6 +77,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       # Jam operasional bisnis WIB — penting agar generate sesi menyimpan
@@ -80,6 +99,9 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-0}
       DATABASE_URL: postgresql://${POSTGRES_USER:-bimbel}:${POSTGRES_PASSWORD:-bimbel_secret}@postgres:5432/${POSTGRES_DB:-bimbel}?schema=public
       REDIS_URL: redis://redis:6379
+      # RabbitMQ — antrean job (trigger outbox WA, pencatatan poin). Kosongkan
+      # untuk mode in-process (API tetap jalan tanpa broker).
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-bimbel}:${RABBITMQ_PASSWORD:-bimbel_secret}@rabbitmq:5672
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me}
       JWT_ACCESS_TTL_SECONDS: "900"
       JWT_REFRESH_TTL_DAYS: "7"
@@ -125,5 +147,6 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  rabbitmq-data:
   minio-data:
   api-uploads:

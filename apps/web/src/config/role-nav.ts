@@ -407,14 +407,14 @@ export const ROLE_NAV: Record<RoleKey, NavItem[]> = {
 			slug: "program",
 			label: "Program",
 			icon: GraduationCap,
-			placement: "nav",
+			placement: "lainnya",
 			group: "Utama",
 		},
 		{
 			slug: "kelompok",
 			label: "Kelompok",
 			icon: Users,
-			placement: "nav",
+			placement: "lainnya",
 			group: "Utama",
 		},
 		{

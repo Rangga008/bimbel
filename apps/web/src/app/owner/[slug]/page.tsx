@@ -7,6 +7,7 @@ import { ExpenseManager } from "@/components/phase2d/expense-manager";
 import { AdvancedReportsManager } from "@/components/phase6/advanced-reports";
 import { AuditLogsViewer } from "@/components/phase6/audit-logs-viewer";
 import { ProfilePage } from "@/components/shared/profile-page";
+import { BackupPanel } from "@/components/shared/backup-panel";
 import { NotificationsInbox } from "@/components/phase1d/notifications-inbox";
 import { SkeletonPage } from "@/components/skeleton-page";
 import { findNavItem } from "@/config/role-nav";
@@ -38,6 +39,7 @@ export default async function OwnerMenuPage({
 		);
 	if (slug === "laporan") return <AdvancedReportsManager />;
 	if (slug === "audit") return <AuditLogsViewer />;
+	if (slug === "pengaturan") return <BackupPanel />;
 	return <SkeletonPage role="owner" title={item.label} />;
 }
 

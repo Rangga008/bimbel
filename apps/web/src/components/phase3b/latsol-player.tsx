@@ -316,7 +316,7 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
           <img
             src={resolveAssetUrl(current.question.imageUrl)}
             alt="Gambar soal"
-            className="max-h-64 w-auto rounded-lg border object-contain"
+            className="max-w-full max-h-64 w-auto rounded-lg border object-contain"
           />
         )}
         {(current.question.stimulus || current.question.stimulusImageUrl) && (
@@ -328,7 +328,7 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
               <img
                 src={resolveAssetUrl(current.question.stimulusImageUrl)}
                 alt="Gambar bacaan"
-                className="max-h-64 w-auto rounded border object-contain"
+                className="max-w-full max-h-64 w-auto rounded border object-contain"
               />
             )}
           </div>
@@ -347,7 +347,7 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
                 <RadioGroupItem value={opt.id} id={`opt-${opt.id}`} className="mt-0.5" />
                 <Label htmlFor={`opt-${opt.id}`} className="flex flex-1 cursor-pointer items-start gap-2 font-normal">
                   {opt.imageUrl && (
-                    <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar opsi" className="max-h-20 w-auto rounded border object-contain" />
+                    <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar opsi" className="max-w-full max-h-20 w-auto rounded border object-contain" />
                   )}
                   <MathContent text={opt.content} />
                 </Label>
@@ -386,7 +386,7 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
                     <span className="mt-0.5 w-6 shrink-0 text-sm font-medium text-muted-foreground">{oi + 1}.</span>
                     <div className="flex-1 min-w-0">
                       {opt.imageUrl && (
-                        <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar pernyataan" className="mb-1 max-h-20 w-auto rounded border object-contain" />
+                        <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar pernyataan" className="max-w-full mb-1 max-h-20 w-auto rounded border object-contain" />
                       )}
                       <MathContent text={opt.content} />
                     </div>
@@ -433,7 +433,7 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
                 />
                 <Label htmlFor={`opt-${opt.id}`} className="flex flex-1 cursor-pointer items-start gap-2 font-normal">
                   {opt.imageUrl && (
-                    <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar opsi" className="max-h-20 w-auto rounded border object-contain" />
+                    <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar opsi" className="max-w-full max-h-20 w-auto rounded border object-contain" />
                   )}
                   <MathContent text={opt.content} />
                 </Label>

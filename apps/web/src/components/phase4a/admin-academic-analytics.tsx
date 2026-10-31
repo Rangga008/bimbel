@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
 	ArrowLeft,
@@ -21,6 +21,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Phase1aSelectField } from "@/components/phase1a/phase1a-form-dialog";
+import { useContentCategories, useContentLevels } from "@/components/shared/content-drilldown";
+import { categoryOptions } from "@/lib/content-taxonomy";
 import { score100 } from '@/lib/score';
 import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
 
@@ -142,6 +144,13 @@ async function openPrintDoc(path: string) {
 
 function stripHtml(s: string) {
 	return s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Hari terakhir bulan dari string "YYYY-MM" → "YYYY-MM-DD". */
+function lastDayOfMonth(ym: string) {
+	const [y, m] = ym.split("-").map(Number);
+	const d = new Date(y, m, 0); // hari ke-0 bulan berikutnya = hari terakhir bulan m
+	return `${y}-${String(m).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 /** Tab "Analisis": grafik % benar per soal + daftar soal termudah/tersulit. */
@@ -326,8 +335,14 @@ export function AdminAcademicAnalytics() {
   const [groupId, setGroupId] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [subjectId, setSubjectId] = useState("");
+  const [category, setCategory] = useState("");
   const [search, setSearch] = useState("");
-  const [applied, setApplied] = useState<string | null>(null);
+  // Pagination daftar ujian: 5/10/20/50/Semua (0 = semua).
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(0);
+  // Data langsung dimuat saat halaman dibuka; tiap perubahan filter
+  // otomatis me-refresh query — tanpa tombol "Tampilkan".
   const [activeTab, setActiveTab] = useState<"score" | "answer" | "analysis" | null>("score");
   const [expandedQ, setExpandedQ] = useState<string | null>(null);
   const [recapGroupId, setRecapGroupId] = useState("");
@@ -342,24 +357,35 @@ export function AdminAcademicAnalytics() {
     queryFn: () => apiFetch<GroupOption[]>('/groups'),
     staleTime: 5 * 60 * 1000,
   });
+  // Hierarki jenjang→mapel + tipe ujian dari master data — sama dengan
+  // sumber yang dipakai form soal/ujian.
+  const levelsQ = useContentLevels();
+  const catsQ = useContentCategories();
+  const subjectsQ = useQuery({
+    queryKey: ['subjects'],
+    queryFn: () => apiFetch<{ id: string; code: string; name: string }[]>('/master/subjects'),
+    staleTime: 5 * 60 * 1000,
+  });
 
   const params = new URLSearchParams();
   if (programId) params.set('programId', programId);
   if (levelId) params.set('levelId', levelId);
   if (groupId) params.set('groupId', groupId);
+  if (subjectId) params.set('subjectId', subjectId);
+  if (category) params.set('category', category);
   if (from) params.set('startDate', from);
   if (to) params.set('endDate', to);
   const qs = params.toString();
 
   const analyticsQ = useQuery({
-    queryKey: ['analytics-admin-academic', applied],
+    queryKey: ['analytics-admin-academic', qs],
     queryFn: () =>
       apiFetch<AdminAcademicAnalyticsData>(
-        `/analytics/admin/academic${applied ? `?${applied}` : ''}`,
+        `/analytics/admin/academic${qs ? `?${qs}` : ''}`,
       ),
-    // Data hanya dimuat setelah user memilih filter & menekan Tampilkan —
-    // mencegah tabel langsung membanjiri layar saat halaman dibuka.
-    enabled: applied !== null,
+    // Refresh berkala — hasil terbaru (ujian selesai, attempt baru)
+    // muncul tanpa perlu aksi manual.
+    refetchInterval: 30_000,
   });
 
   const scoreQ = useQuery({
@@ -379,6 +405,9 @@ export function AdminAcademicAnalytics() {
       ),
     enabled: !!selectedExamId && activeTab === 'answer',
   });
+
+  // Filter/cari/ukuran-halaman berubah → kembali ke halaman pertama.
+  useEffect(() => setPage(0), [qs, search, pageSize]);
 
   if (analyticsQ.isLoading) {
     return (
@@ -661,11 +690,53 @@ export function AdminAcademicAnalytics() {
       (!programId || g.programId === programId) &&
       (!levelId || g.levelId === levelId),
   );
+  // Mapel: kalau jenjang dipilih, tampilkan mapel yang diajarkan di jenjang
+  // tsb (levelSubjects); kalau belum, seluruh master mapel.
+  const subjectOptions = (() => {
+    const lvl = (levelsQ.data ?? []).find((l) => l.id === levelId);
+    if (lvl?.levelSubjects?.length) {
+      return lvl.levelSubjects
+        .map((ls) => ls.subject)
+        .filter((s): s is { id: string; name: string } => !!s)
+        .map((s) => ({ value: s.id, label: s.name }));
+    }
+    return (subjectsQ.data ?? []).map((s) => ({
+      value: s.id,
+      label: `${s.code} — ${s.name}`,
+    }));
+  })();
+
+  // Tahun ajaran berjalan Juli–Juni. Pilihan preset menulis rentang
+  // Dari/Sampai tanggal; kalau tanggal diubah manual (atau lewat Periode
+  // Bulan), pilihan preset otomatis lepas — dari from/to yang berlaku.
+  const now = new Date();
+  const startYear = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+  const academicYears = Array.from({ length: 6 }, (_, i) => {
+    const y = startYear - i;
+    return {
+      value: `${y}/${y + 1}`,
+      label: `${y}/${y + 1}`,
+      from: `${y}-07-01`,
+      to: `${y + 1}-06-30`,
+    };
+  });
+  const academicYear =
+    academicYears.find((a) => a.from === from && a.to === to)?.value ?? "";
+  // Periode bulan aktif bila from = tanggal 1 dan to = hari terakhir bulan itu.
+  const month =
+    from && to && from.endsWith("-01") && to === lastDayOfMonth(from.slice(0, 7))
+      ? from.slice(0, 7)
+      : "";
+
   const exams = (data?.examAnalytics ?? []).filter((e) =>
     search
       ? e.examTitle.toLowerCase().includes(search.trim().toLowerCase())
       : true,
   );
+
+  const totalExamPages = pageSize > 0 ? Math.max(1, Math.ceil(exams.length / pageSize)) : 1;
+  const shownExams =
+    pageSize > 0 ? exams.slice(page * pageSize, (page + 1) * pageSize) : exams;
 
   // ---- Tampilan daftar: pilih ujian ----
   return (
@@ -683,7 +754,7 @@ export function AdminAcademicAnalytics() {
             id="an-program"
             label="Program"
             value={programId}
-            onChange={(v) => { setProgramId(v); setLevelId(""); setGroupId(""); }}
+            onChange={(v) => { setProgramId(v); setLevelId(""); setGroupId(""); setSubjectId(""); }}
             options={(programsQ.data ?? []).map((p) => ({
               value: p.id,
               label: p.code ? `${p.code} — ${p.name}` : p.name,
@@ -696,7 +767,7 @@ export function AdminAcademicAnalytics() {
             id="an-level"
             label="Level"
             value={levelId}
-            onChange={(v) => { setLevelId(v); setGroupId(""); }}
+            onChange={(v) => { setLevelId(v); setGroupId(""); setSubjectId(""); }}
             options={levelOptions.map((l) => ({ value: l.id, label: l.name }))}
             placeholder="Semua level"
           />
@@ -714,6 +785,53 @@ export function AdminAcademicAnalytics() {
             placeholder="Semua kelompok"
           />
         </div>
+        <div className="w-56">
+          <Phase1aSelectField
+            id="an-subject"
+            label="Mapel"
+            value={subjectId}
+            onChange={setSubjectId}
+            options={subjectOptions}
+            placeholder="Semua mapel"
+          />
+        </div>
+        <div className="w-48">
+          <Phase1aSelectField
+            id="an-category"
+            label="Tipe Ujian"
+            value={category}
+            onChange={setCategory}
+            options={categoryOptions(catsQ.data)}
+            placeholder="Semua tipe"
+          />
+        </div>
+        <div className="w-44">
+          <Phase1aSelectField
+            id="an-ay"
+            label="Tahun Ajaran"
+            value={academicYear}
+            onChange={(v) => {
+              const a = academicYears.find((x) => x.value === v);
+              setFrom(a?.from ?? "");
+              setTo(a?.to ?? "");
+            }}
+            options={academicYears.map((a) => ({ value: a.value, label: a.label }))}
+            placeholder="Semua"
+          />
+        </div>
+        <label className="flex flex-col gap-1 text-xs">
+          Periode bulan
+          <Input
+            type="month"
+            className="h-9"
+            value={month}
+            onChange={(e) => {
+              const v = e.target.value; // "YYYY-MM" atau "" saat dibersihkan
+              setFrom(v ? `${v}-01` : "");
+              setTo(v ? lastDayOfMonth(v) : "");
+            }}
+          />
+        </label>
         <label className="flex flex-col gap-1 text-xs">
           Dari tanggal
           <Input type="date" className="h-9" value={from} onChange={(e) => setFrom(e.target.value)} />
@@ -731,27 +849,18 @@ export function AdminAcademicAnalytics() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
-        <Button size="sm" onClick={() => setApplied(qs)} disabled={!qs && applied === ""}>
-          Tampilkan
-        </Button>
-        {programId || levelId || groupId || from || to || search ? (
+        {programId || levelId || groupId || subjectId || category || from || to || search ? (
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => { setProgramId(""); setLevelId(""); setGroupId(""); setFrom(""); setTo(""); setSearch(""); setApplied(null); }}
+            onClick={() => { setProgramId(""); setLevelId(""); setGroupId(""); setSubjectId(""); setCategory(""); setFrom(""); setTo(""); setSearch(""); }}
           >
             Reset
           </Button>
         ) : null}
       </div>
 
-      {applied === null ? (
-        <EmptyState
-          icon={ChartLine}
-          title="Atur filter lalu tekan Tampilkan"
-          description="Data analisis tidak dimuat otomatis — pilih program/level/kelompok/tanggal dulu."
-        />
-      ) : analyticsQ.isLoading ? (
+      {analyticsQ.isLoading ? (
         <Skeleton className="h-40 w-full" />
       ) : (
         <>
@@ -782,44 +891,88 @@ export function AdminAcademicAnalytics() {
               description="Coba longgarkan filter, atau buat ujian lalu tunggu ada attempt."
             />
           ) : (
-            <div className="overflow-x-auto rounded-xl border">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50 text-xs uppercase text-muted-foreground">
-                    <th className="px-3 py-2.5 font-medium">Ujian</th>
-                    <th className="px-3 py-2.5 font-medium">Soal</th>
-                    <th className="px-3 py-2.5 font-medium">Attempt</th>
-                    <th className="px-3 py-2.5 font-medium">Akurasi</th>
-                    <th className="px-3 py-2.5 font-medium"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {exams.map((exam) => {
-                    const s = examSummary(exam);
-                    return (
-                      <tr
-                        key={exam.examId}
-                        className="cursor-pointer border-b last:border-0 hover:bg-accent/50"
-                        onClick={() => { setSelectedExamId(exam.examId); setRecapGroupId(""); }}
-                      >
-                        <td className="px-3 py-2.5 font-medium">{exam.examTitle}</td>
-                        <td className="px-3 py-2.5 tabular-nums">{s.questions}</td>
-                        <td className="px-3 py-2.5 tabular-nums">{s.attempts}</td>
-                        <td className="px-3 py-2.5">
-                          <Badge variant={accuracyVariant(s.avgAccuracy)}>
-                            {s.avgAccuracy.toFixed(1)}%
-                          </Badge>
-                        </td>
-                        <td className="px-3 py-2.5 text-right">
-                          <Button variant="ghost" size="sm" className="gap-1">
-                            Detail <ChevronRight className="size-4" />
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span>{exams.length} ujian ditemukan</span>
+                <label className="flex items-center gap-1.5">
+                  Tampilkan
+                  <select
+                    className="h-8 rounded-md border border-input bg-background px-2"
+                    value={pageSize}
+                    onChange={(e) => setPageSize(Number(e.target.value))}
+                  >
+                    <option value={5}>5</option>
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={0}>Semua</option>
+                  </select>
+                </label>
+              </div>
+              <div className="overflow-x-auto rounded-xl border">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/50 text-xs uppercase text-muted-foreground">
+                      <th className="px-3 py-2.5 font-medium">Ujian</th>
+                      <th className="px-3 py-2.5 font-medium">Soal</th>
+                      <th className="px-3 py-2.5 font-medium">Attempt</th>
+                      <th className="px-3 py-2.5 font-medium">Akurasi</th>
+                      <th className="px-3 py-2.5 font-medium"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shownExams.map((exam) => {
+                      const s = examSummary(exam);
+                      return (
+                        <tr
+                          key={exam.examId}
+                          className="cursor-pointer border-b last:border-0 hover:bg-accent/50"
+                          onClick={() => { setSelectedExamId(exam.examId); setRecapGroupId(""); }}
+                        >
+                          <td className="px-3 py-2.5 font-medium">{exam.examTitle}</td>
+                          <td className="px-3 py-2.5 tabular-nums">{s.questions}</td>
+                          <td className="px-3 py-2.5 tabular-nums">{s.attempts}</td>
+                          <td className="px-3 py-2.5">
+                            <Badge variant={accuracyVariant(s.avgAccuracy)}>
+                              {s.avgAccuracy.toFixed(1)}%
+                            </Badge>
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            <Button variant="ghost" size="sm" className="gap-1">
+                              Detail <ChevronRight className="size-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {totalExamPages > 1 ? (
+                <div className="flex items-center justify-center gap-2 text-sm">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={page <= 0}
+                    onClick={() => setPage((p) => p - 1)}
+                  >
+                    ←
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {page + 1} / {totalExamPages}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= totalExamPages - 1}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    →
+                  </Button>
+                </div>
+              ) : null}
             </div>
           )}
         </>

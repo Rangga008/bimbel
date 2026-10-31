@@ -21,13 +21,13 @@ import { ImagePickerField } from '@/components/shared/image-picker-field';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { plainPreview } from '@/components/shared/math-content';
 import { apiFetch, ApiError, resolveAssetUrl } from '@/lib/api-client';
-import type { ExamFormState } from '@/components/phase3c/exam-form';
 
 interface BacaanQuestion {
   id: string;
   content: string | null;
   stimulus?: string | null;
   stimulusImageUrl?: string | null;
+  subject?: { id: string; name: string } | null;
 }
 
 function err(e: unknown, fb: string) {
@@ -40,25 +40,32 @@ interface BacaanGroup {
   code: string;
   stimulus: string;
   imageUrl: string | null;
+  /** Nama mapel pemilik grup — bacaan teks sama di mapel berbeda
+   *  ditampilkan sebagai grup terpisah. */
+  subjectName: string | null;
   /** questionId → nomor tampil (1-based sesuai urutan di ujian). */
   members: { questionId: string; no: number }[];
 }
 
-/** Panel "Bacaan" di halaman Kelola Soal ujian — menampilkan tiap teks
- *  bacaan (kode B1, B2, …), nomor soal yang memakainya, dan dialog untuk
- *  mengedit isi bacaan + soal mana saja yang disambungkan. */
-export function ExamBacaanPanel({ form }: { form: ExamFormState }) {
+/** Panel "Bacaan" untuk SATU bagian soal (subtes atau ujian satu bagian) —
+ *  menampilkan tiap teks bacaan (kode B1, B2, …), nomor soal yang
+ *  memakainya, dan dialog untuk mengedit isi bacaan + soal mana saja yang
+ *  disambungkan. Dipasang di dalam blok subtes-nya masing-masing supaya
+ *  bacaan Matematika tidak tercampur dengan Bahasa Indonesia. */
+export function ExamBacaanPanel({
+  ids,
+  title,
+}: {
+  /** questionIds milik bagian (subtes) ini — kandidat penomoran & dialog. */
+  ids: string[];
+  /** Nama bagian untuk judul, mis. "Matematika" — kosong = ujian satu bagian. */
+  title?: string;
+}) {
   const qc = useQueryClient();
   const [editGroup, setEditGroup] = useState<BacaanGroup | 'new' | null>(null);
   const [deleteGroup, setDeleteGroup] = useState<BacaanGroup | null>(null);
 
-  // Urutan soal = gabungan semua subtes (atau daftar flat) sesuai urutan form.
-  const orderedIds = useMemo(() => {
-    const ids = form.subtes.length
-      ? form.subtes.flatMap((s) => s.questionIds)
-      : form.questionIds;
-    return [...new Set(ids)];
-  }, [form]);
+  const orderedIds = useMemo(() => [...new Set(ids)], [ids]);
 
   const questionsQ = useQuery({
     queryKey: ['exam-bacaan-questions', orderedIds.join(',')],
@@ -83,14 +90,17 @@ export function ExamBacaanPanel({ form }: { form: ExamFormState }) {
     [questionsQ.data],
   );
 
-  // Kelompokkan per teks bacaan; kode B1.. mengikuti nomor soal pertama
-  // yang memakainya.
+  // Kelompokkan per (mapel + teks bacaan) — teks sama di mapel berbeda
+  // tidak menyatu, sehingga nomor soal dalam satu grup selalu se-konteks.
+  // Kode B1.. mengikuti nomor soal pertama yang memakainya di bagian ini
+  // (sama dengan penomoran saat siswa mengerjakan).
   const groups = useMemo<BacaanGroup[]>(() => {
     const map = new Map<string, BacaanGroup>();
     orderedIds.forEach((id, i) => {
       const q = byId.get(id);
-      const key = norm(q?.stimulus);
-      if (!q || !key) return;
+      const text = norm(q?.stimulus);
+      if (!q || !text) return;
+      const key = `${q.subject?.id ?? '_'}|${text}`;
       const g = map.get(key);
       if (g) g.members.push({ questionId: id, no: i + 1 });
       else
@@ -98,6 +108,7 @@ export function ExamBacaanPanel({ form }: { form: ExamFormState }) {
           code: `B${map.size + 1}`,
           stimulus: q.stimulus!.trim(),
           imageUrl: q.stimulusImageUrl ?? null,
+          subjectName: q.subject?.name ?? null,
           members: [{ questionId: id, no: i + 1 }],
         });
     });
@@ -146,14 +157,18 @@ export function ExamBacaanPanel({ form }: { form: ExamFormState }) {
         <div className="flex items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2 font-semibold">
-              <BookOpenText className="size-4" /> Bacaan
+              <BookOpenText className="size-4" /> Bacaan{title ? ` — ${title}` : ''}
             </div>
             <p className="mt-0.5 text-xs text-muted-foreground">
               Satu teks bisa dipakai beberapa soal — soal yang memilih bacaan
               selalu menampilkan teks ini saat dikerjakan.
             </p>
           </div>
-          <Button size="sm" variant="outline" onClick={() => setEditGroup('new')}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setEditGroup('new')}
+          >
             <Plus className="mr-1 size-4" /> Bacaan Baru
           </Button>
         </div>
@@ -162,8 +177,8 @@ export function ExamBacaanPanel({ form }: { form: ExamFormState }) {
           <p className="text-sm text-muted-foreground">Memuat bacaan…</p>
         ) : groups.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Belum ada bacaan — impor soal dengan kolom Bacaan atau buat lewat
-            tombol "Bacaan Baru".
+            Belum ada bacaan{title ? ` di ${title}` : ''} — impor soal dengan
+            kolom Bacaan atau buat lewat "Bacaan Baru".
           </p>
         ) : (
           <div className="flex flex-col gap-2">
@@ -172,6 +187,9 @@ export function ExamBacaanPanel({ form }: { form: ExamFormState }) {
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex min-w-0 items-start gap-2">
                     <Badge variant="secondary" className="mt-0.5 shrink-0">{g.code}</Badge>
+                    {g.subjectName && (
+                      <Badge variant="default" className="mt-0.5 shrink-0">{g.subjectName}</Badge>
+                    )}
                     <div className="min-w-0">
                       <p className="whitespace-pre-wrap text-sm">{g.stimulus}</p>
                       {g.imageUrl && (
@@ -235,6 +253,8 @@ export function ExamBacaanPanel({ form }: { form: ExamFormState }) {
       {editGroup !== null && (
         <BacaanEditDialog
           group={editGroup === 'new' ? null : editGroup}
+          // Kandidat soal hanya dari bagian ini — soal subtes lain tidak
+          // bisa dicentang dari dialog ini.
           orderedIds={orderedIds}
           byId={byId}
           pending={bulkM.isPending}
@@ -277,7 +297,7 @@ function BacaanEditDialog({
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="w-[95vw] max-w-4xl sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>{group ? `Edit ${group.code}` : 'Bacaan Baru'}</DialogTitle>
           <DialogDescription>
@@ -285,7 +305,7 @@ function BacaanEditDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto pr-1">
+        <div className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto pr-1">
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium">Teks Bacaan</label>
             <Textarea
@@ -306,7 +326,7 @@ function BacaanEditDialog({
             <label className="text-sm font-medium">
               Sambungkan ke soal ({checked.size} dipilih)
             </label>
-            <div className="flex max-h-56 flex-col gap-1 overflow-y-auto rounded-md border p-2">
+            <div className="flex max-h-72 flex-col gap-1 overflow-y-auto rounded-md border p-2">
               {orderedIds.map((id, i) => {
                 const q = byId.get(id);
                 return (

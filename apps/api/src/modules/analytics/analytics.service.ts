@@ -617,22 +617,34 @@ export class AnalyticsService {
     programId?: string;
     levelId?: string;
     groupId?: string;
+    subjectId?: string;
+    category?: string;
     startDate?: Date;
     endDate?: Date;
   }) {
     // Get exam question analytics — semua ujian yang sudah berjalan/selesai.
-    // ENDED wajib ikut: ujian yang selesai tetap dianalisis; tanpa filter mapel
-    // sehingga ujian tanpa subject pun muncul.
+    // ENDED wajib ikut: ujian yang selesai tetap dianalisis.
     const exams = await this.prisma.exam.findMany({
       where: {
         status: { in: ['PUBLISHED', 'LOCKED', 'ENDED'] },
         ...(filters?.programId && { items: { some: { question: { programId: filters.programId } } } }),
         ...(filters?.levelId && { items: { some: { question: { levelId: filters.levelId } } } }),
+        // Filter mapel: ujian dengan field subjectId cocok ATAU memuat soal
+        // mapel tsb (ujian multi-subtes menyimpan mapel di subtes/soalnya).
+        ...(filters?.subjectId && {
+          OR: [
+            { subjectId: filters.subjectId },
+            { items: { some: { question: { subjectId: filters.subjectId } } } },
+            { subtes: { some: { subjectId: filters.subjectId } } },
+          ],
+        }),
+        // Tipe ujian tersimpan di field category exam.
+        ...(filters?.category && { category: filters.category }),
         ...(filters?.startDate && { scheduledEndAt: { gte: filters.startDate } }),
         ...(filters?.endDate && { scheduledEndAt: { lte: filters.endDate } }),
       },
       select: { id: true, title: true },
-      take: 50,
+      take: 200,
     });
 
     const examAnalytics = await Promise.all(

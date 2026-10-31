@@ -38,7 +38,14 @@ function makeService(
     get: (k: string, fb?: string) =>
       k === 'WHATSAPP_OUTBOX_MAX_ATTEMPTS' ? maxAttempts : fb,
   } as unknown as ConfigService;
-  return new WhatsAppOutboxService(prisma as never, config, provider);
+  // Queue nonaktif di test — kick() jatuh ke jalur in-process.
+  const queue = { enabled: false };
+  return new WhatsAppOutboxService(
+    prisma as never,
+    config,
+    provider,
+    queue as never,
+  );
 }
 
 describe('WhatsAppOutboxService (Fase 5b)', () => {
