@@ -166,8 +166,8 @@ export function LatsolResultView({
                           <MathContent text={opt.content} />
                         </div>
                         <span className="shrink-0 text-xs">
-                          Anda: <b>{studentB ? 'B' : studentS ? 'S' : '—'}</b>
-                          {' · '}Kunci: <b>{keyB ? 'B' : 'S'}</b>
+                          Anda: <b>{studentB ? 'Benar' : studentS ? 'Salah' : '—'}</b>
+                          {' · '}Kunci: <b>{keyB ? 'Benar' : 'Salah'}</b>
                         </span>
                       </div>
                     );

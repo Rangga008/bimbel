@@ -390,20 +390,20 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
                       )}
                       <MathContent text={opt.content} />
                     </div>
-                    <div className="flex shrink-0 gap-1">
+                    <div className="flex shrink-0 gap-1.5">
                       {(['B', 'S'] as const).map((mark) => (
                         <button
                           key={mark}
                           type="button"
                           disabled={checked}
                           onClick={() => setMark(mark)}
-                          className={`h-8 w-8 rounded-md border text-sm font-semibold transition-colors ${
+                          className={`h-8 rounded-md border px-3 text-xs font-semibold transition-colors ${
                             (mark === 'B' ? isB : isS)
                               ? 'border-primary bg-primary text-primary-foreground'
                               : 'border-input bg-background hover:bg-muted'
                           }`}
                         >
-                          {mark}
+                          {mark === 'B' ? 'Benar' : 'Salah'}
                         </button>
                       ))}
                     </div>
@@ -512,7 +512,7 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
                       {feedback.question.options.map((opt) => (
                         <p key={opt.id} className="flex items-center gap-2 text-muted-foreground">
                           <span className="font-semibold text-foreground">
-                            {feedback.question.correctOptionIds.includes(opt.id) ? 'B' : 'S'}
+                            {feedback.question.correctOptionIds.includes(opt.id) ? 'Benar' : 'Salah'}
                           </span>
                           <MathContent text={opt.content} />
                         </p>

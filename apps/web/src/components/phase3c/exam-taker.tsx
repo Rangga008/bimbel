@@ -639,7 +639,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                     )}
                     <MathContent text={option.content} />
                   </div>
-                  <div className="flex shrink-0 gap-1">
+                  <div className="flex shrink-0 gap-1.5">
                     {(['B', 'S'] as const).map((mark) => {
                       const active = mark === 'B' ? isB : isS;
                       return (
@@ -648,13 +648,13 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                           type="button"
                           disabled={!isInProgress}
                           onClick={() => setMark(mark)}
-                          className={`h-8 w-8 rounded-md border text-sm font-semibold transition-colors ${
+                          className={`h-8 rounded-md border px-3 text-xs font-semibold transition-colors ${
                             active
                               ? 'border-primary bg-primary text-primary-foreground'
                               : 'border-input bg-background hover:bg-muted'
                           }`}
                         >
-                          {mark}
+                          {mark === 'B' ? 'Benar' : 'Salah'}
                         </button>
                       );
                     })}
@@ -1238,8 +1238,8 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                               <MathContent text={opt.content} />
                             </div>
                             <span className="shrink-0 text-xs">
-                              Anda: <b>{studentB ? 'B' : studentS ? 'S' : '—'}</b>
-                              {' · '}Kunci: <b>{opt.isCorrect ? 'B' : 'S'}</b>
+                              Anda: <b>{studentB ? 'Benar' : studentS ? 'Salah' : '—'}</b>
+                              {' · '}Kunci: <b>{opt.isCorrect ? 'Benar' : 'Salah'}</b>
                             </span>
                           </div>
                         );

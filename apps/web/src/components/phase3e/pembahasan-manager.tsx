@@ -91,7 +91,7 @@ function QuestionAnswerKey({ question }: { question: Question }) {
                   <MathContent text={option.content} />
                 </div>
                 <Badge className="shrink-0" variant={option.isCorrect ? 'default' : 'secondary'}>
-                  {option.isCorrect ? 'B' : 'S'}
+                  {option.isCorrect ? 'Benar' : 'Salah'}
                 </Badge>
               </div>
             ))}
