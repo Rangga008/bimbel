@@ -71,6 +71,11 @@ const TYPE_ALIASES: Record<string, QuestionType> = {
   'BENAR/SALAH': 'TRUE_FALSE',
   'BENAR-SALAH': 'TRUE_FALSE',
   TRUE_FALSE: 'TRUE_FALSE',
+  BSK: 'TRUE_FALSE_COMPLEX',
+  'BS KOMPLEKS': 'TRUE_FALSE_COMPLEX',
+  'BENAR/SALAH KOMPLEKS': 'TRUE_FALSE_COMPLEX',
+  'BENAR-SALAH KOMPLEKS': 'TRUE_FALSE_COMPLEX',
+  TRUE_FALSE_COMPLEX: 'TRUE_FALSE_COMPLEX',
   ISIAN: 'SHORT_ANSWER',
   'ISIAN SINGKAT': 'SHORT_ANSWER',
   SHORT_ANSWER: 'SHORT_ANSWER',
@@ -90,12 +95,14 @@ const DOCX_TEMPLATE_LINES = [
   '',
   'PETUNJUK:',
   '- Isi tabel di bawah: 1 baris = 1 soal. Tambahkan/salin baris sesuai kebutuhan.',
-  '- Tipe: PG (pilihan ganda) | PGK (ganda kompleks) | BS (benar/salah) | ISIAN | ESSAY.',
+  '- Tipe: PG (pilihan ganda) | PGK (ganda kompleks) | BS (benar/salah) |',
+  '  BSK (benar/salah kompleks — tabel pernyataan) | ISIAN | ESSAY.',
   '- Kunci: huruf opsi (mis. B), beberapa huruf untuk PGK (mis. A,C), Benar/Salah untuk BS,',
   '  teks jawaban untuk ISIAN, dan dikosongkan untuk ESSAY.',
-  '- Opsi hanya diisi untuk PG/PGK (maksimal E). Tipe lain boleh dikosongkan.',
-  '- BS bisa satu pernyataan (Kunci: Benar/Salah) ATAU beberapa pernyataan —',
-  '  isi tiap pernyataan di Opsi A..E dan kunci dipisah koma, mis. "Benar,Salah,Benar,Salah".',
+  '- Opsi hanya diisi untuk PG/PGK/BSK (maksimal E). Tipe lain boleh dikosongkan.',
+  '- BSK = tabel benar/salah seperti di kertas ujian: tiap pernyataan di Opsi A..E,',
+  '  kunci per-pernyataan dipisah koma, mis. "Benar,Salah,Benar,Salah".',
+  '  Siswa menjawab B atau S per pernyataan; nilai dihitung per-pernyataan.',
   '- BACAAN BERSAMA: tulis teks SEKALI di baris Tipe "BACAAN" + beri nama di',
   '  kolom No (mis. B1). Soal yang memakainya cukup isi kolom Bacaan = nama itu',
   '  (mis. B1) — jadi tiap soal MEMILIH bacaannya, tidak harus berurutan.',
@@ -126,6 +133,7 @@ const TYPE_TO_ALIAS: Record<QuestionType, string> = {
   SINGLE_CHOICE: 'PG',
   MULTIPLE_CHOICE: 'PGK',
   TRUE_FALSE: 'BS',
+  TRUE_FALSE_COMPLEX: 'BSK',
   SHORT_ANSWER: 'ISIAN',
   ESSAY: 'ESSAY',
 };
@@ -149,9 +157,11 @@ function exampleRow(no: number, type: QuestionType): (string | number)[] {
     case 'MULTIPLE_CHOICE':
       return [no, t, `Contoh soal ganda kompleks no ${no}: Masih dari bacaan B1 — pilih semua bilangan genap.`, '2', '3', '4', '5', '', 'A,C', 2, 'MEDIUM', '', 'B1'];
     case 'TRUE_FALSE':
-      // BS kompleks — tiap opsi adalah pernyataan; kunci per-pernyataan
-      // dipisah koma (contoh: 4 pernyataan, 2 benar 2 salah).
-      return [no, t, `Contoh soal benar/salah no ${no}: Tentukan benar/salah tiap pernyataan berikut!`, '2 + 2 = 4', '3 x 3 = 6', '10 : 2 = 5', '7 - 2 = 3', '', 'Benar,Salah,Benar,Salah', 1, 'EASY', 'Hanya pernyataan A dan C yang benar.', ''];
+      return [no, t, `Contoh soal benar/salah no ${no}: Generator mengkonversi energi gerak menjadi listrik.`, '', '', '', '', '', 'Benar', 1, 'EASY', '', ''];
+    case 'TRUE_FALSE_COMPLEX':
+      // BSK — tabel pernyataan seperti kertas ujian: tiap opsi = 1 pernyataan,
+      // kunci per-pernyataan dipisah koma (contoh: 4 pernyataan, 2 benar 2 salah).
+      return [no, t, `Contoh soal benar/salah kompleks no ${no}: Tentukan benar/salah tiap pernyataan berikut!`, 'Generator adalah perangkat pembangkit listrik', 'Batubara adalah bahan bakar PLTU', 'Generator mengkonversi listrik menjadi gerak', 'Motor mengkonversi gerak menjadi listrik', '', 'Benar,Benar,Salah,Salah', 1, 'EASY', 'Hanya pernyataan A dan B yang benar.', ''];
     case 'SHORT_ANSWER':
       return [no, t, `Contoh soal isian no ${no}: Ibukota Indonesia adalah ...`, '', '', '', '', '', 'Jakarta', 1, 'MEDIUM', '', ''];
     default:
@@ -165,6 +175,7 @@ function parseTemplateTypes(types?: string): QuestionType[] {
     'SINGLE_CHOICE',
     'MULTIPLE_CHOICE',
     'TRUE_FALSE',
+    'TRUE_FALSE_COMPLEX',
     'SHORT_ANSWER',
     'ESSAY',
   ];
@@ -919,26 +930,31 @@ export class QuestionsImportService {
         isCorrect: kunciLetters.includes(OPTION_LETTERS[i]),
         sortOrder: i,
       }));
-    } else if (type === 'TRUE_FALSE') {
-      // Kunci multi-pernyataan "BENAR, SALAH, ..." → soal BS kompleks, setara
-      // PGK: opsi ke-i bernilai benar bila kunci ke-i "Benar".
+    } else if (type === 'TRUE_FALSE' || type === 'TRUE_FALSE_COMPLEX') {
+      // Kunci multi-pernyataan "BENAR, SALAH, ..." → BS kompleks (BSK):
+      // tiap opsi = satu pernyataan, isCorrect = pernyataan itu Benar.
+      // Siswa menjawab B/S per pernyataan; dinilai per-pernyataan.
       const parts = row.kunci
         .split(/[,;|]+/)
         .map((p) => p.trim())
         .filter(Boolean);
-      if (parts.length >= 2) {
+      if (type === 'TRUE_FALSE_COMPLEX' || parts.length >= 2) {
         const marks = parts.map((p) => {
           const k = p.toLowerCase();
           if (['benar', 'true', 'b'].includes(k)) return true;
           if (['salah', 'false', 's'].includes(k)) return false;
           return null;
         });
-        if (marks.includes(null) || marks.length !== row.options.length) {
+        if (
+          marks.includes(null) ||
+          marks.length !== row.options.length ||
+          row.options.length < 2
+        ) {
           errors.push(
-            'Kunci Benar/Salah per-pernyataan harus "Benar"/"Salah" dipisah koma dan sama banyak dengan jumlah opsi.',
+            'BSK butuh ≥2 pernyataan di Opsi A..E dan kunci "Benar"/"Salah" dipisah koma sejumlah pernyataan.',
           );
         } else {
-          type = 'MULTIPLE_CHOICE';
+          type = 'TRUE_FALSE_COMPLEX';
           dto.type = type;
           dto.options = row.options.map((o, i) => ({
             content: o,

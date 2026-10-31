@@ -78,6 +78,7 @@ export function QuickQuestionCreate({
       (draft.options.length > 0 &&
         draft.options.every((o) => o.content.trim() || o.imageUrl) &&
         (draft.type === 'MULTIPLE_CHOICE' ||
+          draft.type === 'TRUE_FALSE_COMPLEX' ||
           draft.options.filter((o) => o.isCorrect).length === 1)));
 
   if (!open) {

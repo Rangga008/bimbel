@@ -595,6 +595,76 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
           </RadioGroup>
         )}
 
+        {item.question.type === 'TRUE_FALSE_COMPLEX' && (
+          <div className="flex flex-col gap-2">
+            <p className="text-xs text-muted-foreground">
+              Tentukan Benar (B) atau Salah (S) untuk tiap pernyataan.
+            </p>
+            {item.question.options.map((option, oi) => {
+              // Pernyataan yang ditandai "Salah" disimpan di textAnswer (JSON
+              // {s:[ids]}) supaya bisa dibedakan dari baris yang belum dijawab.
+              let sMarks: string[] = [];
+              try {
+                sMarks = JSON.parse(answers[item.questionId]?.textAnswer || '{}').s ?? [];
+              } catch { /* abaikan */ }
+              const isB = answers[item.questionId]?.selectedOptionIds?.includes(option.id) === true;
+              const isS = !isB && sMarks.includes(option.id);
+              const setMark = (mark: 'B' | 'S') => {
+                const cur = answers[item.questionId]?.selectedOptionIds || [];
+                const newIds =
+                  mark === 'B'
+                    ? [...new Set([...cur, option.id])]
+                    : cur.filter((id) => id !== option.id);
+                const newS =
+                  mark === 'S'
+                    ? [...new Set([...sMarks, option.id])]
+                    : sMarks.filter((id) => id !== option.id);
+                saveAnswer(
+                  item.questionId,
+                  { selectedOptionIds: newIds, textAnswer: JSON.stringify({ s: newS }) },
+                  200,
+                );
+              };
+              return (
+                <div
+                  key={option.id}
+                  className="flex items-start gap-3 rounded-lg border border-border p-3"
+                >
+                  <span className="mt-0.5 w-6 shrink-0 text-sm font-medium text-muted-foreground">
+                    {oi + 1}.
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    {option.imageUrl && (
+                      <img src={resolveAssetUrl(option.imageUrl)} alt="Gambar pernyataan" className="mb-1 max-h-40 w-auto rounded border object-contain" />
+                    )}
+                    <MathContent text={option.content} />
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    {(['B', 'S'] as const).map((mark) => {
+                      const active = mark === 'B' ? isB : isS;
+                      return (
+                        <button
+                          key={mark}
+                          type="button"
+                          disabled={!isInProgress}
+                          onClick={() => setMark(mark)}
+                          className={`h-8 w-8 rounded-md border text-sm font-semibold transition-colors ${
+                            active
+                              ? 'border-primary bg-primary text-primary-foreground'
+                              : 'border-input bg-background hover:bg-muted'
+                          }`}
+                        >
+                          {mark}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {item.question.type === 'MULTIPLE_CHOICE' && (
           <div className="flex flex-col gap-3">
             {item.question.options.map((option) => (
@@ -1141,7 +1211,43 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                     <MathContent text={question.content} />
                   </div>
 
-                  {question.options.length > 0 && (
+                  {question.type === 'TRUE_FALSE_COMPLEX' && question.options.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      {question.options.map((opt, oi) => {
+                        let sMarks: string[] = [];
+                        try {
+                          sMarks = JSON.parse(answer?.textAnswer || '{}').s ?? [];
+                        } catch { /* abaikan */ }
+                        const studentB = answer?.selectedOptionIds?.includes(opt.id) === true;
+                        const studentS = !studentB && sMarks.includes(opt.id);
+                        const correct = studentB === opt.isCorrect;
+                        return (
+                          <div
+                            key={opt.id}
+                            className={`flex items-start gap-2 p-2 rounded border ${
+                              correct
+                                ? 'bg-success-50 border-success-300'
+                                : 'bg-destructive/10 border-destructive/30'
+                            }`}
+                          >
+                            <span className="text-muted-foreground">{oi + 1}.</span>
+                            <div className="flex-1 min-w-0">
+                              {opt.imageUrl && (
+                                <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar pernyataan" className="mb-1 max-h-40 w-auto rounded border object-contain" />
+                              )}
+                              <MathContent text={opt.content} />
+                            </div>
+                            <span className="shrink-0 text-xs">
+                              Anda: <b>{studentB ? 'B' : studentS ? 'S' : '—'}</b>
+                              {' · '}Kunci: <b>{opt.isCorrect ? 'B' : 'S'}</b>
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {question.type !== 'TRUE_FALSE_COMPLEX' && question.options.length > 0 && (
                     <div className="flex flex-col gap-1">
                       {question.options.map((opt) => {
                         const isSelected = answer?.selectedOptionIds?.includes(opt.id);
@@ -1168,7 +1274,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                     </div>
                   )}
 
-                  {answer?.textAnswer && (
+                  {answer?.textAnswer && question.type !== 'TRUE_FALSE_COMPLEX' && (
                     <div>
                       <p className="text-muted-foreground mb-1">Jawaban Anda:</p>
                       <p>{answer.textAnswer}</p>

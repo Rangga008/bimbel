@@ -33,7 +33,7 @@ export interface QuestionDraft {
   levelId: string;
   subjectId: string;
   category: string;
-  type: 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'TRUE_FALSE' | 'SHORT_ANSWER' | 'ESSAY';
+  type: 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'TRUE_FALSE' | 'TRUE_FALSE_COMPLEX' | 'SHORT_ANSWER' | 'ESSAY';
   /** Bacaan bersama — satu teks dipakai beberapa soal. */
   stimulus: string;
   /** Gambar pendamping bacaan. */
@@ -146,14 +146,17 @@ export function QuestionFormCard({
   const stimuli = stimuliQ.data ?? [];
 
   const needsOptions =
-    draft.type === 'SINGLE_CHOICE' || draft.type === 'MULTIPLE_CHOICE' || draft.type === 'TRUE_FALSE';
+    draft.type === 'SINGLE_CHOICE' || draft.type === 'MULTIPLE_CHOICE' ||
+    draft.type === 'TRUE_FALSE' || draft.type === 'TRUE_FALSE_COMPLEX';
   // Pilihan tunggal: tepat 1 jawaban benar (radio). Majemuk: >=1 (checkbox).
   const singleCorrect = draft.type === 'SINGLE_CHOICE' || draft.type === 'TRUE_FALSE';
+  const isTFComplex = draft.type === 'TRUE_FALSE_COMPLEX';
 
   const TYPE_HINTS: Record<QuestionDraft['type'], string> = {
     SINGLE_CHOICE: 'Pilihan ganda dengan TEPAT 1 jawaban benar (radio).',
     MULTIPLE_CHOICE: 'Pilihan ganda majemuk — boleh lebih dari 1 jawaban benar (centang semua yang benar).',
     TRUE_FALSE: 'Benar/Salah — 2 opsi otomatis, tandai mana yang benar.',
+    TRUE_FALSE_COMPLEX: 'Benar/Salah kompleks — tiap opsi adalah pernyataan; tentukan Benar/Salah per pernyataan. Siswa menjawab B atau S per baris, dinilai per-pernyataan.',
     SHORT_ANSWER: 'Isian singkat — tanpa opsi; isi kunci jawaban untuk auto-grading.',
     ESSAY: 'Esai/uraian — tanpa opsi, dinilai manual.',
   };
@@ -370,12 +373,28 @@ export function QuestionFormCard({
         {needsOptions && (
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <Label>Opsi Jawaban * ({singleCorrect ? 'pilih 1 yang benar' : 'centang semua yang benar'})</Label>
-              <Button type="button" size="sm" variant="outline" onClick={addOption}>+ Tambah Opsi</Button>
+              <Label>
+                {isTFComplex
+                  ? 'Pernyataan * (tentukan kunci Benar/Salah tiap baris)'
+                  : `Opsi Jawaban * (${singleCorrect ? 'pilih 1 yang benar' : 'centang semua yang benar'})`}
+              </Label>
+              <Button type="button" size="sm" variant="outline" onClick={addOption}>
+                {isTFComplex ? '+ Tambah Pernyataan' : '+ Tambah Opsi'}
+              </Button>
             </div>
             {draft.options.map((opt, idx) => (
               <div key={idx} className="flex items-start gap-2">
-                {singleCorrect ? (
+                {isTFComplex ? (
+                  <select
+                    className="mt-0.5 h-9 w-24 shrink-0 rounded-md border border-input bg-background px-2 text-sm"
+                    value={opt.isCorrect ? 'B' : 'S'}
+                    onChange={(e) => updateOption(idx, 'isCorrect', e.target.value === 'B')}
+                    title="Kunci pernyataan ini"
+                  >
+                    <option value="B">Benar</option>
+                    <option value="S">Salah</option>
+                  </select>
+                ) : singleCorrect ? (
                   <input
                     type="radio"
                     name={`q-${index}-correct`}
@@ -398,7 +417,7 @@ export function QuestionFormCard({
                     className="h-9 rounded-md border border-input bg-background px-3"
                     value={opt.content}
                     onChange={(e) => updateOption(idx, 'content', e.target.value)}
-                    placeholder={opt.imageUrl ? `Opsi ${idx + 1} (teks opsional jika ada gambar)` : `Opsi ${idx + 1}`}
+                    placeholder={isTFComplex ? `Pernyataan ${idx + 1}` : opt.imageUrl ? `Opsi ${idx + 1} (teks opsional jika ada gambar)` : `Opsi ${idx + 1}`}
                   />
                   {opt.imageUrl && (
                     <div className="relative inline-flex items-center gap-2">

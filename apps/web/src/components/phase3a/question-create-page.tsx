@@ -136,11 +136,13 @@ export function QuestionCreatePage({
     // Jenjang + mapel + tipe wajib — bank soal dikategorikan per jenjang.
     if (!d.levelId || !d.subjectId || !d.category) return false;
     if (!d.content.trim()) return false;
-    if ((d.type === 'SINGLE_CHOICE' || d.type === 'MULTIPLE_CHOICE' || d.type === 'TRUE_FALSE')) {
+    if ((d.type === 'SINGLE_CHOICE' || d.type === 'MULTIPLE_CHOICE' || d.type === 'TRUE_FALSE' || d.type === 'TRUE_FALSE_COMPLEX')) {
       if (d.options.length === 0) return false;
       if (!d.options.every((o) => o.content.trim() || o.imageUrl)) return false;
       // Pilihan tunggal wajib tepat 1 jawaban benar.
-      if (d.type !== 'MULTIPLE_CHOICE' && d.options.filter((o) => o.isCorrect).length !== 1) return false;
+      if (d.type !== 'MULTIPLE_CHOICE' && d.type !== 'TRUE_FALSE_COMPLEX' && d.options.filter((o) => o.isCorrect).length !== 1) return false;
+      // BSK minimal 2 pernyataan.
+      if (d.type === 'TRUE_FALSE_COMPLEX' && d.options.length < 2) return false;
     }
     return true;
   });

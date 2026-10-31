@@ -139,7 +139,8 @@ function QuestionEditForm({
   });
 
   const needsOptions =
-    draft.type === 'SINGLE_CHOICE' || draft.type === 'MULTIPLE_CHOICE' || draft.type === 'TRUE_FALSE';
+    draft.type === 'SINGLE_CHOICE' || draft.type === 'MULTIPLE_CHOICE' ||
+    draft.type === 'TRUE_FALSE' || draft.type === 'TRUE_FALSE_COMPLEX';
   const isValid =
     // Jenjang + mapel + tipe wajib — bank soal dikategorikan per jenjang.
     !!draft.levelId && !!draft.subjectId && !!draft.category &&
@@ -148,7 +149,9 @@ function QuestionEditForm({
       needsOptions &&
       (draft.options.length === 0 ||
         !draft.options.every((o) => o.content.trim() || o.imageUrl) ||
-        (draft.type !== 'MULTIPLE_CHOICE' && draft.options.filter((o) => o.isCorrect).length > 1))
+        (draft.type !== 'MULTIPLE_CHOICE' && draft.type !== 'TRUE_FALSE_COMPLEX' &&
+          draft.options.filter((o) => o.isCorrect).length > 1) ||
+        (draft.type === 'TRUE_FALSE_COMPLEX' && draft.options.length < 2))
     );
 
   return (

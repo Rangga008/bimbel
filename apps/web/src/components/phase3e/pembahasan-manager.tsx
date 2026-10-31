@@ -63,6 +63,7 @@ function getQuestionTypeLabel(type: string) {
     SINGLE_CHOICE: 'Pilihan Ganda',
     MULTIPLE_CHOICE: 'Pilihan Ganda Kompleks',
     TRUE_FALSE: 'Benar/Salah',
+    TRUE_FALSE_COMPLEX: 'Benar/Salah Kompleks',
     SHORT_ANSWER: 'Isian Singkat',
     ESSAY: 'Essay',
   };
@@ -75,7 +76,27 @@ function QuestionAnswerKey({ question }: { question: Question }) {
     <>
       <div className="border-t pt-4">
         <h4 className="font-semibold mb-2">Kunci Jawaban</h4>
-        {question.type === 'SINGLE_CHOICE' || question.type === 'TRUE_FALSE' || question.type === 'MULTIPLE_CHOICE' ? (
+        {question.type === 'TRUE_FALSE_COMPLEX' ? (
+          <div className="space-y-2">
+            {question.options.map((option, i) => (
+              <div
+                key={option.id}
+                className={`flex items-start gap-2 p-2 rounded ${option.isCorrect ? 'bg-success-50 border border-success-300' : 'bg-muted'}`}
+              >
+                <span className="shrink-0 text-sm font-medium">{i + 1}.</span>
+                <div className="flex-1 min-w-0">
+                  {option.imageUrl && (
+                    <img src={resolveAssetUrl(option.imageUrl)} alt="Gambar pernyataan" className="mb-1 max-h-40 w-auto rounded border object-contain" />
+                  )}
+                  <MathContent text={option.content} />
+                </div>
+                <Badge className="shrink-0" variant={option.isCorrect ? 'default' : 'secondary'}>
+                  {option.isCorrect ? 'B' : 'S'}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        ) : question.type === 'SINGLE_CHOICE' || question.type === 'TRUE_FALSE' || question.type === 'MULTIPLE_CHOICE' ? (
           <div className="space-y-2">
             {question.options.map((option) => (
               <div

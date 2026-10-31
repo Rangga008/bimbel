@@ -1392,7 +1392,11 @@ model Material {
 enum QuestionType {
   SINGLE_CHOICE    // Pilihan tunggal (1 jawaban benar)
   MULTIPLE_CHOICE  // Pilihan ganda (bisa >1 jawaban benar)
-  TRUE_FALSE       // Benar/Salah
+  TRUE_FALSE       // Benar/Salah (1 pernyataan)
+  /// Benar/Salah kompleks — tabel pernyataan; tiap opsi adalah satu
+  /// pernyataan dan isCorrect menyatakan pernyataan itu Benar. Jawaban
+  /// siswa = daftar opsi yang dipilih "Benar"; dinilai per-pernyataan.
+  TRUE_FALSE_COMPLEX
   SHORT_ANSWER     // Isian singkat
   ESSAY            // Essay
 }

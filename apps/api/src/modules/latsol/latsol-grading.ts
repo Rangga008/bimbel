@@ -31,6 +31,15 @@ export function gradeLatsolQuestion(
     const ok = g.size === c.size && [...g].every((id) => c.has(id));
     return { isCorrect: ok, score: ok ? maxScore : 0, maxScore };
   }
+  if (q.type === 'TRUE_FALSE_COMPLEX') {
+    // Tiap opsi = satu pernyataan; siswa menandai yang Benar. Dinilai
+    // per-pernyataan — skor proporsional, pembulatan ke Int terdekat.
+    const g = new Set(picked);
+    const total = q.options.length;
+    const matched = q.options.filter((o) => g.has(o.id) === o.isCorrect).length;
+    const score = total ? Math.round((maxScore * matched) / total) : 0;
+    return { isCorrect: total > 0 && matched === total, score, maxScore };
+  }
   if (q.type === 'SHORT_ANSWER') {
     if (!q.answerKey) return { isCorrect: null, score: 0, maxScore };
     const ok = norm(input.textAnswer ?? '') === norm(q.answerKey);

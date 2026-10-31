@@ -97,6 +97,7 @@ export const QUESTION_TYPES = [
   { value: 'SINGLE_CHOICE', label: 'Pilihan Tunggal' },
   { value: 'MULTIPLE_CHOICE', label: 'Pilihan Ganda' },
   { value: 'TRUE_FALSE', label: 'Benar/Salah' },
+  { value: 'TRUE_FALSE_COMPLEX', label: 'Benar/Salah Kompleks' },
   { value: 'SHORT_ANSWER', label: 'Isian Singkat' },
   { value: 'ESSAY', label: 'Essay' },
 ] as const;

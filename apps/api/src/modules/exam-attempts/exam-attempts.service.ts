@@ -672,6 +672,16 @@ export class ExamAttemptsService {
           isCorrect = true;
           questionScore = item.points;
         }
+      } else if (question.type === 'TRUE_FALSE_COMPLEX') {
+        // Tiap opsi = satu pernyataan; jawaban = pernyataan yang ditandai
+        // Benar. Dinilai per-pernyataan — skor proporsional (Int).
+        const picked = new Set(answer.selectedOptionIds);
+        const total = question.options.length;
+        const matched = question.options.filter(
+          (o) => picked.has(o.id) === o.isCorrect,
+        ).length;
+        questionScore = total ? Math.round((item.points * matched) / total) : 0;
+        isCorrect = total > 0 && matched === total;
       } else if (question.type === 'SHORT_ANSWER' && question.answerKey) {
         // Case-insensitive match for short answer
         if (

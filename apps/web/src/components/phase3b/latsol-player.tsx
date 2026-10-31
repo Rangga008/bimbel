@@ -315,6 +315,64 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
           </RadioGroup>
         )}
 
+        {current.question.type === 'TRUE_FALSE_COMPLEX' && (
+          <div className="flex flex-col gap-2">
+            <p className="text-xs text-muted-foreground">
+              Tentukan Benar (B) atau Salah (S) untuk tiap pernyataan.
+            </p>
+            {(() => {
+              let sMarks: string[] = [];
+              try {
+                sMarks = JSON.parse(currentAnswer.textAnswer || '{}').s ?? [];
+              } catch { /* abaikan */ }
+              return current.question.options.map((opt, oi) => {
+                const isB = currentAnswer.selectedOptionIds.includes(opt.id);
+                const isS = !isB && sMarks.includes(opt.id);
+                const setMark = (mark: 'B' | 'S') => {
+                  const ids =
+                    mark === 'B'
+                      ? [...new Set([...currentAnswer.selectedOptionIds, opt.id])]
+                      : currentAnswer.selectedOptionIds.filter((id) => id !== opt.id);
+                  const s =
+                    mark === 'S'
+                      ? [...new Set([...sMarks, opt.id])]
+                      : sMarks.filter((id) => id !== opt.id);
+                  handleAnswerChange(qid!, 'selectedOptionIds', ids);
+                  handleAnswerChange(qid!, 'textAnswer', JSON.stringify({ s }));
+                };
+                return (
+                  <div key={opt.id} className="flex items-start gap-3 rounded-lg border border-border p-3">
+                    <span className="mt-0.5 w-6 shrink-0 text-sm font-medium text-muted-foreground">{oi + 1}.</span>
+                    <div className="flex-1 min-w-0">
+                      {opt.imageUrl && (
+                        <img src={resolveAssetUrl(opt.imageUrl)} alt="Gambar pernyataan" className="mb-1 max-h-20 w-auto rounded border object-contain" />
+                      )}
+                      <MathContent text={opt.content} />
+                    </div>
+                    <div className="flex shrink-0 gap-1">
+                      {(['B', 'S'] as const).map((mark) => (
+                        <button
+                          key={mark}
+                          type="button"
+                          disabled={checked}
+                          onClick={() => setMark(mark)}
+                          className={`h-8 w-8 rounded-md border text-sm font-semibold transition-colors ${
+                            (mark === 'B' ? isB : isS)
+                              ? 'border-primary bg-primary text-primary-foreground'
+                              : 'border-input bg-background hover:bg-muted'
+                          }`}
+                        >
+                          {mark}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        )}
+
         {current.question.type === 'MULTIPLE_CHOICE' && (
           <div className="flex flex-col gap-3">
             {current.question.options.map((opt) => (
@@ -408,7 +466,18 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
                       {feedback.question.answerKey}
                     </p>
                   )}
-                  {feedback.question.correctOptionIds.length > 0 && (
+                  {feedback.question.type === 'TRUE_FALSE_COMPLEX' ? (
+                    <div className="mt-2 flex flex-col gap-1">
+                      {feedback.question.options.map((opt) => (
+                        <p key={opt.id} className="flex items-center gap-2 text-muted-foreground">
+                          <span className="font-semibold text-foreground">
+                            {feedback.question.correctOptionIds.includes(opt.id) ? 'B' : 'S'}
+                          </span>
+                          <MathContent text={opt.content} />
+                        </p>
+                      ))}
+                    </div>
+                  ) : feedback.question.correctOptionIds.length > 0 && (
                     <div className="mt-2 flex flex-col gap-1">
                       {feedback.question.options
                         .filter((opt) => feedback.question.correctOptionIds.includes(opt.id))
