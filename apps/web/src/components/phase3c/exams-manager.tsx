@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { CalendarClock, CircleAlert, FileCheck2, FileQuestion, KeyRound, MonitorCheck, Pause, Pencil, Play, Plus, RefreshCw, Search, Send, Settings2, Star, StopCircle, Trash2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -109,6 +110,19 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
     onError: (e) => toast.error(err(e, 'Gagal mengubah status ujian.')),
   });
 
+  // Buka kembali ujian ENDED — jadwal selesai baru wajib di masa depan
+  // (API menolak bila sudah lewat), status kembali PUBLISHED.
+  const reopenM = useMutation({
+    mutationFn: ({ id, scheduledEndAt }: { id: string; scheduledEndAt: string }) =>
+      apiFetch(`/exams/${id}`, { method: 'PATCH', body: { status: 'PUBLISHED', scheduledEndAt } }),
+    onSuccess: () => {
+      toast.success('Ujian dibuka kembali — peserta bisa mengerjakan sampai jadwal baru.');
+      qc.invalidateQueries({ queryKey: ['exams'] });
+      qc.invalidateQueries({ queryKey: ['exam-proctoring-overview'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal membuka kembali ujian.')),
+  });
+
   const deleteM = useMutation({
     mutationFn: (id: string) => apiFetch(`/exams/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
@@ -121,6 +135,8 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [publishTarget, setPublishTarget] = useState<ExamRow | null>(null);
   const [endTarget, setEndTarget] = useState<ExamRow | null>(null);
+  const [reopenTarget, setReopenTarget] = useState<ExamRow | null>(null);
+  const [reopenEnd, setReopenEnd] = useState('');
   const handleDelete = (id: string) => {
     if (!canManage) return;
     setDeleteTarget(id);
@@ -208,7 +224,42 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
           loading={examsQ.isLoading || levelsQ.isLoading}
           onManageCategories={canManage ? () => setManageCats(true) : undefined}
         />
-        <ContentCategoriesManager open={manageCats} onOpenChange={setManageCats} />
+        <Dialog open={reopenTarget !== null} onOpenChange={(o) => { if (!o) setReopenTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Buka kembali ujian?</DialogTitle>
+            <DialogDescription>
+              "{reopenTarget?.title ?? ''}" kembali ke status Dipublikasi — peserta bisa
+              mengerjakan lagi sampai jadwal selesai yang baru. Nilai peserta lama tetap tersimpan.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="reopen-end" className="text-sm font-medium">Jadwal selesai baru</label>
+            <Input
+              id="reopen-end"
+              type="datetime-local"
+              value={reopenEnd}
+              onChange={(e) => setReopenEnd(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReopenTarget(null)}>Batal</Button>
+            <Button
+              disabled={reopenM.isPending || !reopenEnd}
+              onClick={() => {
+                if (!reopenTarget || !reopenEnd) return;
+                reopenM.mutate(
+                  { id: reopenTarget.id, scheduledEndAt: new Date(reopenEnd).toISOString() },
+                  { onSuccess: () => setReopenTarget(null) },
+                );
+              }}
+            >
+              Buka Kembali
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <ContentCategoriesManager open={manageCats} onOpenChange={setManageCats} />
       </div>
     );
   }
@@ -388,9 +439,23 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
                     </>
                   )}
                   {canManage && exam.status === 'ENDED' && (
-                    <Button size="sm" variant="outline" onClick={() => router.push(`${basePath}/${exam.id}/edit${drillQuery(drill)}`)}>
-                      <Settings2 /> Kelola
-                    </Button>
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => router.push(`${basePath}/${exam.id}/edit${drillQuery(drill)}`)}>
+                        <Settings2 /> Kelola
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={() => {
+                          const d = new Date(Date.now() + 2 * 60 * 60 * 1000);
+                          const pad = (x: number) => String(x).padStart(2, '0');
+                          setReopenEnd(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+                          setReopenTarget(exam);
+                        }}
+                      >
+                        <Play /> Buka Kembali
+                      </Button>
+                    </>
                   )}
                 </div>
               </div>

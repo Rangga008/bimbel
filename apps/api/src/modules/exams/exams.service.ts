@@ -398,11 +398,11 @@ export class ExamsService {
         'Status Berakhir hanya via aksi "Akhiri Ujian" (auto-submit semua peserta).',
       );
     }
-    // ENDED tetap terminal — tidak bisa diubah statusnya
-    // (dto.status === 'ENDED' sudah ditolak di atas).
-    if (exam.status === 'ENDED' && dto.status) {
+    // ENDED → hanya boleh dibuka kembali ke PUBLISHED (reopen). Guard
+    // publish di bawah tetap berlaku: jadwal harus diperpanjang & ≥1 soal.
+    if (exam.status === 'ENDED' && dto.status && dto.status !== 'PUBLISHED') {
       throw new BadRequestException(
-        'Ujian yang sudah berakhir tidak bisa diubah statusnya.',
+        'Ujian yang sudah berakhir hanya bisa dibuka kembali (PUBLISHED).',
       );
     }
     if (dto.status === 'LOCKED' && exam.status !== 'PUBLISHED') {

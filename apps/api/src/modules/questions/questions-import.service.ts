@@ -199,6 +199,8 @@ export class QuestionsImportService {
     const typeList = parseTemplateTypes(types);
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Soal');
+    // Landscape + fit-to-width bila template dicetak/dilihat sebagai lembar.
+    ws.pageSetup = { orientation: 'landscape', fitToWidth: 1, fitToHeight: 0 };
     ws.columns = XLSX_HEADERS.map((h, i) => ({
       header: h,
       key: `c${i}`,
@@ -242,8 +244,9 @@ export class QuestionsImportService {
     const grid = (widths: number[]) =>
       `<w:tblGrid>${widths.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
 
-    // Satu tabel grid — baris contoh di-generate sesuai count + tipe yang diminta.
-    const w1 = [600, 800, 3200, 1100, 1100, 1100, 1100, 1100, 1000, 700, 1000, 2400, 2200];
+    // Satu tabel grid — halaman A4 LANDSCAPE (margin 720tw) supaya 13 kolom
+    // muat dan tabel enak diisi. Total lebar ≈ 15300tw (≤ area cetak).
+    const w1 = [500, 700, 3200, 1050, 1050, 1050, 1050, 1050, 900, 500, 800, 1800, 1650];
     const tableRows =
       gridRow(bacaanMarkerRow('B1', BACAAN_CONTOH).map(String), w1) +
       Array.from({ length: n }, (_, i) =>
@@ -253,13 +256,16 @@ export class QuestionsImportService {
         ),
       ).join('');
     const gridTable =
-      `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>${borders}</w:tblPr>${grid(w1)}` +
+      `<w:tbl><w:tblPr><w:tblW w:w="15300" w:type="dxa"/><w:tblLayout w:type="fixed"/>${borders}</w:tblPr>${grid(w1)}` +
       gridRow(XLSX_HEADERS, w1, true) +
       tableRows +
       '</w:tbl>';
 
+    const sectPr =
+      '<w:sectPr><w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/>' +
+      '<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="360" w:footer="360" w:gutter="0"/></w:sectPr>';
     const document = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${textLines}${para('')}${gridTable}<w:sectPr/></w:body></w:document>`;
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${textLines}${para('')}${gridTable}${sectPr}</w:body></w:document>`;
     const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`;
     const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
