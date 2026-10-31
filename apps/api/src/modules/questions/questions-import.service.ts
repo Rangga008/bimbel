@@ -19,6 +19,8 @@ import type { CreateQuestionDto } from './dto/question.dto';
 interface ParsedRow {
   no: number;
   type?: string;
+  /** Bacaan bersama — satu teks dipakai beberapa soal. */
+  stimulus?: string;
   content: string;
   options: string[];
   kunci: string;
@@ -39,8 +41,10 @@ export interface ImportRowResult {
   ok: boolean;
   errors: string[];
   images?: number;
-  /** True bila soal identik sudah ada — baris dilewati saat import. */
+  /** True bila soal identik sudah ada — soal lama diperbarui & dipakai. */
   duplicate?: boolean;
+  /** True bila soal lama diperbarui dari baris import. */
+  updated?: boolean;
   /** Id soal — baru dibuat (import) atau yang sudah ada (duplikat). */
   questionId?: string;
 }
@@ -48,6 +52,8 @@ export interface ImportRowResult {
 export interface ImportResult {
   parsed: number;
   created: number;
+  /** Jumlah soal lama yang diperbarui (duplikat). */
+  updated: number;
   dryRun: boolean;
   rows: ImportRowResult[];
   /** Semua id soal hasil import — untuk auto-pilih di form ujian/latsol. */
@@ -88,6 +94,10 @@ const DOCX_TEMPLATE_LINES = [
   '- Kunci: huruf opsi (mis. B), beberapa huruf untuk PGK (mis. A,C), Benar/Salah untuk BS,',
   '  teks jawaban untuk ISIAN, dan dikosongkan untuk ESSAY.',
   '- Opsi hanya diisi untuk PG/PGK (maksimal E). Tipe lain boleh dikosongkan.',
+  '- BS bisa satu pernyataan (Kunci: Benar/Salah) ATAU beberapa pernyataan —',
+  '  isi tiap pernyataan di Opsi A..E dan kunci dipisah koma, mis. "Benar,Salah,Benar,Salah".',
+  '- BACAAN: satu teks/wacana bisa dipakai beberapa soal — isi kolom Bacaan dengan',
+  '  teks yang sama pada baris-baris soal yang memakainya (cukup salin sel-nya).',
   '- GAMBAR: tempel gambar langsung di sel Soal/Opsi/Pembahasan — otomatis terupload.',
   '- Format alternatif: satu tabel kecil per soal — kolom 1 label (No/Tipe/Soal/A/B/…/Kunci), kolom 2 isi.',
   '- Jenjang, mapel, dan kategori DIPILIH di halaman import — tidak perlu ditulis di file.',
@@ -106,6 +116,7 @@ const XLSX_HEADERS = [
   'Poin',
   'Kesulitan',
   'Pembahasan',
+  'Bacaan',
 ];
 
 /** Alias tipe file (PG/PGK/BS/ISIAN/ESSAY) ↔ enum QuestionType. */
@@ -117,20 +128,26 @@ const TYPE_TO_ALIAS: Record<QuestionType, string> = {
   ESSAY: 'ESSAY',
 };
 
+/** Contoh bacaan bersama — dipakai lebih dari satu baris contoh. */
+const BACAAN_CONTOH =
+  'Contoh bacaan dipakai beberapa soal: "Dalam sebuah kotak terdapat angka-angka. Hitunglah dan amati pola bilangan berikut."';
+
 /** Satu baris contoh per tipe soal — untuk template docx/xlsx. */
 function exampleRow(no: number, type: QuestionType): (string | number)[] {
   const t = TYPE_TO_ALIAS[type];
   switch (type) {
     case 'SINGLE_CHOICE':
-      return [no, t, `Contoh soal pilihan ganda no ${no}: Berapa hasil 2 + 2?`, '3', '4', '5', '6', '', 'B', 1, 'EASY', '2 + 2 = 4.'];
+      return [no, t, `Contoh soal pilihan ganda no ${no}: Berdasarkan bacaan, berapa hasil 2 + 2?`, '3', '4', '5', '6', '', 'B', 1, 'EASY', '2 + 2 = 4.', BACAAN_CONTOH];
     case 'MULTIPLE_CHOICE':
-      return [no, t, `Contoh soal ganda kompleks no ${no}: Pilih semua bilangan genap.`, '2', '3', '4', '5', '', 'A,C', 2, 'MEDIUM', ''];
+      return [no, t, `Contoh soal ganda kompleks no ${no}: Pilih semua bilangan genap.`, '2', '3', '4', '5', '', 'A,C', 2, 'MEDIUM', '', BACAAN_CONTOH];
     case 'TRUE_FALSE':
-      return [no, t, `Contoh soal benar/salah no ${no}: Matahari terbit dari timur.`, '', '', '', '', '', 'Benar', 1, 'EASY', ''];
+      // BS kompleks — tiap opsi adalah pernyataan; kunci per-pernyataan
+      // dipisah koma (contoh: 4 pernyataan, 2 benar 2 salah).
+      return [no, t, `Contoh soal benar/salah no ${no}: Tentukan benar/salah tiap pernyataan berikut!`, '2 + 2 = 4', '3 x 3 = 6', '10 : 2 = 5', '7 - 2 = 3', '', 'Benar,Salah,Benar,Salah', 1, 'EASY', 'Hanya pernyataan A dan C yang benar.', ''];
     case 'SHORT_ANSWER':
-      return [no, t, `Contoh soal isian no ${no}: Ibukota Indonesia adalah ...`, '', '', '', '', '', 'Jakarta', 1, 'MEDIUM', ''];
+      return [no, t, `Contoh soal isian no ${no}: Ibukota Indonesia adalah ...`, '', '', '', '', '', 'Jakarta', 1, 'MEDIUM', '', ''];
     default:
-      return [no, t, `Contoh soal essay no ${no}: Jelaskan proses fotosintesis!`, '', '', '', '', '', '', 3, 'HARD', 'Fotosintesis mengubah CO2 + air menjadi glukosa.'];
+      return [no, t, `Contoh soal essay no ${no}: Jelaskan proses fotosintesis!`, '', '', '', '', '', '', 3, 'HARD', 'Fotosintesis mengubah CO2 + air menjadi glukosa.', ''];
   }
 }
 
@@ -189,6 +206,8 @@ export class QuestionsImportService {
       'Tipe: PG | PGK | BS | ISIAN | ESSAY.',
       'Kunci: huruf opsi (B), beberapa huruf untuk PGK (A,C), Benar/Salah untuk BS, teks untuk ISIAN, kosong untuk ESSAY.',
       'Kesulitan: EASY | MEDIUM | HARD (opsional). Poin: angka (opsional).',
+      'BS bisa banyak pernyataan: isi tiap pernyataan di Opsi A..E, kunci dipisah koma (mis. "Benar,Salah,Benar,Salah").',
+      'Bacaan: satu teks bisa dipakai beberapa soal — salin teks yang sama ke kolom Bacaan pada baris-baris terkait.',
       'Jenjang, mapel, dan tipe/kategori dipilih di halaman import — tidak perlu kolom di sini.',
     ].forEach((t) => guide.addRow([t]));
     return Buffer.from(await wb.xlsx.writeBuffer());
@@ -215,7 +234,7 @@ export class QuestionsImportService {
       `<w:tblGrid>${widths.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
 
     // Satu tabel grid — baris contoh di-generate sesuai count + tipe yang diminta.
-    const w1 = [600, 800, 3200, 1100, 1100, 1100, 1100, 1100, 1000, 700, 1000, 2400];
+    const w1 = [600, 800, 3200, 1100, 1100, 1100, 1100, 1100, 1000, 700, 1000, 2400, 2200];
     const tableRows = Array.from({ length: n }, (_, i) =>
       gridRow(
         exampleRow(i + 1, typeList[i % typeList.length]).map(String),
@@ -531,6 +550,7 @@ export class QuestionsImportService {
       if (/^poin/.test(h)) return { key: 'points' };
       if (/^(kesulitan|difficulty)/.test(h)) return { key: 'difficulty' };
       if (/^(pembahasan|solusi)/.test(h)) return { key: 'explanation' };
+      if (/^(bacaan|stimulus|wacana|teks)$/.test(h)) return { key: 'stimulus' };
       if (/^(gambar|image|foto)$/.test(h)) return { key: 'image' };
       return {};
     };
@@ -552,6 +572,7 @@ export class QuestionsImportService {
         else if (c.key === 'difficulty') row.difficulty = cell.trim() || undefined;
         else if (c.key === 'explanation')
           row.explanation = this.stripImgTokens(cell, row.explanationImages);
+        else if (c.key === 'stimulus') row.stimulus = cell.trim();
         else if (c.key === 'image')
           this.stripImgTokens(cell, row.contentImages);
       });
@@ -640,6 +661,7 @@ export class QuestionsImportService {
   private newParsedRow(no: number): ParsedRow {
     return {
       no,
+      stimulus: '',
       content: '',
       options: [],
       kunci: '',
@@ -692,6 +714,7 @@ export class QuestionsImportService {
         else if (key === 'KESULITAN') cur.difficulty = val;
         else if (key === 'PEMBAHASAN')
           cur.explanation = this.stripImgTokens(val, cur.explanationImages);
+        else if (key === 'BACAAN' || key === 'STIMULUS' || key === 'WACANA') cur.stimulus = val;
         else if (key === 'SOAL') cur.content = this.stripImgTokens(val, cur.contentImages);
         else cur.content = cur.content ? `${cur.content}\n${this.stripImgTokens(line, cur.contentImages)}` : this.stripImgTokens(line, cur.contentImages);
         continue;
@@ -737,11 +760,13 @@ export class QuestionsImportService {
         return String(v).trim();
       };
       const no = Number(cell(1)) || rowNum - 1;
+      const stimulus = cell(13);
       const content = cell(3);
       const kunci = cell(9);
       if (!content && !kunci) return; // baris kosong
       const r = this.newParsedRow(no);
       r.type = cell(2) || undefined;
+      r.stimulus = stimulus;
       r.content = content;
       r.options = [cell(4), cell(5), cell(6), cell(7), cell(8)].filter(Boolean);
       r.kunci = kunci;
@@ -851,6 +876,7 @@ export class QuestionsImportService {
       else dto.difficulty = d;
     }
     if (row.explanation) dto.explanation = row.explanation.trim();
+    if (row.stimulus?.trim()) dto.stimulus = row.stimulus.trim();
 
     return { dto: errors.length ? undefined : dto, errors };
   }
@@ -994,6 +1020,8 @@ export class QuestionsImportService {
 
     const results: ImportRowResult[] = [];
     const valid: { row: ParsedRow; dto: CreateQuestionDto }[] = [];
+    // Baris duplikat — soal lama DIPERBARUI dengan isi file (bukan dilewati).
+    const toUpdate: { row: ParsedRow; dto: CreateQuestionDto; existingId: string }[] = [];
     for (const row of rows) {
       const { dto, errors } = this.toDto(row);
       const warnings = [...row.warnings];
@@ -1004,6 +1032,7 @@ export class QuestionsImportService {
         dto.category = refs.category;
         const fp = this.questions.fingerprintOf({
           type: dto.type,
+          stimulus: dto.stimulus,
           content: dto.content,
           imageUrl: dto.imageUrl,
           answerKey: dto.answerKey,
@@ -1011,6 +1040,7 @@ export class QuestionsImportService {
         });
         const existingId = fingerprints.get(fp);
         if (existingId !== undefined) {
+          toUpdate.push({ row, dto, existingId });
           results.push({
             no: row.no,
             content: dto.content.slice(0, 120),
@@ -1018,7 +1048,7 @@ export class QuestionsImportService {
             ok: true,
             duplicate: true,
             questionId: existingId,
-            errors: ['Duplikat — soal identik sudah ada, langsung dipakai.'],
+            errors: ['Duplikat — soal lama akan diperbarui dengan isi file ini.'],
             images: imgCount(row) || undefined,
           });
           continue;
@@ -1045,7 +1075,25 @@ export class QuestionsImportService {
     }
 
     let created = 0;
+    let updated = 0;
     if (!refs.dryRun) {
+      for (const { row, dto, existingId } of toUpdate) {
+        await this.attachImages(row, dto, actor.id, results);
+        try {
+          await this.questions.update(existingId, dto, actor);
+          updated++;
+          const res = results.find((r) => r.no === row.no);
+          if (res) res.updated = true;
+        } catch (e) {
+          const res = results.find((r) => r.no === row.no);
+          if (res) {
+            res.ok = false;
+            res.errors = [
+              `Gagal memperbarui soal lama: ${e instanceof Error ? e.message : 'error'}`,
+            ];
+          }
+        }
+      }
       for (const { row, dto } of valid) {
         // Upload gambar hasil ekstrak docx ke pustaka media, lalu tempel URL-nya.
         await this.attachImages(row, dto, actor.id, results);
@@ -1072,6 +1120,7 @@ export class QuestionsImportService {
     return {
       parsed: rows.length,
       created,
+      updated,
       dryRun: !!refs.dryRun,
       rows: results,
       // Semua id soal hasil import (baru + duplikat yang sudah ada) — dipakai

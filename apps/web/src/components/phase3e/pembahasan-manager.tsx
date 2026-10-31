@@ -31,6 +31,7 @@ interface Exam {
 interface Question {
   id: string;
   type: string;
+  stimulus?: string | null;
   content: string;
   imageUrl?: string;
   points?: number;
@@ -203,6 +204,12 @@ export function PembahasanManager() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="prose prose-sm max-w-none sm:prose-base">
+                {current.question.stimulus && (
+                  <div className="rounded-md border bg-muted/40 p-2 text-sm">
+                    <p className="text-[10px] font-semibold uppercase text-muted-foreground">Bacaan</p>
+                    <MathContent text={current.question.stimulus} />
+                  </div>
+                )}
                 <MathContent text={current.question.content} />
                 {current.question.imageUrl && (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -343,6 +350,12 @@ export function PembahasanManager() {
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-4 pt-0">
+                      {question.stimulus && (
+                        <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
+                          <p className="text-[11px] font-semibold uppercase text-muted-foreground">Bacaan</p>
+                          <MathContent text={question.stimulus} />
+                        </div>
+                      )}
                       <div className="prose prose-sm max-w-none">
                         <MathContent text={question.content} />
                         {question.imageUrl && (

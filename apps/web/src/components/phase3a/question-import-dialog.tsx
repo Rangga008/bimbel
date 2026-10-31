@@ -38,15 +38,119 @@ interface ImportRowResult {
   errors: string[];
   images?: number;
   duplicate?: boolean;
+  /** Soal lama diperbarui dari baris ini. */
+  updated?: boolean;
 }
 
 interface ImportResult {
   parsed: number;
   created: number;
+  /** Jumlah soal lama yang diperbarui (duplikat). */
+  updated: number;
   dryRun: boolean;
   rows: ImportRowResult[];
   /** Id soal hasil import (baru + duplikat yang sudah ada). */
   questionIds?: string[];
+}
+
+/**
+ * Dialog terpisah untuk mengunduh template — dipisah dari wizard import
+ * supaya tampilan tetap ringkas.
+ */
+export function QuestionTemplateDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+}) {
+  const [tplCount, setTplCount] = useState('5');
+  const [tplTypes, setTplTypes] = useState<string[]>(
+    QUESTION_TYPES.map((t) => t.value),
+  );
+
+  const download = async (format: 'xlsx' | 'docx') => {
+    try {
+      const p = new URLSearchParams({ format });
+      if (tplCount.trim()) p.set('count', tplCount.trim());
+      if (tplTypes.length) p.set('types', tplTypes.join(','));
+      const blob = await apiFetchBlob(
+        `/questions/import/template?${p.toString()}`,
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `template-import-soal.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(errMsg(e, 'Gagal mengunduh template.'));
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Unduh Template Soal</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Template berisi baris contoh yang bisa langsung diedit &amp; diimport —
+            termasuk contoh bacaan bersama dan soal benar/salah multi-pernyataan.
+          </p>
+          <div className="space-y-2 rounded-md border bg-muted/30 px-3 py-2.5 text-xs">
+            <p className="font-medium text-foreground">Isi template</p>
+            <label className="flex items-center gap-1.5">
+              Jumlah
+              <Input
+                type="number"
+                min={1}
+                max={100}
+                value={tplCount}
+                onChange={(e) => setTplCount(e.target.value)}
+                className="h-7 w-16 px-2 text-xs"
+              />
+              soal
+            </label>
+            <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+              <span className="text-muted-foreground">Tipe:</span>
+              {QUESTION_TYPES.map((t) => (
+                <label key={t.value} className="flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    className="size-3.5 accent-primary"
+                    checked={tplTypes.includes(t.value)}
+                    onChange={(e) =>
+                      setTplTypes((prev) =>
+                        e.target.checked
+                          ? [...prev, t.value]
+                          : prev.filter((v) => v !== t.value),
+                      )
+                    }
+                  />
+                  {t.label}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button className="flex-1" onClick={() => download('docx')}>
+              <FileText className="size-4" /> Template Word
+            </Button>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => download('xlsx')}
+            >
+              <FileSpreadsheet className="size-4" /> Template Excel
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function errMsg(e: unknown, fb: string) {
@@ -75,10 +179,8 @@ export function QuestionImportDialog({
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [tplCount, setTplCount] = useState('5');
-  const [tplTypes, setTplTypes] = useState<string[]>(
-    QUESTION_TYPES.map((t) => t.value),
-  );
+  const [tplOpen, setTplOpen] = useState(false);
+  const [result, setResult] = useState<ImportResult | null>(null);
   const [tingkat, setTingkat] = useState(initial?.tingkat ?? '');
   const [levelId, setLevelId] = useState(initial?.levelId ?? '');
   const [subjectId, setSubjectId] = useState(initial?.subjectId ?? '');
@@ -136,6 +238,7 @@ export function QuestionImportDialog({
     setSubjectId(initial?.subjectId ?? '');
     setCategory(initial?.category ?? '');
     setPreview(null);
+    setResult(null);
   };
 
   // Re-seed taksonomi tiap dialog dibuka — mengikuti filter form saat ini.
@@ -169,40 +272,26 @@ export function QuestionImportDialog({
   const importM = useMutation({
     mutationFn: () => runImport(false),
     onSuccess: (r) => {
-      const dupCount = r.rows.filter((x) => x.duplicate).length;
       toast.success(
-        dupCount > 0
-          ? `${r.created} soal baru diimport — ${dupCount} duplikat langsung memakai soal yang sudah ada.`
+        r.updated > 0
+          ? `${r.created} soal baru dibuat — ${r.updated} soal lama diperbarui.`
           : `${r.created} soal berhasil diimport.`,
       );
       qc.invalidateQueries({ queryKey: ['questions'] });
       qc.invalidateQueries({ queryKey: ['questions-select'] });
       qc.invalidateQueries({ queryKey: ['questions-summary'] });
-      // Serahkan semua id (baru + duplikat) ke form — langsung terpilih.
-      onImported?.(r.questionIds ?? [], r);
-      onOpenChange(false);
-      reset();
+      // Tetap di dialog — tampilkan ringkasan + tombol "Gunakan soal".
+      setResult(r);
+      setPreview(null);
     },
     onError: (e) => toast.error(errMsg(e, 'Import gagal.')),
   });
 
-  const downloadTemplate = async (format: 'xlsx' | 'docx') => {
-    try {
-      const p = new URLSearchParams({ format });
-      if (tplCount.trim()) p.set('count', tplCount.trim());
-      if (tplTypes.length) p.set('types', tplTypes.join(','));
-      const blob = await apiFetchBlob(
-        `/questions/import/template?${p.toString()}`,
-      );
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `template-import-soal.${format}`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      toast.error(errMsg(e, 'Gagal mengunduh template.'));
-    }
+  const useImported = () => {
+    if (!result) return;
+    onImported?.(result.questionIds ?? [], result);
+    onOpenChange(false);
+    reset();
   };
 
   const ready = !!file && !!levelId && !!subjectId && !!category;
@@ -212,6 +301,7 @@ export function QuestionImportDialog({
   const failCount = preview ? preview.rows.length - okCount : 0;
 
   return (
+    <>
     <Dialog
       open={open}
       onOpenChange={(o) => {
@@ -224,6 +314,79 @@ export function QuestionImportDialog({
           <DialogTitle>Import Soal dari Word / Excel</DialogTitle>
         </DialogHeader>
 
+        {result ? (
+          /* ---------- HASIL IMPORT ---------- */
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <Badge variant="secondary">{result.parsed} terbaca</Badge>
+              <Badge className="bg-success-600">{result.created} baru</Badge>
+              {result.updated > 0 && (
+                <Badge variant="outline" className="border-amber-500 text-amber-600">
+                  {result.updated} diperbarui
+                </Badge>
+              )}
+              {result.rows.length - result.created - result.updated > 0 && (
+                <Badge variant="destructive">
+                  {result.rows.length - result.created - result.updated} gagal
+                </Badge>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Soal duplikat tidak dibuat ulang — soal lama di bank soal
+              diperbarui dengan isi file ini dan ikut terpilih.
+            </p>
+            <div className="max-h-56 space-y-1.5 overflow-y-auto rounded-lg border p-2">
+              {result.rows.map((r) => (
+                <div
+                  key={r.no}
+                  className="flex items-start gap-2 rounded-md bg-muted/40 p-2 text-xs"
+                >
+                  {r.ok ? (
+                    <CircleCheck className="mt-0.5 size-4 shrink-0 text-success-600" />
+                  ) : (
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="font-medium">
+                      Soal {r.no}
+                      {r.type
+                        ? ` — ${QUESTION_TYPES.find((t) => t.value === r.type)?.label ?? r.type}`
+                        : ''}
+                      {r.updated ? ' · diperbarui' : ''}
+                      {r.images ? ` · +${r.images} gambar` : ''}
+                    </p>
+                    <p className="truncate text-muted-foreground">
+                      {r.content || '(kosong)'}
+                    </p>
+                    {!r.ok &&
+                      r.errors.map((e, i) => (
+                        <p key={i} className="text-destructive">
+                          • {e}
+                        </p>
+                      ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2 pt-1">
+              {onImported && (result.questionIds?.length ?? 0) > 0 && (
+                <Button onClick={useImported}>
+                  <CircleCheck className="size-4" />
+                  Pilih {result.questionIds!.length} Soal ke Paket
+                </Button>
+              )}
+              <Button
+                variant={onImported && result.questionIds?.length ? 'outline' : 'default'}
+                onClick={() => {
+                  onOpenChange(false);
+                  reset();
+                }}
+              >
+                {onImported && result.questionIds?.length ? 'Tutup Tanpa Memilih' : 'Selesai'}
+              </Button>
+            </div>
+          </div>
+        ) : (
         <div className="space-y-4">
           {/* Langkah 1 — file + template */}
           <div className="space-y-2">
@@ -249,56 +412,10 @@ export function QuestionImportDialog({
               <span className="text-xs text-muted-foreground">
                 Belum punya formatnya?
               </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => downloadTemplate('docx')}
-              >
+              <Button variant="ghost" size="sm" onClick={() => setTplOpen(true)}>
                 <FileText className="size-4" />
-                Template Word
+                Unduh Template
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => downloadTemplate('xlsx')}
-              >
-                <FileSpreadsheet className="size-4" />
-                Template Excel
-              </Button>
-            </div>
-            {/* Opsi isi template: jumlah baris contoh + tipe soal */}
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border bg-muted/30 px-3 py-2 text-xs">
-              <span className="text-muted-foreground">Isi template:</span>
-              <label className="flex items-center gap-1.5">
-                Jumlah
-                <Input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={tplCount}
-                  onChange={(e) => setTplCount(e.target.value)}
-                  className="h-7 w-16 px-2 text-xs"
-                />
-                soal
-              </label>
-              <span className="text-muted-foreground">Tipe:</span>
-              {QUESTION_TYPES.map((t) => (
-                <label key={t.value} className="flex items-center gap-1">
-                  <input
-                    type="checkbox"
-                    className="size-3.5 accent-primary"
-                    checked={tplTypes.includes(t.value)}
-                    onChange={(e) =>
-                      setTplTypes((prev) =>
-                        e.target.checked
-                          ? [...prev, t.value]
-                          : prev.filter((v) => v !== t.value),
-                      )
-                    }
-                  />
-                  {t.label}
-                </label>
-              ))}
             </div>
           </div>
 
@@ -374,7 +491,7 @@ export function QuestionImportDialog({
             </Button>
             <Button
               disabled={
-                !ready || !preview || createCount === 0 || importM.isPending
+                !ready || !preview || okCount === 0 || importM.isPending
               }
               onClick={() => importM.mutate()}
             >
@@ -383,8 +500,14 @@ export function QuestionImportDialog({
               ) : (
                 <FileUp className="size-4" />
               )}
-              Import {preview ? `${createCount} Soal` : ''}
+              Import {preview ? `${okCount} Soal` : ''}
             </Button>
+            {preview && createCount === 0 && dupCount > 0 && (
+              <p className="w-full text-xs text-muted-foreground">
+                Semua soal sudah ada — file ini akan memperbarui {dupCount} soal
+                lama dan tetap bisa dipilih.
+              </p>
+            )}
           </div>
 
           {preview && (
@@ -437,7 +560,10 @@ export function QuestionImportDialog({
             </div>
           )}
         </div>
+        )}
       </DialogContent>
     </Dialog>
+    <QuestionTemplateDialog open={tplOpen} onOpenChange={setTplOpen} />
+    </>
   );
 }

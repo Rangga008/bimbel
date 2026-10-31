@@ -169,6 +169,7 @@ export interface ExamAttemptItem {
   question: {
     id: string;
     type: string;
+    stimulus?: string | null;
     content: string;
     imageUrl: string | null;
     difficulty: string | null;

@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { CircleCheck, FileQuestion, FileUp, ImageIcon, Pencil, Plus, Search, Settings2, Tag, Trash2 } from 'lucide-react';
+import { CircleCheck, FileDown, FileQuestion, FileUp, ImageIcon, Pencil, Plus, Search, Settings2, Tag, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -19,7 +19,7 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { MathContent, plainPreview } from '@/components/shared/math-content';
 import { ContentDrilldown, DrillBreadcrumb, useContentCategories, useContentLevels, useDrillState } from '@/components/shared/content-drilldown';
 import { ContentCategoriesManager } from '@/components/shared/content-categories-manager';
-import { QuestionImportDialog } from '@/components/phase3a/question-import-dialog';
+import { QuestionImportDialog, QuestionTemplateDialog } from '@/components/phase3a/question-import-dialog';
 import {
   applyDrill,
   categoryLabel,
@@ -68,6 +68,7 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
   const catsQ = useContentCategories();
   const [manageCats, setManageCats] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [tplOpen, setTplOpen] = useState(false);
   const levels = levelsQ.data;
 
   const deleteM = useMutation({
@@ -98,6 +99,13 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
 
   const addButton = canManage ? (
     <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+      <Button
+        variant="ghost"
+        className="w-full sm:w-auto"
+        onClick={() => setTplOpen(true)}
+      >
+        <FileDown /> Template
+      </Button>
       <Button
         variant="outline"
         className="w-full sm:w-auto"
@@ -145,6 +153,7 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
         />
         <ContentCategoriesManager open={manageCats} onOpenChange={setManageCats} />
         <QuestionImportDialog open={importOpen} onOpenChange={setImportOpen} />
+        <QuestionTemplateDialog open={tplOpen} onOpenChange={setTplOpen} />
       </div>
     );
   }
@@ -323,7 +332,7 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
         open={deleteTarget !== null}
         onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
         title="Hapus soal ini?"
-        description="Soal akan dihapus permanen dari bank soal dan tidak dapat dikembalikan."
+        description="Soal dihapus dari bank soal. Ujian, latsol, dan riwayat pengerjaan siswa yang sudah memakai soal ini tetap utuh — tidak ikut terhapus."
         confirmLabel="Ya, hapus"
         pending={deleteM.isPending}
         onConfirm={() => {
@@ -333,6 +342,7 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
       />
       <ContentCategoriesManager open={manageCats} onOpenChange={setManageCats} />
         <QuestionImportDialog open={importOpen} onOpenChange={setImportOpen} />
+        <QuestionTemplateDialog open={tplOpen} onOpenChange={setTplOpen} />
     </div>
   );
 }

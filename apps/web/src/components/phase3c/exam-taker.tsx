@@ -542,6 +542,12 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="prose prose-sm max-w-none">
+          {item.question.stimulus && (
+            <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
+              <p className="text-[11px] font-semibold uppercase text-muted-foreground">Bacaan</p>
+              <MathContent text={item.question.stimulus} />
+            </div>
+          )}
           <MathContent text={item.question.content} />
           {item.question.imageUrl && (
             <img

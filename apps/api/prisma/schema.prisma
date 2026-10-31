@@ -1410,6 +1410,8 @@ model Question {
   category    String?
   type        QuestionType
   content     String       // Konten soal (teks + KaTeX)
+  /// Bacaan bersama — satu teks/wacana dipakai oleh beberapa soal.
+  stimulus    String?
   imageUrl    String?      // URL gambar soal (opsional)
   difficulty  String?      // EASY | MEDIUM | HARD (opsional)
   points      Int?         // Poin soal (opsional, default 1)
@@ -1417,6 +1419,9 @@ model Question {
   explanationImageUrl String? // Gambar solusi/pembahasan (opsional)
   answerKey   String?      // Kunci isian singkat (dipakai latsol; null = tidak auto-grade)
   isActive    Boolean      @default(true)
+  /// Soft-delete — soal "dihapus" dari bank soal tapi tetap hidup di
+  /// ujian/latsol/riwayat attempt yang sudah memakainya.
+  deletedAt   DateTime?
   createdBy   String
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
@@ -1435,6 +1440,7 @@ model Question {
   @@index([subjectId])
   @@index([type])
   @@index([difficulty])
+  @@index([deletedAt])
   @@map("questions")
 }
 

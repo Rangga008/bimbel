@@ -277,6 +277,12 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
             className="max-h-64 w-auto rounded-lg border object-contain"
           />
         )}
+        {current.question.stimulus && (
+          <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
+            <p className="text-[11px] font-semibold uppercase text-muted-foreground">Bacaan</p>
+            <MathContent text={current.question.stimulus} />
+          </div>
+        )}
         <div className="text-base"><MathContent text={current.question.content} /></div>
 
         {(current.question.type === 'SINGLE_CHOICE' || current.question.type === 'TRUE_FALSE') && (

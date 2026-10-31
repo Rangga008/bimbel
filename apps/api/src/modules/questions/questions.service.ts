@@ -60,6 +60,7 @@ export class QuestionsService {
   fingerprintOf(q: {
     type: QuestionType;
     content: string;
+    stimulus?: string | null;
     imageUrl?: string | null;
     answerKey?: string | null;
     options?: { content?: string | null; imageUrl?: string | null; isCorrect?: boolean }[];
@@ -74,6 +75,7 @@ export class QuestionsService {
       .update(
         [
           q.type,
+          this.normText(q.stimulus),
           this.normText(q.content),
           this.normText(q.imageUrl),
           this.normText(q.answerKey),
@@ -99,6 +101,9 @@ export class QuestionsService {
         levelId: scope.levelId ?? null,
         subjectId: scope.subjectId ?? null,
         category: scope.category ?? null,
+        // Soal soft-deleted tidak ikut fingerprint — re-import membuat
+        // soal baru alih-alih "menghidupkan" yang sudah dihapus.
+        deletedAt: null,
       },
       include: { options: true },
     });
@@ -169,7 +174,7 @@ export class QuestionsService {
       ids?: string;
     },
   ) {
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { deletedAt: null };
     if (query.ids) {
       where.id = {
         in: query.ids
@@ -310,6 +315,7 @@ export class QuestionsService {
           category: dto.category,
           type: dto.type,
           content: dto.content.trim(),
+          stimulus: dto.stimulus?.trim() || null,
           imageUrl: dto.imageUrl,
           difficulty: dto.difficulty,
           points: dto.points,
@@ -398,6 +404,7 @@ export class QuestionsService {
           category: dto.category,
           type: dto.type,
           content: dto.content?.trim(),
+          stimulus: dto.stimulus === undefined ? undefined : dto.stimulus?.trim() || null,
           imageUrl: dto.imageUrl,
           difficulty: dto.difficulty,
           points: dto.points,
@@ -505,13 +512,17 @@ export class QuestionsService {
         this.prisma.latsolAnswer.count({ where: { questionId: id } }),
       ]);
     if (examItems + latsolItems + examAnswers + latsolAnswers > 0) {
-      throw new BadRequestException(
-        'Soal tidak bisa dihapus karena sudah dipakai di paket latsol, ujian, atau attempt siswa. Nonaktifkan soal ini sebagai gantinya.',
-      );
+      // Soft-delete — soal hilang dari bank soal/pemilih, tapi ujian, latsol,
+      // dan riwayat attempt yang sudah memakainya tetap utuh.
+      await this.prisma.question.update({
+        where: { id },
+        data: { deletedAt: new Date(), isActive: false },
+      });
+      return { success: true, softDeleted: true };
     }
 
     await this.prisma.question.delete({ where: { id } });
-    return { success: true };
+    return { success: true, softDeleted: false };
   }
 
   /**
@@ -523,7 +534,7 @@ export class QuestionsService {
   ) {
     // Tutor: ringkasan hanya untuk soal program/level/mapel yang dia ampu.
     const scope = await this.tutorScope.for(actor);
-    const where: Record<string, unknown> = { isActive: true };
+    const where: Record<string, unknown> = { isActive: true, deletedAt: null };
     if (query.programId) where.programId = query.programId;
     if (query.levelId) where.levelId = query.levelId;
     if (query.subjectId) where.subjectId = query.subjectId;
