@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ArrowLeft, ChevronLeft, ChevronRight, LayoutGrid } from 'lucide-react';
@@ -18,6 +18,7 @@ import type { LatsolQuestionPlay, LatsolFeedback, LatsolAttemptDetail, LatsolAtt
 import { MathContent } from '@/components/shared/math-content';
 import { QuestionNumberMap, NumberMapLegend } from '@/components/shared/question-number-map';
 import type { NumberMapState } from '@/components/shared/question-number-map';
+import { LatsolResultView } from './latsol-result';
 
 function err(e: unknown, fb: string) {
   return e instanceof ApiError ? e.message : fb;
@@ -56,6 +57,7 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
   const [answers, setAnswers] = useState<Record<string, LocalAnswer>>({});
   const [feedbackMap, setFeedbackMap] = useState<Record<string, LatsolFeedback>>({});
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
+  const [result, setResult] = useState<LatsolAttemptDetail | null>(null);
 
   const packageQ = useQuery({
     queryKey: ['latsol-package-play', packageId],
@@ -78,11 +80,14 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
     enabled: !!attemptId,
   });
 
-  // Pulihkan jawaban + feedback saat attempt dilanjutkan, lalu lompat ke
-  // soal pertama yang belum dijawab.
+  // Pulihkan jawaban + feedback SEKALI saat attempt dimuat/dilanjutkan —
+  // jangan tiap refetch (refetch setelah "Cek Jawaban" sempat melempar
+  // pengguna ke soal pertama yang belum dijawab).
+  const restoredFor = useRef<string | null>(null);
   useEffect(() => {
     const detail = detailQ.data;
-    if (!detail) return;
+    if (!detail || restoredFor.current === detail.id) return;
+    restoredFor.current = detail.id;
     setFeedbackMap(() => {
       const next: Record<string, LatsolFeedback> = {};
       for (const it of detail.items) {
@@ -135,19 +140,39 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
     mutationFn: () =>
       apiFetch<LatsolAttemptDetail>(`/latsol/attempts/${attemptId}/submit`, {
         method: 'POST',
-        // Jawaban sudah tersimpan per soal — submit cukup finalisasi.
-        body: { answers: [] },
+        // Sertakan SEMUA jawaban lokal — jawaban yang belum sempat dicek
+        // ("Cek Jawaban") ikut tersimpan & dinilai apa adanya.
+        body: {
+          answers: (packageQ.data?.items ?? [])
+            .map((it) => ({
+              questionId: it.question.id,
+              ...(answers[it.question.id] ?? {}),
+            }))
+            .filter(
+              (a) =>
+                (a.selectedOptionIds?.length ?? 0) > 0 || !!a.textAnswer?.trim(),
+            ),
+        },
       }),
     onSuccess: (data) => {
       setSubmitConfirmOpen(false);
       toast.success(`Paket selesai! Skor: ${score100(data.score, data.maxScore)}/100`);
       qc.invalidateQueries({ queryKey: ['latsol-attempts-mine'] });
-      onBack();
+      // Langsung tampilkan halaman hasil — bukan keluar begitu saja.
+      setResult(data);
     },
     onError: (e) => {
       setSubmitConfirmOpen(false);
       toast.error(err(e, 'Gagal mengumpulkan paket.'));
     },
+  });
+
+  // Buka halaman hasil untuk attempt yang sudah dikumpulkan.
+  const viewResultM = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<LatsolAttemptDetail>(`/latsol/attempts/${id}`),
+    onSuccess: (data) => setResult(data),
+    onError: (e) => toast.error(err(e, 'Gagal memuat hasil.')),
   });
 
   const handleAnswerChange = (questionId: string, field: 'selectedOptionIds' | 'textAnswer', value: string[] | string) => {
@@ -156,6 +181,9 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
       return { ...prev, [questionId]: { ...cur, [field]: value } };
     });
   };
+
+  // Halaman hasil — setelah submit atau dari tombol "Lihat Hasil" riwayat.
+  if (result) return <LatsolResultView detail={result} onBack={onBack} />;
 
   if (packageQ.isLoading) return <Skeleton className="h-64 w-full" />;
   if (packageQ.isError) return <p className="text-sm text-destructive">Gagal memuat paket latsol.</p>;
@@ -174,8 +202,12 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
 
   const numStates: NumberMapState[] = items.map((it) => {
     const fb = feedbackMap[it.question.id];
-    if (!fb) return 'idle';
-    return fb.isCorrect === true ? 'correct' : 'wrong';
+    if (fb) return fb.isCorrect === true ? 'correct' : 'wrong';
+    // Jawaban tersimpan (atau terisi) tapi belum dicek → tandai 'answered'.
+    const a = answers[it.question.id];
+    if (a && (a.selectedOptionIds.length > 0 || !!a.textAnswer?.trim()))
+      return 'answered';
+    return 'idle';
   });
 
   const jumpTo = (index: number) => {
@@ -221,6 +253,15 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
                       <span className="text-muted-foreground">
                         {score100(att.score, att.maxScore)}/100 — {new Date(att.startedAt).toLocaleDateString('id-ID')}
                       </span>
+                      <Button
+                        size="sm"
+                        variant="link"
+                        className="h-auto px-1"
+                        disabled={viewResultM.isPending}
+                        onClick={() => viewResultM.mutate(att.id)}
+                      >
+                        Lihat Hasil
+                      </Button>
                     </div>
                   ))}
               </div>
@@ -417,7 +458,7 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
             disabled={saveAnswerM.isPending}
             className="w-fit"
           >
-            {saveAnswerM.isPending ? 'Memproses...' : 'Cek Jawaban'}
+            {saveAnswerM.isPending ? 'Menyimpan...' : 'Simpan Jawaban'}
           </Button>
         ) : (
           feedback && (
@@ -532,7 +573,7 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold">{detailQ.data?.package.title ?? pkg.title}</p>
             <p className="text-xs text-muted-foreground">
-              {checkedCount}/{items.length} dicek · {correctCount} benar · tersimpan otomatis
+              {checkedCount}/{items.length} terjawab · {correctCount} benar · tersimpan otomatis
             </p>
           </div>
           <Button size="sm" variant="outline" onClick={() => setSubmitConfirmOpen(true)} className="shrink-0">
@@ -656,7 +697,7 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
         onOpenChange={setSubmitConfirmOpen}
         tone="primary"
         title="Kumpulkan paket latsol?"
-        description={`${checkedCount} dari ${items.length} soal sudah dicek. Soal yang belum dicek tetap tersimpan jawabannya dan dinilai apa adanya.`}
+        description={`${checkedCount} dari ${items.length} soal sudah dijawab. Jawaban yang terisi tapi belum disimpan ikut dinilai apa adanya.`}
         confirmLabel="Ya, kumpulkan"
         pending={submitM.isPending}
         onConfirm={() => submitM.mutate()}

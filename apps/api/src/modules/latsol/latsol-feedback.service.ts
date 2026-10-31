@@ -13,6 +13,8 @@ type Q = {
   type: string;
   content: string;
   imageUrl: string | null;
+  stimulus?: string | null;
+  stimulusImageUrl?: string | null;
   points: number | null;
   options: Opt[];
 };
@@ -33,7 +35,35 @@ export function sanitizeQuestion(q: Q) {
     type: q.type,
     content: q.content,
     imageUrl: q.imageUrl,
+    stimulus: q.stimulus ?? null,
+    stimulusImageUrl: q.stimulusImageUrl ?? null,
     points: q.points,
+    options: q.options.map((o) => ({
+      id: o.id,
+      content: o.content,
+      imageUrl: o.imageUrl ?? null,
+      sortOrder: o.sortOrder,
+    })),
+  };
+}
+
+/** Soal dengan kunci + solusi dibuka — dipakai halaman hasil untuk soal
+ * yang tidak terjawab (attempt sudah dikumpulkan). */
+export function revealQuestion(
+  q: Q & { explanation: string | null; explanationImageUrl: string | null; answerKey: string | null },
+) {
+  return {
+    id: q.id,
+    type: q.type,
+    content: q.content,
+    imageUrl: q.imageUrl,
+    stimulus: q.stimulus ?? null,
+    stimulusImageUrl: q.stimulusImageUrl ?? null,
+    points: q.points,
+    explanation: q.explanation,
+    explanationImageUrl: q.explanationImageUrl,
+    answerKey: q.type === 'SHORT_ANSWER' ? q.answerKey : null,
+    correctOptionIds: q.options.filter((o) => o.isCorrect).map((o) => o.id),
     options: q.options.map((o) => ({
       id: o.id,
       content: o.content,
@@ -59,6 +89,8 @@ export function toFeedbackAnswer(a: Ans) {
       type: q.type,
       content: q.content,
       imageUrl: q.imageUrl,
+      stimulus: q.stimulus ?? null,
+      stimulusImageUrl: q.stimulusImageUrl ?? null,
       points: q.points,
       explanation: q.explanation,
       explanationImageUrl: q.explanationImageUrl,

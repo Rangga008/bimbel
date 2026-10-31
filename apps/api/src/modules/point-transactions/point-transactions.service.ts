@@ -210,12 +210,15 @@ export class PointTransactionsService {
 
   /**
    * Create point transactions for latsol completion.
-   * Idempotent & per-rule seperti createExamTransaction.
+   * Idempotent per-attempt DAN per-paket: latsol boleh dikerjakan ulang,
+   * tetapi poin yang dikreditkan hanyalah selisih peningkatan terhadap
+   * rekor terbaik siswa pada paket itu (per rule). Skor maksimal sudah
+   * tercapai → tidak menambah lagi; skor turun → tidak mengurangi.
    */
   async createLatsolTransaction(latsolAttemptId: string) {
     const attempt = await this.prisma.latsolAttempt.findUnique({
       where: { id: latsolAttemptId },
-      include: { package: { select: { title: true } } },
+      include: { package: { select: { id: true, title: true } } },
     });
 
     if (!attempt) {
@@ -244,22 +247,60 @@ export class PointTransactionsService {
     const at = attempt.submittedAt ?? new Date();
     const period = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}`;
 
-    const transactions = await this.prisma.$transaction(
-      calc.breakdown.map((b) =>
-        this.prisma.pointTransaction.create({
-          data: {
-            studentId: attempt.studentId,
-            scoreRuleId: b.ruleId,
+    // Rekor poin per rule dari SEMUA attempt siswa pada paket ini.
+    const siblingAttempts = await this.prisma.latsolAttempt.findMany({
+      where: {
+        studentId: attempt.studentId,
+        packageId: attempt.package.id,
+        status: 'SUBMITTED',
+        id: { not: latsolAttemptId },
+      },
+      select: { id: true },
+    });
+    const prevTx = siblingAttempts.length
+      ? await this.prisma.pointTransaction.findMany({
+          where: {
             eventType: PointEventType.LATSOL_COMPLETED,
-            points: b.points,
-            referenceId: latsolAttemptId,
             referenceType: 'LATSOL_ATTEMPT',
-            description: `${attempt.package.title} — ${b.ruleName}: ${b.details.join('; ')}`,
-            period,
+            referenceId: { in: siblingAttempts.map((a) => a.id) },
           },
-        }),
-      ),
-    );
+          select: { scoreRuleId: true, points: true },
+        })
+      : [];
+    const bestPrev = new Map<string | null, number>();
+    for (const t of prevTx) {
+      bestPrev.set(
+        t.scoreRuleId,
+        Math.max(bestPrev.get(t.scoreRuleId) ?? 0, t.points),
+      );
+    }
+
+    // Kreditkan hanya selisih peningkatan rekor per rule.
+    const credits = calc.breakdown
+      .map((b) => ({
+        ...b,
+        delta: Math.max(0, b.points - (bestPrev.get(b.ruleId) ?? 0)),
+      }))
+      .filter((b) => b.delta > 0);
+
+    const transactions = credits.length
+      ? await this.prisma.$transaction(
+          credits.map((b) =>
+            this.prisma.pointTransaction.create({
+              data: {
+                studentId: attempt.studentId,
+                scoreRuleId: b.ruleId,
+                eventType: PointEventType.LATSOL_COMPLETED,
+                points: b.delta,
+                referenceId: latsolAttemptId,
+                referenceType: 'LATSOL_ATTEMPT',
+                description: `${attempt.package.title} — ${b.ruleName}: ${b.details.join('; ')} (rekor baru, +${b.delta})`,
+                period,
+              },
+            }),
+          ),
+        )
+      : [];
 
     return { alreadyProcessed: false, transactions };
   }

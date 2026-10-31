@@ -27,6 +27,11 @@ export interface LatsolQuestionPlay {
   imageUrl: string | null;
   points: number | null;
   options: LatsolOption[];
+  // Terisi bila attempt sudah dikumpulkan (halaman hasil): kunci dibuka.
+  explanation?: string | null;
+  explanationImageUrl?: string | null;
+  answerKey?: string | null;
+  correctOptionIds?: string[];
 }
 
 export interface LatsolFeedback {

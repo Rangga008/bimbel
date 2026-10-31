@@ -10,7 +10,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { PhoneVerificationService } from '../../common/phone-verification/phone-verification.service';
 import { PointTransactionsService } from '../point-transactions/point-transactions.service';
 import { gradeLatsolQuestion } from './latsol-grading';
-import { sanitizeQuestion, toFeedbackAnswer } from './latsol-feedback.service';
+import { sanitizeQuestion, toFeedbackAnswer, revealQuestion } from './latsol-feedback.service';
 import {
   CreateLatsolPackageDto,
   GradeEssayDto,
@@ -289,6 +289,7 @@ export class LatsolWriteService {
       }),
     ]);
     const byQ = new Map(answers.map((a) => [a.questionId, a]));
+    const submitted = attempt.status !== 'IN_PROGRESS';
     return {
       id: attempt.id,
       status: attempt.status,
@@ -304,7 +305,11 @@ export class LatsolWriteService {
             questionId: it.questionId,
             sortOrder: it.sortOrder,
             answered: false as const,
-            question: sanitizeQuestion(it.question),
+            // Setelah dikumpulkan, kunci + pembahasan soal tak terjawab
+            // ikut dibuka untuk halaman hasil.
+            question: submitted
+              ? revealQuestion(it.question)
+              : sanitizeQuestion(it.question),
           };
         return {
           questionId: it.questionId,
