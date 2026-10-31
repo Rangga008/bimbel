@@ -22,6 +22,7 @@ export interface LatsolQuestionPlay {
   id: string;
   type: string;
   stimulus?: string | null;
+  stimulusImageUrl?: string | null;
   content: string;
   imageUrl: string | null;
   points: number | null;
@@ -40,6 +41,7 @@ export interface LatsolFeedback {
     id: string;
     type: string;
     stimulus?: string | null;
+    stimulusImageUrl?: string | null;
     content: string;
     imageUrl: string | null;
     points: number | null;

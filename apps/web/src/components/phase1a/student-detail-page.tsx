@@ -26,6 +26,7 @@ import { UserAvatar } from '@/components/shared/user-avatar';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { SessionCalendar } from '@/components/shared/session-calendar';
 import { LearningReportButton } from '@/components/shared/learning-report-button';
+import { scoreLabel100 } from '@/lib/score';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useAuthStore } from '@/stores/auth-store';
 import type { StudentItem } from '@/lib/phase1a-types';
@@ -425,7 +426,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                       </td>
                       <td className="px-3 py-2 align-top whitespace-nowrap text-muted-foreground">{a.status}</td>
                       <td className="px-3 py-2 align-top text-right tabular-nums whitespace-nowrap">
-                        {a.score !== null ? `${a.score}/${a.maxScore ?? '—'}` : '—'}
+                        {a.score !== null ? scoreLabel100(a.score, a.maxScore) : '—'}
                       </td>
                     </tr>
                   ))}

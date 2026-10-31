@@ -126,7 +126,7 @@ export default function ExamStartPage() {
 											{exam.items.length} soal
 											{exam.durationMinutes ? ` · ${exam.durationMinutes} menit` : ""}
 										</div>
-										<div>Nilai maks {exam.maxScore}</div>
+										<div>Nilai maks 100</div>
 									</div>
 								</div>
 

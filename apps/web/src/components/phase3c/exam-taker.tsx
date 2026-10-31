@@ -12,6 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { score100 } from '@/lib/score';
 import { apiFetch, ApiError, resolveAssetUrl } from '@/lib/api-client';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { MathContent } from '@/components/shared/math-content';
@@ -542,10 +543,18 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="prose prose-sm max-w-none">
-          {item.question.stimulus && (
+          {(item.question.stimulus || item.question.stimulusImageUrl) && (
             <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
               <p className="text-[11px] font-semibold uppercase text-muted-foreground">Bacaan</p>
-              <MathContent text={item.question.stimulus} />
+              {item.question.stimulus && <MathContent text={item.question.stimulus} />}
+              {item.question.stimulusImageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={resolveAssetUrl(item.question.stimulusImageUrl)}
+                  alt="Gambar bacaan"
+                  className="max-h-64 w-auto rounded border object-contain"
+                />
+              )}
             </div>
           )}
           <MathContent text={item.question.content} />
@@ -988,7 +997,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                   <div>
                     <div className="text-sm text-muted-foreground">Skor Anda</div>
                     <div className="text-2xl font-bold">
-                      {attempt.score} / {attempt.maxScore}
+                      {score100(attempt.score, attempt.maxScore)} / 100
                     </div>
                   </div>
                   <div>
@@ -1039,8 +1048,8 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                               <span className="text-muted-foreground"> / {r.total}</span>
                             </td>
                             <td className="px-3 py-2 text-right font-semibold">
-                              {r.score}
-                              <span className="font-normal text-muted-foreground"> / {r.maxScore}</span>
+                              {score100(r.score, r.maxScore)}
+                              <span className="font-normal text-muted-foreground"> / 100</span>
                             </td>
                             <td className="px-3 py-2">
                               <div className="h-2 w-full min-w-24 overflow-hidden rounded-full bg-muted">

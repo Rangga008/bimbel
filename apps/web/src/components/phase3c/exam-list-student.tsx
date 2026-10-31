@@ -349,7 +349,7 @@ export function ExamListStudent() {
                       {exam.items.length} soal
                       {exam.durationMinutes ? ` · ${exam.durationMinutes} menit` : ''}
                     </div>
-                    <div>Nilai maks {exam.maxScore}</div>
+                    <div>Nilai maks 100</div>
                   </div>
                 </div>
 
@@ -444,7 +444,7 @@ export function ExamListStudent() {
         title={`Mulai "${startTarget?.title ?? 'ujian'}"?`}
         description={
           startTarget
-            ? `${startTarget.items.length} soal · nilai maks ${startTarget.maxScore}` +
+            ? `${startTarget.items.length} soal · nilai maks 100` +
               `${startTarget.durationMinutes ? ` · durasi ${startTarget.durationMinutes} menit` : ''}. ` +
               ((startTarget.subtes?.length ?? 0) > 0
                 ? 'Ujian ini terdiri dari beberapa subtes yang dikerjakan berurutan — timer tiap subtes dimulai saat kamu menekan "Mulai Subtes". '

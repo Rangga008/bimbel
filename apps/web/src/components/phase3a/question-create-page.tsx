@@ -25,6 +25,8 @@ function draftToPayload(draft: QuestionDraft) {
     subjectId: draft.subjectId || undefined,
     category: draft.category || undefined,
     type: draft.type,
+    stimulus: draft.stimulus || undefined,
+    stimulusImageUrl: draft.stimulusImageUrl || undefined,
     content: draft.content,
     imageUrl: draft.imageUrl || undefined,
     difficulty: draft.difficulty || undefined,

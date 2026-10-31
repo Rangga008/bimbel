@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { score100 } from '@/lib/score';
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { CategoryProgressChart, type CategoryProgressData } from "@/components/shared/category-progress-chart";
 import { StudentPerformance } from "./student-performance";
@@ -232,7 +233,7 @@ function MonthlyReportCard({ studentId }: { studentId: string }) {
                       <div className="text-right">
                         <p className="font-bold tabular-nums">{ex.percentage}%</p>
                         <p className="text-xs text-muted-foreground tabular-nums">
-                          {ex.score}/{ex.maxScore}
+                          {score100(ex.score, ex.maxScore)}/100
                         </p>
                       </div>
                     </div>
@@ -263,7 +264,7 @@ function MonthlyReportCard({ studentId }: { studentId: string }) {
                       <div className="text-right">
                         <p className="font-bold tabular-nums">{l.percentage}%</p>
                         <p className="text-xs text-muted-foreground tabular-nums">
-                          {l.score}/{l.maxScore}
+                          {score100(l.score, l.maxScore)}/100
                         </p>
                       </div>
                     </div>

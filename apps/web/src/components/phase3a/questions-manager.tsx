@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { CircleCheck, FileDown, FileQuestion, FileUp, ImageIcon, Pencil, Plus, Search, Settings2, Tag, Trash2 } from 'lucide-react';
+import { BookOpen, CircleCheck, FileDown, FileQuestion, FileUp, ImageIcon, Pencil, Plus, Search, Settings2, Tag, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -20,6 +20,7 @@ import { MathContent, plainPreview } from '@/components/shared/math-content';
 import { ContentDrilldown, DrillBreadcrumb, useContentCategories, useContentLevels, useDrillState } from '@/components/shared/content-drilldown';
 import { ContentCategoriesManager } from '@/components/shared/content-categories-manager';
 import { QuestionImportDialog, QuestionTemplateDialog } from '@/components/phase3a/question-import-dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   applyDrill,
   categoryLabel,
@@ -69,7 +70,33 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
   const [manageCats, setManageCats] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [tplOpen, setTplOpen] = useState(false);
+  const [selIds, setSelIds] = useState<Set<string>>(new Set());
+  const [stimOpen, setStimOpen] = useState(false);
+  const [stimText, setStimText] = useState('');
   const levels = levelsQ.data;
+
+  const stimuliQ = useQuery({
+    queryKey: ['question-stimuli'],
+    queryFn: () => apiFetch<string[]>('/questions/stimuli'),
+    enabled: stimOpen,
+  });
+
+  const stimM = useMutation({
+    mutationFn: () =>
+      apiFetch<{ updated: number; total: number }>('/questions/stimulus/bulk', {
+        method: 'POST',
+        body: { ids: [...selIds], stimulus: stimText.trim() || null },
+      }),
+    onSuccess: (r: { updated: number; total: number }) => {
+      toast.success(`Bacaan dipasang ke ${r.updated} dari ${r.total} soal.`);
+      qc.invalidateQueries({ queryKey: ['questions'] });
+      qc.invalidateQueries({ queryKey: ['question-stimuli'] });
+      setStimOpen(false);
+      setSelIds(new Set());
+      setStimText('');
+    },
+    onError: (e) => toast.error(err(e, 'Gagal memasang bacaan.')),
+  });
 
   const deleteM = useMutation({
     mutationFn: (id: string) =>
@@ -154,6 +181,45 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
         <ContentCategoriesManager open={manageCats} onOpenChange={setManageCats} />
         <QuestionImportDialog open={importOpen} onOpenChange={setImportOpen} />
         <QuestionTemplateDialog open={tplOpen} onOpenChange={setTplOpen} />
+        <Dialog open={stimOpen} onOpenChange={setStimOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Atur Bacaan — {selIds.size} soal</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Tulis teks bacaan sekali — semua soal terpilih memakainya.
+                Pilih dari daftar untuk memakai bacaan yang sudah ada.
+              </p>
+              {(stimuliQ.data ?? []).length > 0 && (
+                <select
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                  value=""
+                  onChange={(e) => e.target.value && setStimText(e.target.value)}
+                >
+                  <option value="">— Pakai bacaan yang sudah ada —</option>
+                  {stimuliQ.data!.map((t, i) => (
+                    <option key={i} value={t}>
+                      {t.length > 90 ? `${t.slice(0, 90)}…` : t}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <textarea
+                className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={stimText}
+                onChange={(e) => setStimText(e.target.value)}
+                placeholder="Teks bacaan bersama… (kosongkan untuk melepas bacaan)"
+              />
+              <div className="flex gap-2">
+                <Button className="flex-1" disabled={stimM.isPending} onClick={() => stimM.mutate()}>
+                  {stimM.isPending ? 'Menyimpan…' : `Pasang ke ${selIds.size} Soal`}
+                </Button>
+                <Button variant="outline" onClick={() => setStimOpen(false)}>Batal</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
@@ -247,10 +313,36 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
           ) : undefined}
         />
       ) : null}
+      {selIds.size > 0 && (
+        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-sm shadow-sm backdrop-blur">
+          <Badge variant="secondary">{selIds.size} soal dipilih</Badge>
+          <Button size="sm" onClick={() => setStimOpen(true)}>
+            <BookOpen className="size-4" /> Atur Bacaan
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelIds(new Set())}>
+            Lepas
+          </Button>
+        </div>
+      )}
       <div className="grid gap-3">
         {filtered.map((q) => (
           <Card key={q.id}>
             <CardContent className="flex gap-3 py-4">
+              {canManage && (
+                <input
+                  type="checkbox"
+                  className="mt-1 size-4 shrink-0 accent-primary"
+                  checked={selIds.has(q.id)}
+                  onChange={(e) =>
+                    setSelIds((prev) => {
+                      const n = new Set(prev);
+                      if (e.target.checked) n.add(q.id);
+                      else n.delete(q.id);
+                      return n;
+                    })
+                  }
+                />
+              )}
               <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                 <FileQuestion className="size-5" />
               </div>
@@ -267,6 +359,12 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
                     {!q.isActive && <Badge variant="destructive">Non-aktif</Badge>}
                   </div>
                 </div>
+                {q.stimulus && (
+                  <p className="rounded-md border border-primary/20 bg-primary/5 px-2 py-1 text-xs text-muted-foreground">
+                    <span className="font-semibold text-foreground">Bacaan: </span>
+                    {plainPreview(q.stimulus, 80)}
+                  </p>
+                )}
                 {q.imageUrl && (
                   <a href={resolveAssetUrl(q.imageUrl)} target="_blank" rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
@@ -343,6 +441,45 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
       <ContentCategoriesManager open={manageCats} onOpenChange={setManageCats} />
         <QuestionImportDialog open={importOpen} onOpenChange={setImportOpen} />
         <QuestionTemplateDialog open={tplOpen} onOpenChange={setTplOpen} />
+        <Dialog open={stimOpen} onOpenChange={setStimOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Atur Bacaan — {selIds.size} soal</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Tulis teks bacaan sekali — semua soal terpilih memakainya.
+                Pilih dari daftar untuk memakai bacaan yang sudah ada.
+              </p>
+              {(stimuliQ.data ?? []).length > 0 && (
+                <select
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                  value=""
+                  onChange={(e) => e.target.value && setStimText(e.target.value)}
+                >
+                  <option value="">— Pakai bacaan yang sudah ada —</option>
+                  {stimuliQ.data!.map((t, i) => (
+                    <option key={i} value={t}>
+                      {t.length > 90 ? `${t.slice(0, 90)}…` : t}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <textarea
+                className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={stimText}
+                onChange={(e) => setStimText(e.target.value)}
+                placeholder="Teks bacaan bersama… (kosongkan untuk melepas bacaan)"
+              />
+              <div className="flex gap-2">
+                <Button className="flex-1" disabled={stimM.isPending} onClick={() => stimM.mutate()}>
+                  {stimM.isPending ? 'Menyimpan…' : `Pasang ke ${selIds.size} Soal`}
+                </Button>
+                <Button variant="outline" onClick={() => setStimOpen(false)}>Batal</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
     </div>
   );
 }

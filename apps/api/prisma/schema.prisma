@@ -1412,6 +1412,8 @@ model Question {
   content     String       // Konten soal (teks + KaTeX)
   /// Bacaan bersama — satu teks/wacana dipakai oleh beberapa soal.
   stimulus    String?
+  /// Gambar pendamping bacaan (grafik/tabel/gambar wacana).
+  stimulusImageUrl String?
   imageUrl    String?      // URL gambar soal (opsional)
   difficulty  String?      // EASY | MEDIUM | HARD (opsional)
   points      Int?         // Poin soal (opsional, default 1)

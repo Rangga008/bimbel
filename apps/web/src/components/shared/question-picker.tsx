@@ -2,6 +2,8 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { usePathname } from 'next/navigation';
+import { Pencil } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -61,6 +63,9 @@ export function QuestionPicker({
   onToggle: (questionId: string) => void;
 }) {
   const [questionSearch, setQuestionSearch] = useState('');
+  // Jalur edit soal mengikuti role — dibuka di tab baru agar pilihan tidak hilang.
+  const pathname = usePathname();
+  const editBase = pathname?.startsWith('/tutor') ? '/tutor/soal' : '/admin-academic/soal';
 
   const levelsQ = useContentLevels();
   const catsQ = useContentCategories();
@@ -246,6 +251,15 @@ export function QuestionPicker({
                   <span className="min-w-0 max-w-56 truncate">
                     {plainPreview(q.content, 80)}
                   </span>
+                  <a
+                    href={`${editBase}/${q.id}/edit`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Edit soal di tab baru"
+                    className="shrink-0 rounded px-0.5 text-muted-foreground hover:text-foreground"
+                  >
+                    <Pencil className="size-3" />
+                  </a>
                   <button
                     type="button"
                     aria-label="Lepas soal"
@@ -293,6 +307,15 @@ export function QuestionPicker({
                     {q.points && <Badge variant="outline" className="text-xs">{q.points} poin</Badge>}
                   </div>
                 </div>
+                <a
+                  href={`${editBase}/${q.id}/edit`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Edit soal di tab baru"
+                  className="mt-0.5 shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <Pencil className="size-4" />
+                </a>
               </div>
             ))}
             {questionsQ.data?.length === 0 && (

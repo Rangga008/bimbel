@@ -62,6 +62,11 @@ export class CreateQuestionDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(500, { message: 'URL gambar bacaan maksimal 500 karakter.' })
+  stimulusImageUrl?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(500, { message: 'URL gambar maksimal 500 karakter.' })
   imageUrl?: string;
 
@@ -128,6 +133,11 @@ export class UpdateQuestionDto {
   @IsString()
   @MaxLength(4000, { message: 'Bacaan maksimal 4000 karakter.' })
   stimulus?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500, { message: 'URL gambar bacaan maksimal 500 karakter.' })
+  stimulusImageUrl?: string;
 
   @IsOptional()
   @IsString()

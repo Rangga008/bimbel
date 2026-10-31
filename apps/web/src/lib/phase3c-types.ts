@@ -170,6 +170,7 @@ export interface ExamAttemptItem {
     id: string;
     type: string;
     stimulus?: string | null;
+    stimulusImageUrl?: string | null;
     content: string;
     imageUrl: string | null;
     difficulty: string | null;

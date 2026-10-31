@@ -31,6 +31,8 @@ export interface QuestionRow {
   levelId: string | null;
   subjectId: string | null;
   type: string;
+  stimulus?: string | null;
+  stimulusImageUrl?: string | null;
   content: string;
   imageUrl: string | null;
   difficulty: string | null;

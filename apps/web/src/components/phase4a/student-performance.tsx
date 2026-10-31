@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { score100 } from '@/lib/score';
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { CategoryProgressChart, type CategoryProgressData } from "@/components/shared/category-progress-chart";
 
@@ -291,7 +292,7 @@ export function StudentPerformance({
                     <div className="shrink-0 text-right">
                       <div className="text-lg font-bold tabular-nums">{exam.percentage.toFixed(1)}%</div>
                       <div className="text-xs text-muted-foreground tabular-nums">
-                        {exam.score} / {exam.maxScore}
+                        {score100(exam.score, exam.maxScore)} / 100
                       </div>
                     </div>
                   </div>

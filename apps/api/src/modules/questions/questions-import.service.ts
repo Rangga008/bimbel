@@ -96,10 +96,10 @@ const DOCX_TEMPLATE_LINES = [
   '- Opsi hanya diisi untuk PG/PGK (maksimal E). Tipe lain boleh dikosongkan.',
   '- BS bisa satu pernyataan (Kunci: Benar/Salah) ATAU beberapa pernyataan —',
   '  isi tiap pernyataan di Opsi A..E dan kunci dipisah koma, mis. "Benar,Salah,Benar,Salah".',
-  '- BACAAN BERSAMA: baris dengan Tipe "BACAAN" membuat SEMUA soal di bawahnya',
-  '  memakai teks itu — tulis sekali, tidak perlu disalin ke tiap soal.',
-  '  Baris "BACAAN" kosong menghentikan bacaan; kolom Bacaan per-soal bisa dipakai',
-  '  bila hanya 1 soal yang butuh teks berbeda.',
+  '- BACAAN BERSAMA: tulis teks SEKALI di baris Tipe "BACAAN" + beri nama di',
+  '  kolom No (mis. B1). Soal yang memakainya cukup isi kolom Bacaan = nama itu',
+  '  (mis. B1) — jadi tiap soal MEMILIH bacaannya, tidak harus berurutan.',
+  '  Kolom Bacaan juga bisa diisi teks langsung bila bacaan hanya dipakai 1 soal.',
   '- GAMBAR: tempel gambar langsung di sel Soal/Opsi/Pembahasan — otomatis terupload.',
   '- Format alternatif: satu tabel kecil per soal — kolom 1 label (No/Tipe/Soal/A/B/…/Kunci), kolom 2 isi.',
   '- Jenjang, mapel, dan kategori DIPILIH di halaman import — tidak perlu ditulis di file.',
@@ -132,12 +132,12 @@ const TYPE_TO_ALIAS: Record<QuestionType, string> = {
 
 /** Contoh bacaan bersama — ditampilkan di baris Tipe=BACAAN pada template. */
 const BACAAN_CONTOH =
-  'Contoh bacaan dipakai oleh DUA soal di bawahnya: "Dalam sebuah kotak terdapat angka-angka. Amati pola bilangan berikut lalu jawab pertanyaan."';
+  'Contoh bacaan bernama B1 — dipilih oleh 2 soal lewat kolom Bacaan: "Dalam sebuah kotak terdapat angka-angka. Amati pola bilangan berikut lalu jawab pertanyaan."';
 
-/** Baris marker BACAAN — teks dipakai semua soal di bawahnya sampai
- *  baris BACAAN berikutnya (kosong = berhenti). Mengikuti urutan header. */
-function bacaanMarkerRow(text: string): (string | number)[] {
-  return ['', 'BACAAN', text, '', '', '', '', '', '', '', '', '', ''];
+/** Baris marker BACAAN — bernama (kolom No = nama); soal memilihnya lewat
+ *  kolom Bacaan = nama itu. Mengikuti urutan header. */
+function bacaanMarkerRow(name: string, text: string): (string | number)[] {
+  return [name, 'BACAAN', text, '', '', '', '', '', '', '', '', '', ''];
 }
 
 /** Satu baris contoh per tipe soal — untuk template docx/xlsx. */
@@ -145,9 +145,9 @@ function exampleRow(no: number, type: QuestionType): (string | number)[] {
   const t = TYPE_TO_ALIAS[type];
   switch (type) {
     case 'SINGLE_CHOICE':
-      return [no, t, `Contoh soal pilihan ganda no ${no}: Berdasarkan bacaan, berapa hasil 2 + 2?`, '3', '4', '5', '6', '', 'B', 1, 'EASY', '2 + 2 = 4.', ''];
+      return [no, t, `Contoh soal pilihan ganda no ${no}: Berdasarkan bacaan, berapa hasil 2 + 2?`, '3', '4', '5', '6', '', 'B', 1, 'EASY', '2 + 2 = 4.', 'B1'];
     case 'MULTIPLE_CHOICE':
-      return [no, t, `Contoh soal ganda kompleks no ${no}: Masih dari bacaan yang sama — pilih semua bilangan genap.`, '2', '3', '4', '5', '', 'A,C', 2, 'MEDIUM', '', ''];
+      return [no, t, `Contoh soal ganda kompleks no ${no}: Masih dari bacaan B1 — pilih semua bilangan genap.`, '2', '3', '4', '5', '', 'A,C', 2, 'MEDIUM', '', 'B1'];
     case 'TRUE_FALSE':
       // BS kompleks — tiap opsi adalah pernyataan; kunci per-pernyataan
       // dipisah koma (contoh: 4 pernyataan, 2 benar 2 salah).
@@ -205,7 +205,7 @@ export class QuestionsImportService {
       width: i === 2 ? 50 : i >= 3 && i <= 7 ? 22 : 14,
     }));
     ws.getRow(1).font = { bold: true };
-    ws.addRow(bacaanMarkerRow(BACAAN_CONTOH));
+    ws.addRow(bacaanMarkerRow('B1', BACAAN_CONTOH));
     for (let i = 0; i < n; i++) {
       ws.addRow(exampleRow(i + 1, typeList[i % typeList.length]));
     }
@@ -245,7 +245,7 @@ export class QuestionsImportService {
     // Satu tabel grid — baris contoh di-generate sesuai count + tipe yang diminta.
     const w1 = [600, 800, 3200, 1100, 1100, 1100, 1100, 1100, 1000, 700, 1000, 2400, 2200];
     const tableRows =
-      gridRow(bacaanMarkerRow(BACAAN_CONTOH).map(String), w1) +
+      gridRow(bacaanMarkerRow('B1', BACAAN_CONTOH).map(String), w1) +
       Array.from({ length: n }, (_, i) =>
         gridRow(
           exampleRow(i + 1, typeList[i % typeList.length]).map(String),
@@ -566,19 +566,34 @@ export class QuestionsImportService {
       return {};
     };
     const cols = tableRows[0].map(colOf);
+    const typeIdx0 = cols.findIndex((c) => c?.key === 'type');
+    const noIdx0 = cols.findIndex((c) => c?.key === 'no');
+    const stimIdx0 = cols.findIndex(
+      (c) => c?.key === 'stimulus' || c?.key === 'content',
+    );
+    // Pass 1 — bacaan bernama (nama di kolom No).
+    const namedStimuli = new Map<string, string>();
+    for (const cells of tableRows.slice(1)) {
+      if (
+        typeIdx0 >= 0 &&
+        /^(bacaan|stimulus|wacana)$/i.test((cells[typeIdx0] ?? '').trim())
+      ) {
+        const name = (noIdx0 >= 0 ? cells[noIdx0] ?? '' : '').trim();
+        const text = (stimIdx0 >= 0 ? cells[stimIdx0] ?? '' : '').trim();
+        if (name && text) namedStimuli.set(name, text);
+      }
+    }
     const rows: ParsedRow[] = [];
     let currentStimulus = '';
     for (const cells of tableRows.slice(1)) {
-      // Baris marker Tipe=BACAAN — teksnya dipakai soal-soal berikutnya.
-      const typeIdx = cols.findIndex((c) => c?.key === 'type');
+      // Baris marker Tipe=BACAAN — bernama masuk map; tanpa nama positional.
       if (
-        typeIdx >= 0 &&
-        /^(bacaan|stimulus|wacana)$/i.test((cells[typeIdx] ?? '').trim())
+        typeIdx0 >= 0 &&
+        /^(bacaan|stimulus|wacana)$/i.test((cells[typeIdx0] ?? '').trim())
       ) {
-        const stimIdx = cols.findIndex(
-          (c) => c?.key === 'stimulus' || c?.key === 'content',
-        );
-        currentStimulus = (stimIdx >= 0 ? cells[stimIdx] ?? '' : '').trim();
+        const name = (noIdx0 >= 0 ? cells[noIdx0] ?? '' : '').trim();
+        if (!name)
+          currentStimulus = (stimIdx0 >= 0 ? cells[stimIdx0] ?? '' : '').trim();
         continue;
       }
       const row = this.newParsedRow(baseNo + rows.length + 1);
@@ -720,11 +735,19 @@ export class QuestionsImportService {
     const rows: ParsedRow[] = [];
     let cur: ParsedRow | null = null;
     let pendingStimulus = '';
+    const namedStimuli = new Map<string, string>();
     for (const raw of lines) {
       const line = raw.trim();
       if (!line) continue;
-      // Baris "BACAAN: ..." sebelum blok SOAL manapun = bacaan bersama
-      // untuk semua soal berikutnya sampai baris BACAAN lain.
+      // Definisi bacaan bernama: "BACAAN B1: teks..." — di luar blok soal.
+      const namedDef = line.match(
+        /^(bacaan|stimulus|wacana)\s+(\S+)\s*:\s*(.*)$/i,
+      );
+      if (!cur && namedDef) {
+        namedStimuli.set(namedDef[2].trim(), namedDef[3].trim());
+        continue;
+      }
+      // Bacaan positional tanpa nama (kompat file lama).
       const pre = line.match(/^(bacaan|stimulus|wacana)\s*:\s*(.*)$/i);
       if (!cur && pre) {
         pendingStimulus = pre[2].trim();
@@ -749,7 +772,8 @@ export class QuestionsImportService {
         else if (key === 'KESULITAN') cur.difficulty = val;
         else if (key === 'PEMBAHASAN')
           cur.explanation = this.stripImgTokens(val, cur.explanationImages);
-        else if (key === 'BACAAN' || key === 'STIMULUS' || key === 'WACANA') cur.stimulus = val;
+        else if (key === 'BACAAN' || key === 'STIMULUS' || key === 'WACANA')
+          cur.stimulus = namedStimuli.get(val.trim()) ?? val;
         else if (key === 'SOAL') cur.content = this.stripImgTokens(val, cur.contentImages);
         else cur.content = cur.content ? `${cur.content}\n${this.stripImgTokens(line, cur.contentImages)}` : this.stripImgTokens(line, cur.contentImages);
         continue;
@@ -782,7 +806,19 @@ export class QuestionsImportService {
     const ws = wb.worksheets[0];
     if (!ws) throw new BadRequestException('Workbook tidak punya sheet.');
     const rows: ParsedRow[] = [];
-    // Bacaan bersama yang sedang aktif — diisi baris Tipe=BACAAN.
+    // Bacaan bernama (kolom No di baris BACAAN) → dipilih lewat kolom Bacaan.
+    const namedStimuli = new Map<string, string>();
+    ws.eachRow((row, rowNum) => {
+      if (rowNum === 1) return;
+      const t2 = String(row.getCell(2).value ?? '').trim();
+      if (!/^(bacaan|stimulus|wacana)$/i.test(t2)) return;
+      const name = String(row.getCell(1).value ?? '').trim();
+      const text = String(
+        row.getCell(13).value ?? row.getCell(3).value ?? '',
+      ).trim();
+      if (name && text) namedStimuli.set(name, text);
+    });
+    // Bacaan positional (marker tanpa nama) — kompat file lama.
     let currentStimulus = '';
     ws.eachRow((row, rowNum) => {
       if (rowNum === 1) return; // header
@@ -800,15 +836,20 @@ export class QuestionsImportService {
       const stimulus = cell(13);
       const content = cell(3);
       const kunci = cell(9);
-      // Baris marker Tipe=BACAAN — teksnya dipakai soal-soal berikutnya.
+      // Baris marker Tipe=BACAAN — bernama masuk map (dipilih per soal),
+      // tanpa nama tetap positional untuk kompatibilitas file lama.
       if (/^(bacaan|stimulus|wacana)$/i.test(cell(2))) {
-        currentStimulus = (stimulus || content).trim();
+        if (!cell(1).trim()) currentStimulus = (stimulus || content).trim();
         return;
       }
       if (!content && !kunci) return; // baris kosong
       const r = this.newParsedRow(no);
       r.type = cell(2) || undefined;
-      r.stimulus = stimulus || currentStimulus;
+      // Kolom Bacaan: nama marker → teksnya; teks langsung dipakai apa adanya;
+      // kosong → warisi marker positional (bila ada).
+      r.stimulus =
+        namedStimuli.get(stimulus) ??
+        (stimulus || currentStimulus);
       r.content = content;
       r.options = [cell(4), cell(5), cell(6), cell(7), cell(8)].filter(Boolean);
       r.kunci = kunci;

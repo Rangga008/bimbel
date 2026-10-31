@@ -316,6 +316,7 @@ export class QuestionsService {
           type: dto.type,
           content: dto.content.trim(),
           stimulus: dto.stimulus?.trim() || null,
+          stimulusImageUrl: dto.stimulusImageUrl?.trim() || null,
           imageUrl: dto.imageUrl,
           difficulty: dto.difficulty,
           points: dto.points,
@@ -405,6 +406,7 @@ export class QuestionsService {
           type: dto.type,
           content: dto.content?.trim(),
           stimulus: dto.stimulus === undefined ? undefined : dto.stimulus?.trim() || null,
+          stimulusImageUrl: dto.stimulusImageUrl === undefined ? undefined : dto.stimulusImageUrl?.trim() || null,
           imageUrl: dto.imageUrl,
           difficulty: dto.difficulty,
           points: dto.points,
@@ -485,6 +487,52 @@ export class QuestionsService {
         },
       });
     });
+  }
+
+  /** Daftar bacaan yang sudah ada — untuk datalist "pakai bacaan yang sama". */
+  async stimuli(actor?: AuthenticatedUser) {
+    const scope = actor ? await this.tutorScope.for(actor) : null;
+    const rows = await this.prisma.question.findMany({
+      where: {
+        deletedAt: null,
+        stimulus: { not: null },
+        ...(scope
+          ? {
+              OR: [
+                { programId: { in: scope.programIds } },
+                { levelId: { in: scope.levelIds } },
+                { subjectId: { in: scope.subjectIds } },
+                { createdBy: actor!.id },
+              ],
+            }
+          : {}),
+      },
+      select: { stimulus: true },
+      distinct: ['stimulus'],
+      take: 200,
+    });
+    return rows
+      .map((r) => r.stimulus!)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  /** Pasang bacaan yang sama ke banyak soal sekaligus. */
+  async setStimulusBulk(
+    actor: AuthenticatedUser,
+    ids: string[],
+    stimulus: string | null,
+  ) {
+    let updated = 0;
+    for (const id of ids) {
+      try {
+        await this.update(id, { stimulus: stimulus ?? undefined }, actor);
+        updated++;
+      } catch {
+        // Lewati soal di luar scope/id tak valid — yang bisa diupdate tetap jalan.
+      }
+    }
+    return { updated, total: ids.length };
   }
 
   async delete(id: string, actor?: AuthenticatedUser) {

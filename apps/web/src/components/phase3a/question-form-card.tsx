@@ -34,6 +34,10 @@ export interface QuestionDraft {
   subjectId: string;
   category: string;
   type: 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'TRUE_FALSE' | 'SHORT_ANSWER' | 'ESSAY';
+  /** Bacaan bersama — satu teks dipakai beberapa soal. */
+  stimulus: string;
+  /** Gambar pendamping bacaan. */
+  stimulusImageUrl: string;
   content: string;
   imageUrl: string;
   difficulty: string;
@@ -53,6 +57,8 @@ export function emptyQuestionDraft(): QuestionDraft {
     subjectId: '',
     category: '',
     type: 'SINGLE_CHOICE',
+    stimulus: '',
+    stimulusImageUrl: '',
     content: '',
     imageUrl: '',
     difficulty: '',
@@ -131,6 +137,13 @@ export function QuestionFormCard({
     : (subjectsQ.data?.map((s) => ({ value: s.id, label: `${s.code} — ${s.name}` })) || []);
 
   const [optionImageIdx, setOptionImageIdx] = useState<number | null>(null);
+  // Daftar bacaan yang sudah ada — pilih untuk memakai teks yang sama.
+  const stimuliQ = useQuery({
+    queryKey: ['question-stimuli'],
+    queryFn: () => apiFetch<string[]>('/questions/stimuli'),
+    staleTime: 60_000,
+  });
+  const stimuli = stimuliQ.data ?? [];
 
   const needsOptions =
     draft.type === 'SINGLE_CHOICE' || draft.type === 'MULTIPLE_CHOICE' || draft.type === 'TRUE_FALSE';
@@ -316,6 +329,43 @@ export function QuestionFormCard({
             />
           </div>
         </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label>Bacaan bersama (opsional)</Label>
+          {stimuli.length > 0 && (
+            <select
+              className="h-9 rounded-md border border-input bg-background px-3 text-xs"
+              value=""
+              onChange={(e) => {
+                if (e.target.value) onChange({ ...draft, stimulus: e.target.value });
+              }}
+            >
+              <option value="">— Pakai bacaan yang sudah ada ({stimuli.length}) —</option>
+              {stimuli.map((t, i) => (
+                <option key={i} value={t}>
+                  {t.length > 90 ? `${t.slice(0, 90)}…` : t}
+                </option>
+              ))}
+            </select>
+          )}
+          <textarea
+            className="min-h-14 rounded-md border border-input bg-background px-3 py-2 text-sm"
+            value={draft.stimulus}
+            onChange={(e) => onChange({ ...draft, stimulus: e.target.value })}
+            placeholder="Teks/wacana yang dipakai beberapa soal — ditulis sekali."
+          />
+          <p className="text-xs text-muted-foreground">
+            Soal-soal dengan bacaan sama menampilkan teks ini di atas pertanyaan — cukup ditulis sekali.
+          </p>
+        </div>
+
+        <ImagePickerField
+          id={`q-${index}-stimulus-image`}
+          label="Gambar Bacaan (opsional)"
+          value={draft.stimulusImageUrl}
+          onChange={(url) => onChange({ ...draft, stimulusImageUrl: url })}
+          hint="Gambar/grafik/tabel pendamping bacaan — tampil di bawah teks bacaan."
+        />
 
         {needsOptions && (
           <div className="flex flex-col gap-2">

@@ -422,7 +422,7 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
                   <Star className="size-4 shrink-0 text-muted-foreground" />
                   <div className="min-w-0">
                     <div className="text-xs text-muted-foreground">Nilai Maks</div>
-                    <div className="tabular-nums">{exam.maxScore}</div>
+                    <div className="tabular-nums">100</div>
                   </div>
                 </div>
               </div>

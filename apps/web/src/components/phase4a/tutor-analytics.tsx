@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/shared/empty-state';
+import { score100 } from '@/lib/score';
 import { apiFetch } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import type { GroupListItem } from '@/lib/phase1b-types';
@@ -269,7 +270,7 @@ export function TutorAnalytics() {
                                                 </span>
                                               </span>
                                               <span className="shrink-0 font-medium tabular-nums">
-                                                {h.score}/{h.maxScore} ({h.percentage.toFixed(0)}%)
+                                                {score100(h.score, h.maxScore)}/100
                                               </span>
                                             </li>
                                           ))}

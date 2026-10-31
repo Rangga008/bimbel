@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { score100 } from '@/lib/score';
 import { apiFetch, ApiError } from "@/lib/api-client";
 import {
 	Card,
@@ -215,7 +216,7 @@ export function TutorGroupGrades() {
 												{exam.percentage.toFixed(1)}%
 											</p>
 											<p className="text-xs text-muted-foreground">
-												{exam.score} / {exam.maxScore}
+												{score100(exam.score, exam.maxScore)} / 100
 											</p>
 										</div>
 									</div>

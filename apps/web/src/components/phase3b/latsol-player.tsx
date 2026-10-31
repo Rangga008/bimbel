@@ -11,6 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { score100 } from '@/lib/score';
 import { apiFetch, ApiError, resolveAssetUrl } from '@/lib/api-client';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import type { LatsolQuestionPlay, LatsolFeedback, LatsolAttemptDetail, LatsolAttemptItem } from '@/lib/phase3b-types';
@@ -139,7 +140,7 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
       }),
     onSuccess: (data) => {
       setSubmitConfirmOpen(false);
-      toast.success(`Paket selesai! Skor: ${data.score}/${data.maxScore}`);
+      toast.success(`Paket selesai! Skor: ${score100(data.score, data.maxScore)}/100`);
       qc.invalidateQueries({ queryKey: ['latsol-attempts-mine'] });
       onBack();
     },
@@ -218,7 +219,7 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
                     <div key={att.id} className="flex items-center gap-2 mt-1">
                       <Badge variant="outline">{att.status === 'SUBMITTED' ? 'Selesai' : att.status}</Badge>
                       <span className="text-muted-foreground">
-                        {att.score}/{att.maxScore} — {new Date(att.startedAt).toLocaleDateString('id-ID')}
+                        {score100(att.score, att.maxScore)}/100 — {new Date(att.startedAt).toLocaleDateString('id-ID')}
                       </span>
                     </div>
                   ))}
@@ -277,10 +278,18 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
             className="max-h-64 w-auto rounded-lg border object-contain"
           />
         )}
-        {current.question.stimulus && (
+        {(current.question.stimulus || current.question.stimulusImageUrl) && (
           <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
             <p className="text-[11px] font-semibold uppercase text-muted-foreground">Bacaan</p>
-            <MathContent text={current.question.stimulus} />
+            {current.question.stimulus && <MathContent text={current.question.stimulus} />}
+            {current.question.stimulusImageUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={resolveAssetUrl(current.question.stimulusImageUrl)}
+                alt="Gambar bacaan"
+                className="max-h-64 w-auto rounded border object-contain"
+              />
+            )}
           </div>
         )}
         <div className="text-base"><MathContent text={current.question.content} /></div>
@@ -364,7 +373,7 @@ export function LatsolPlayer({ packageId, onBack }: { packageId: string; onBack:
                       : 'Salah'}
                 </Badge>
                 <span className="text-sm text-muted-foreground">
-                  Skor: {feedback.score}/{feedback.maxScore}
+                  Skor: {score100(feedback.score, feedback.maxScore)}/100
                 </span>
               </div>
 

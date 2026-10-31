@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -136,6 +136,37 @@ export class QuestionsController {
     @Query('subjectId') subjectId?: string,
   ) {
     return this.questions.getSummary(actor, { programId, levelId, subjectId });
+  }
+
+  @Get('questions/stimuli')
+  @RequirePermissions(PERMISSION_CODES.QUESTION_MANAGE)
+  async stimuli(@CurrentUser() actor: AuthenticatedUser) {
+    return this.questions.stimuli(actor);
+  }
+
+  @Post('questions/stimulus/bulk')
+  @RequirePermissions(PERMISSION_CODES.QUESTION_MANAGE)
+  async stimulusBulk(
+    @Body() body: { ids?: string[]; stimulus?: string | null },
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const ids = (body.ids ?? []).filter((x): x is string => typeof x === 'string' && !!x);
+    if (!ids.length) throw new BadRequestException('Pilih minimal 1 soal.');
+    const result = await this.questions.setStimulusBulk(
+      actor,
+      ids,
+      body.stimulus?.trim() || null,
+    );
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'QUESTION_STIMULUS_BULK',
+      entity: 'Question',
+      entityId: ids.join(',').slice(0, 200),
+      newData: { ids: ids.length, updated: result.updated, stimulus: !!body.stimulus?.trim() },
+      ...ctx(req),
+    });
+    return result;
   }
 
   @Get('questions/:id')

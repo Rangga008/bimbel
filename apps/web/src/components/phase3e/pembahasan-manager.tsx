@@ -32,6 +32,7 @@ interface Question {
   id: string;
   type: string;
   stimulus?: string | null;
+  stimulusImageUrl?: string | null;
   content: string;
   imageUrl?: string;
   points?: number;
@@ -204,10 +205,14 @@ export function PembahasanManager() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="prose prose-sm max-w-none sm:prose-base">
-                {current.question.stimulus && (
+                {(current.question.stimulus || current.question.stimulusImageUrl) && (
                   <div className="rounded-md border bg-muted/40 p-2 text-sm">
                     <p className="text-[10px] font-semibold uppercase text-muted-foreground">Bacaan</p>
-                    <MathContent text={current.question.stimulus} />
+                    {current.question.stimulus && <MathContent text={current.question.stimulus} />}
+                    {current.question.stimulusImageUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={resolveAssetUrl(current.question.stimulusImageUrl)} alt="Gambar bacaan" className="max-h-56 rounded border object-contain" />
+                    )}
                   </div>
                 )}
                 <MathContent text={current.question.content} />
@@ -350,10 +355,14 @@ export function PembahasanManager() {
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-4 pt-0">
-                      {question.stimulus && (
+                      {(question.stimulus || question.stimulusImageUrl) && (
                         <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
                           <p className="text-[11px] font-semibold uppercase text-muted-foreground">Bacaan</p>
-                          <MathContent text={question.stimulus} />
+                          {question.stimulus && <MathContent text={question.stimulus} />}
+                          {question.stimulusImageUrl && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={resolveAssetUrl(question.stimulusImageUrl)} alt="Gambar bacaan" className="max-h-64 rounded border object-contain" />
+                          )}
                         </div>
                       )}
                       <div className="prose prose-sm max-w-none">

@@ -118,6 +118,8 @@ export class ExamsService {
               select: {
                 id: true,
                 type: true,
+                stimulus: true,
+                stimulusImageUrl: true,
                 content: true,
                 imageUrl: true,
                 points: true,
@@ -342,7 +344,8 @@ export class ExamsService {
           items: {
             include: {
               question: {
-                select: { id: true, type: true, content: true, points: true },
+                select: { id: true, type: true, stimulus: true,
+                stimulusImageUrl: true, content: true, points: true },
               },
             },
             orderBy: { sortOrder: 'asc' },
@@ -485,7 +488,8 @@ export class ExamsService {
             items: {
               include: {
                 question: {
-                  select: { id: true, type: true, content: true, points: true },
+                  select: { id: true, type: true, stimulus: true,
+                stimulusImageUrl: true, content: true, points: true },
                 },
               },
               orderBy: { sortOrder: 'asc' },
@@ -521,7 +525,8 @@ export class ExamsService {
         items: {
           include: {
             question: {
-              select: { id: true, type: true, content: true, points: true },
+              select: { id: true, type: true, stimulus: true,
+                stimulusImageUrl: true, content: true, points: true },
             },
           },
           orderBy: { sortOrder: 'asc' },
@@ -557,6 +562,8 @@ export class ExamsService {
               select: {
                 id: true,
                 type: true,
+                stimulus: true,
+                stimulusImageUrl: true,
                 content: true,
                 imageUrl: true,
                 points: true,
@@ -696,6 +703,8 @@ export class ExamsService {
               select: {
                 id: true,
                 type: true,
+                stimulus: true,
+                stimulusImageUrl: true,
                 content: true,
                 imageUrl: true,
                 points: true,

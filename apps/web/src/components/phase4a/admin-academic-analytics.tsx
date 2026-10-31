@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Phase1aSelectField } from "@/components/phase1a/phase1a-form-dialog";
+import { score100 } from '@/lib/score';
 import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
 
 interface ProgramOption {
@@ -246,7 +247,7 @@ function ScoreRecapTable({ data }: { data: ScoreRecapData }) {
                 <td className="px-3 py-2 font-medium">{r.name}</td>
                 <td className="px-3 py-2">{r.school}</td>
                 {r.cells.map((c, j) => (
-                  <td key={j} className="px-3 py-2 tabular-nums">{c.score}/{c.maxScore}</td>
+                  <td key={j} className="px-3 py-2 tabular-nums">{score100(c.score, c.maxScore)}/100</td>
                 ))}
                 <td className="px-3 py-2 tabular-nums">{r.totalCorrect}</td>
                 <td className="px-3 py-2 tabular-nums font-semibold">{r.totalScore}/{r.maxScore}</td>

@@ -620,10 +620,12 @@ export class AnalyticsService {
     startDate?: Date;
     endDate?: Date;
   }) {
-    // Get exam question analytics for all published exams
+    // Get exam question analytics — semua ujian yang sudah berjalan/selesai.
+    // ENDED wajib ikut: ujian yang selesai tetap dianalisis; tanpa filter mapel
+    // sehingga ujian tanpa subject pun muncul.
     const exams = await this.prisma.exam.findMany({
       where: {
-        status: 'PUBLISHED',
+        status: { in: ['PUBLISHED', 'LOCKED', 'ENDED'] },
         ...(filters?.programId && { items: { some: { question: { programId: filters.programId } } } }),
         ...(filters?.levelId && { items: { some: { question: { levelId: filters.levelId } } } }),
         ...(filters?.startDate && { scheduledEndAt: { gte: filters.startDate } }),

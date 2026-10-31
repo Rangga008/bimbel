@@ -152,6 +152,8 @@ export class LatsolService {
               select: {
                 id: true,
                 type: true,
+                stimulus: true,
+                stimulusImageUrl: true,
                 content: true,
                 imageUrl: true,
                 points: true,

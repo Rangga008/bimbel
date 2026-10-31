@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, CircleAlert, History } from 'lucide-react';
+import { score100 } from '@/lib/score';
 import { apiFetch, resolveAssetUrl } from '@/lib/api-client';
 import type { LatsolAttemptItem, LatsolAttemptDetail } from '@/lib/phase3b-types';
 import { EmptyState } from '@/components/shared/empty-state';
@@ -68,7 +69,7 @@ export function LatsolAttemptsHistory({ packageId }: { packageId?: string }) {
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="flex items-center gap-4 text-sm">
-              <p className="text-muted-foreground">Skor: {detail.score}/{detail.maxScore}</p>
+              <p className="text-muted-foreground">Skor: {score100(detail.score, detail.maxScore)}/100</p>
               <p className="text-muted-foreground">
                 Mulai: {new Date(detail.startedAt).toLocaleString('id-ID')}
               </p>
@@ -205,7 +206,7 @@ export function LatsolAttemptsHistory({ packageId }: { packageId?: string }) {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="outline">{attempt.score}/{attempt.maxScore}</Badge>
+              <Badge variant="outline">{score100(attempt.score, attempt.maxScore)}/100</Badge>
               <Badge variant={attempt.status === 'SUBMITTED' ? 'default' : 'secondary'}>
                 {attempt.status}
               </Badge>

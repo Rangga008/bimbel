@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/shared/empty-state';
 import { MathContent } from '@/components/shared/math-content';
+import { score100 } from '@/lib/score';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { ExamStatus } from '@/lib/phase3c-types';
 import { useAuthStore } from '@/stores/auth-store';
@@ -162,7 +163,7 @@ function ParticipantRow({
       <td className={`${td} whitespace-nowrap text-xs text-muted-foreground`}>
         {a?.status === 'SUBMITTED' && (
           <span className="tabular-nums">
-            {a.score}/{a.maxScore}
+            {score100(a.score, a.maxScore)}/100
             {a.lateByMs ? ' · telat' : ''}
           </span>
         )}
@@ -681,7 +682,7 @@ function GradingDialog({
           <DialogTitle>Koreksi Jawaban — {target?.name}</DialogTitle>
           <DialogDescription>
             {reviewQ.data
-              ? `${reviewQ.data.examTitle} · total ${reviewQ.data.score}/${reviewQ.data.maxScore}. Isi skor esai/isian singkat (0 s.d. poin soal).`
+              ? `${reviewQ.data.examTitle} · total ${score100(reviewQ.data.score, reviewQ.data.maxScore)}/100 (${reviewQ.data.score}/${reviewQ.data.maxScore} poin). Isi skor esai/isian singkat (0 s.d. poin soal).`
               : 'Memuat jawaban…'}
           </DialogDescription>
         </DialogHeader>
