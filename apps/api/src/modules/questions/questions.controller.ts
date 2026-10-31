@@ -147,7 +147,7 @@ export class QuestionsController {
   @Post('questions/stimulus/bulk')
   @RequirePermissions(PERMISSION_CODES.QUESTION_MANAGE)
   async stimulusBulk(
-    @Body() body: { ids?: string[]; stimulus?: string | null },
+    @Body() body: { ids?: string[]; stimulus?: string | null; stimulusImageUrl?: string | null },
     @CurrentUser() actor: AuthenticatedUser,
     @Req() req: Request,
   ) {
@@ -157,6 +157,7 @@ export class QuestionsController {
       actor,
       ids,
       body.stimulus?.trim() || null,
+      body.stimulusImageUrl?.trim() || null,
     );
     await this.audit.log({
       actorId: actor.id,

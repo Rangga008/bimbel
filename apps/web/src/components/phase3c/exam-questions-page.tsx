@@ -11,6 +11,7 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { ExamRow } from '@/lib/phase3c-types';
 import { ExamForm } from '@/components/phase3c/exam-form';
+import { ExamBacaanPanel } from '@/components/phase3c/exam-bacaan-panel';
 import type { ExamFormState } from '@/components/phase3c/exam-form';
 import { toForm } from '@/components/phase3c/exam-edit-page';
 import { buildQuestionsPayload } from '@/components/phase3c/exam-create-page';
@@ -98,6 +99,8 @@ export function ExamQuestionsPage({
       </div>
 
       <ExamForm form={form} onChange={setForm} questionsOnly />
+
+      <ExamBacaanPanel form={form} />
 
       <div className="sticky bottom-0 z-10 -mx-1 border-t bg-background/95 px-1 py-3 backdrop-blur">
         <div className="flex justify-end gap-2">

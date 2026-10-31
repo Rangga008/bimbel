@@ -517,16 +517,26 @@ export class QuestionsService {
       .sort((a, b) => a.localeCompare(b));
   }
 
-  /** Pasang bacaan yang sama ke banyak soal sekaligus. */
+  /** Pasang/lepas bacaan yang sama ke banyak soal sekaligus.
+   *  stimulus null = lepas bacaan (gambar ikut dibersihkan). */
   async setStimulusBulk(
     actor: AuthenticatedUser,
     ids: string[],
     stimulus: string | null,
+    stimulusImageUrl?: string | null,
   ) {
     let updated = 0;
     for (const id of ids) {
       try {
-        await this.update(id, { stimulus: stimulus ?? undefined }, actor);
+        await this.update(
+          id,
+          {
+            // ''/null diupdate() dinormalisasi jadi null → bacaan terlepas.
+            stimulus: stimulus ?? '',
+            stimulusImageUrl: stimulus ? (stimulusImageUrl ?? undefined) : '',
+          },
+          actor,
+        );
         updated++;
       } catch {
         // Lewati soal di luar scope/id tak valid — yang bisa diupdate tetap jalan.
