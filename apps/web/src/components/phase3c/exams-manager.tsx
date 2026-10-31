@@ -224,42 +224,7 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
           loading={examsQ.isLoading || levelsQ.isLoading}
           onManageCategories={canManage ? () => setManageCats(true) : undefined}
         />
-        <Dialog open={reopenTarget !== null} onOpenChange={(o) => { if (!o) setReopenTarget(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Buka kembali ujian?</DialogTitle>
-            <DialogDescription>
-              "{reopenTarget?.title ?? ''}" kembali ke status Dipublikasi — peserta bisa
-              mengerjakan lagi sampai jadwal selesai yang baru. Nilai peserta lama tetap tersimpan.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="reopen-end" className="text-sm font-medium">Jadwal selesai baru</label>
-            <Input
-              id="reopen-end"
-              type="datetime-local"
-              value={reopenEnd}
-              onChange={(e) => setReopenEnd(e.target.value)}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setReopenTarget(null)}>Batal</Button>
-            <Button
-              disabled={reopenM.isPending || !reopenEnd}
-              onClick={() => {
-                if (!reopenTarget || !reopenEnd) return;
-                reopenM.mutate(
-                  { id: reopenTarget.id, scheduledEndAt: new Date(reopenEnd).toISOString() },
-                  { onSuccess: () => setReopenTarget(null) },
-                );
-              }}
-            >
-              Buka Kembali
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <ContentCategoriesManager open={manageCats} onOpenChange={setManageCats} />
+        <ContentCategoriesManager open={manageCats} onOpenChange={setManageCats} />
       </div>
     );
   }
@@ -545,6 +510,41 @@ export function ExamsManager({ canManage, basePath = '/ujian' }: ExamsManagerPro
           setEndTarget(null);
         }}
       />
+      <Dialog open={reopenTarget !== null} onOpenChange={(o) => { if (!o) setReopenTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Buka kembali ujian?</DialogTitle>
+            <DialogDescription>
+              "{reopenTarget?.title ?? ''}" kembali ke status Dipublikasi — peserta bisa
+              mengerjakan lagi sampai jadwal selesai yang baru. Nilai peserta lama tetap tersimpan.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="reopen-end" className="text-sm font-medium">Jadwal selesai baru</label>
+            <Input
+              id="reopen-end"
+              type="datetime-local"
+              value={reopenEnd}
+              onChange={(e) => setReopenEnd(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReopenTarget(null)}>Batal</Button>
+            <Button
+              disabled={reopenM.isPending || !reopenEnd}
+              onClick={() => {
+                if (!reopenTarget || !reopenEnd) return;
+                reopenM.mutate(
+                  { id: reopenTarget.id, scheduledEndAt: new Date(reopenEnd).toISOString() },
+                  { onSuccess: () => setReopenTarget(null) },
+                );
+              }}
+            >
+              Buka Kembali
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <ContentCategoriesManager open={manageCats} onOpenChange={setManageCats} />
     </div>
   );
