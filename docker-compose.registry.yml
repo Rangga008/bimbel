@@ -1,0 +1,23 @@
+# Override DEPLOY via registry — pakai image prebuilt (Docker Hub / GHCR),
+# BUKAN build di server. Cocok untuk VPS kecil (RAM 2GB) di mana `next build`
+# bisa OOM, dan untuk deploy cepat tanpa clone full toolchain.
+#
+# Di server, isi .env:
+#   REGISTRY_PREFIX=ghcr.io/namaorg        (atau: dockeruser  untuk Docker Hub)
+#   APP_VERSION=v1.0.0                     (tag image yang mau di-deploy)
+#
+# Pakai:
+#   docker login ghcr.io                    (bila image private)
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#     -f docker-compose.registry.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#     -f docker-compose.registry.yml up -d
+#
+# Infra (postgres/redis/rabbitmq/minio) tetap image publik — tidak berubah.
+services:
+  api:
+    build: !reset null
+    image: ${REGISTRY_PREFIX}/bimbel-api:${APP_VERSION:-latest}
+  web:
+    build: !reset null
+    image: ${REGISTRY_PREFIX}/bimbel-web:${APP_VERSION:-latest}

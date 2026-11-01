@@ -10,8 +10,10 @@ Platform manajemen bimbel end-to-end: pendaftaran siswa, program reguler/ekstra/
 |---|---|
 | Frontend | Next.js 16 (App Router), React, TypeScript, TanStack Query, Tailwind, Zustand |
 | Backend | NestJS, Prisma 7, PostgreSQL 16, Redis 7 (throttling & cache) |
+| Antrean job | RabbitMQ 3.13 (trigger outbox WA, pencatatan poin) — opsional, fallback in-process |
 | Storage | MinIO (S3) untuk file media; volume `api-uploads` untuk bukti pembayaran |
 | Auth | JWT access + refresh (cookie), RBAC berbasis permission code |
+| Backup | Export/restore DB dari UI (Pengaturan → Cadangan & Pemulihan, `pg_dump`/`psql` atomik) |
 | Deploy | Docker Compose (`docker-compose.yml` + override `docker-compose.prod.yml`) |
 
 ## Struktur
@@ -26,6 +28,31 @@ docker-compose.prod.yml   Override produksi (port internal → localhost)
 .env.example              Template variabel environment
 ```
 
+## Kebutuhan server
+
+Stack menjalankan **6 container** (web, api, postgres, redis, rabbitmq, minio). Angka di bawah mencakup Docker daemon + OS Linux.
+
+| Skenario | vCPU | RAM | Disk | Cocok untuk |
+|---|---|---|---|---|
+| **Minimum** | 2 | 2 GB | 20 GB SSD | Dev/demo, <50 siswa aktif, ujian bergantian |
+| **Rekomendasi** | 4 | 4 GB | 50 GB SSD | Produksi, ~100–500 siswa, ujian paralel antar-kelas |
+| **Maksimal** | 8 | 8–16 GB | 100+ GB SSD NVMe | 1000+ siswa / tryout massal — pertimbangkan DB & MinIO managed terpisah |
+
+Perkiraan pemakaian per service (idle → beban):
+
+| Container | RAM tipikal | Catatan |
+|---|---|---|
+| `web` (Next.js) | 150–300 MB | SSR naik saat traffic |
+| `api` (NestJS) | 300–800 MB | Puncak saat burst submit ujian/autosave |
+| `postgres` | 100 MB–2 GB | Tumbuh seiring data; shared_buffers ~25% RAM di DB besar |
+| `rabbitmq` | 300–500 MB | Erlang VM baseline ~300 MB |
+| `minio` | 150–500 MB | Naik saat upload/unduh media |
+| `redis` | 20–100 MB | Hanya throttle/cache antrian ringan |
+
+Disk: image Docker ±2–3 GB + volume `postgres-data`, `minio-data`, `api-uploads` (bukti pembayaran & media ikut membesar seiring pemakaian — sediakan headroom backup).
+
+Prasyarat OS: Linux 64-bit (Ubuntu 22.04/24.04 atau Debian 12 disarankan), Docker Engine + Compose v2. Windows/macOS hanya untuk development via Docker Desktop.
+
 ## Quickstart (Docker)
 
 ```bash
@@ -35,7 +62,7 @@ docker compose up -d --build
 
 - Web: http://localhost:3001 — API: http://localhost:3000/api (`/api/health` = healthcheck)
 - Migrasi Prisma & seed **otomatis jalan saat container API start** (`docker-entrypoint.sh`). Startup pertama butuh ±1–2 menit sampai seed selesai.
-- Panduan lengkap (produksi, reverse proxy, troubleshooting): **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**
+- Panduan lengkap: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** — termasuk deploy produksi ke VPS cloud (Jalur A: build di server · Jalur B: build di CI/cloud lalu `pull` image di server via `docker-compose.registry.yml` · Jalur C: PaaS Docker seperti Railway/Render).
 
 ## Akun seed (dev)
 
