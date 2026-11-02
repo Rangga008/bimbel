@@ -2002,6 +2002,8 @@ model MediaAsset {
   size         Int
   /// Bytes file — fallback disk dipakai hanya untuk aset lama tanpa kolom ini.
   data         Bytes?
+  /// Hash SHA-256 konten (pasca-optimasi) — untuk dedupe upload identik.
+  sha256       String?
   uploadedById String?
   /// ACADEMIC = pustaka materi/soal (admin akademik, tutor) · FINANCE = bukti
   /// pembayaran, kwitansi hasil generate, dokumen keuangan (admin finance).
@@ -2012,6 +2014,7 @@ model MediaAsset {
 
   @@index([uploadedById])
   @@index([category])
+  @@index([category, sha256])
   @@map("media_assets")
 }
 

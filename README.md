@@ -11,7 +11,7 @@ Platform manajemen bimbel end-to-end: pendaftaran siswa, program reguler/ekstra/
 | Frontend | Next.js 16 (App Router), React, TypeScript, TanStack Query, Tailwind, Zustand |
 | Backend | NestJS, Prisma 7, PostgreSQL 16, Redis 7 (throttling & cache) |
 | Antrean job | RabbitMQ 3.13 (trigger outbox WA, pencatatan poin) — opsional, fallback in-process |
-| Storage | MinIO (S3) untuk file media; volume `api-uploads` untuk bukti pembayaran |
+| Storage | Media → bytes ter-optimasi di Postgres (WebP, dedupe hash); bukti → volume `api-uploads`. MinIO tersedia opsional (profile `storage`, mati default) |
 | Auth | JWT access + refresh (cookie), RBAC berbasis permission code |
 | Backup | Export/restore DB dari UI (Pengaturan → Cadangan & Pemulihan, `pg_dump`/`psql` atomik) |
 | Deploy | Docker Compose (`docker-compose.yml` + override `docker-compose.prod.yml`) |
@@ -46,7 +46,7 @@ Perkiraan pemakaian per service (idle → beban):
 | `api` (NestJS) | 300–800 MB | Puncak saat burst submit ujian/autosave |
 | `postgres` | 100 MB–2 GB | Tumbuh seiring data; shared_buffers ~25% RAM di DB besar |
 | `rabbitmq` | 300–500 MB | Erlang VM baseline ~300 MB |
-| `minio` | 150–500 MB | Naik saat upload/unduh media |
+| `minio` *(opsional, mati default)* | 0 / 150–500 MB | Profile `storage` — start hanya bila dipakai |
 | `redis` | 20–100 MB | Hanya throttle/cache antrian ringan |
 
 Disk: image Docker ±2–3 GB + volume `postgres-data`, `minio-data`, `api-uploads` (bukti pembayaran & media ikut membesar seiring pemakaian — sediakan headroom backup).

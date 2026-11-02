@@ -1,11 +1,27 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { DatabaseBackup, Download, LoaderCircle, ShieldAlert, Upload } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { DatabaseBackup, Download, HardDrive, LoaderCircle, ShieldAlert, Upload } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
+
+interface StorageStats {
+  databaseBytes: number;
+  mediaDbBytes: number;
+  mediaByCategory: { category: string; count: number; bytes: number }[];
+  mediaDisk: { count: number; bytes: number };
+  proofDisk: { count: number; bytes: number };
+}
+
+const CATEGORY_LABEL: Record<string, string> = {
+  ACADEMIC: "Akademik (soal/materi)",
+  FINANCE: "Keuangan",
+  BRANDING: "Branding",
+  PROFILE: "Foto profil",
+};
 
 function fmtSize(bytes: number) {
   if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -28,6 +44,11 @@ export function BackupPanel() {
   const [importing, setImporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const storageQ = useQuery({
+    queryKey: ["backup-storage"],
+    queryFn: () => apiFetch<StorageStats>("/backup/storage"),
+    refetchInterval: 60_000,
+  });
 
   async function handleExport() {
     setExporting(true);
@@ -35,13 +56,23 @@ export function BackupPanel() {
     setNotice(null);
     try {
       const blob = await apiFetchBlob("/backup/export");
+      if (blob.size === 0) {
+        throw new ApiError(
+          "Server mengirim file backup kosong. Coba ulangi export atau cek log API.",
+          500,
+        );
+      }
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       const iso = new Date().toISOString();
       a.href = url;
       a.download = `bimbel-backup-${iso.slice(0, 10).replace(/-/g, "")}.sql.gz`;
+      // Beberapa browser (Safari/Firefox lama) mengabaikan click() pada
+      // anchor yang tidak menempel ke DOM — pasang sebentar lalu lepas lagi.
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1_000);
       setNotice("Backup berhasil diunduh — simpan di tempat aman (Drive/USB).");
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Export gagal.");
@@ -97,6 +128,44 @@ export function BackupPanel() {
           </p>
         ) : null}
 
+        {storageQ.data ? (
+          <div className="grid gap-2 rounded-lg border p-3">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <HardDrive className="size-4" />
+              Penggunaan storage saat ini
+            </p>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-3">
+              <span className="flex justify-between gap-2">
+                Database <b>{fmtSize(storageQ.data.databaseBytes)}</b>
+              </span>
+              <span className="flex justify-between gap-2">
+                Media ({storageQ.data.mediaByCategory.reduce((a, c) => a + c.count, 0)} file){" "}
+                <b>{fmtSize(storageQ.data.mediaDbBytes)}</b>
+              </span>
+              <span className="flex justify-between gap-2">
+                Bukti bayar ({storageQ.data.proofDisk.count}){" "}
+                <b>{fmtSize(storageQ.data.proofDisk.bytes)}</b>
+              </span>
+              {storageQ.data.mediaDisk.count > 0 ? (
+                <span className="flex justify-between gap-2 text-muted-foreground">
+                  Media disk lama ({storageQ.data.mediaDisk.count}){" "}
+                  <b>{fmtSize(storageQ.data.mediaDisk.bytes)}</b>
+                </span>
+              ) : null}
+            </div>
+            {storageQ.data.mediaByCategory.length ? (
+              <p className="text-[11px] text-muted-foreground">
+                {storageQ.data.mediaByCategory
+                  .map(
+                    (c) =>
+                      `${CATEGORY_LABEL[c.category] ?? c.category}: ${c.count} (${fmtSize(c.bytes)})`,
+                  )
+                  .join(" · ")}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center gap-3">
           <Button onClick={handleExport} disabled={exporting}>
             {exporting ? (
@@ -123,11 +192,20 @@ export function BackupPanel() {
               type="file"
               accept=".sql,.gz,application/gzip,application/sql"
               className="text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-sm hover:file:bg-muted"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => {
+                const picked = e.target.files?.[0] ?? null;
+                setFile(picked);
+                setNotice(null);
+                setError(
+                  picked && picked.size === 0
+                    ? "File yang dipilih kosong (0 B). Ini biasanya unduhan gagal/berhenti — unduh ulang backup, tunggu selesai, lalu pilih file .sql.gz hasilnya."
+                    : null,
+                );
+              }}
             />
             <Button
               variant="destructive"
-              disabled={!file || importing}
+              disabled={!file || file.size === 0 || importing}
               onClick={() => setConfirmOpen(true)}
             >
               {importing ? (
@@ -143,6 +221,10 @@ export function BackupPanel() {
               {file.name} — {fmtSize(file.size)}
             </p>
           ) : null}
+          <p className="text-xs text-muted-foreground">
+            Jangan tutup halaman sampai proses selesai — restore database besar
+            bisa memakan waktu beberapa menit.
+          </p>
         </div>
 
         <ConfirmDialog

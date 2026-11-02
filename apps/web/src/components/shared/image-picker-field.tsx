@@ -49,7 +49,7 @@ const KIND_CONFIG: Record<
 	image: {
 		accept: "image/jpeg,image/png,image/webp,image/gif,image/svg+xml",
 		noun: "gambar",
-		hint: "JPG, PNG, WebP, GIF, SVG — maks 2MB",
+		hint: "JPG, PNG, WebP, GIF, SVG — maks 10MB, otomatis dikompresi",
 	},
 	pdf: {
 		accept: "application/pdf,.pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document",

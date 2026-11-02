@@ -345,7 +345,7 @@ export class AuthController {
   @Post('profile/photo')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(
-    FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }),
+    FileInterceptor('file', { limits: { fileSize: 8 * 1024 * 1024 } }),
   )
   async updateAvatar(
     @CurrentUser() user: AuthenticatedUser,

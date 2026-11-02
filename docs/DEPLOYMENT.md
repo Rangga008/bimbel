@@ -11,11 +11,13 @@ Panduan menjalankan Bimbel GFS via Docker Compose — dari dev lokal sampai VPS 
 | `postgres` | postgres:16-alpine | 5432 | Database utama |
 | `redis` | redis:7-alpine | 6379 | Rate-limit/throttling terdistribusi |
 | `rabbitmq` | rabbitmq:3.13-management-alpine | 5672, 15672 | Antrean job (outbox WA, poin) — UI di :15672 |
-| `minio` | bitnamilegacy/minio | 9000, 9001 | Object storage media (console di :9001) |
+| `minio` *(opsional)* | bitnamilegacy/minio | 9000, 9001 | Profile `storage` — tidak start otomatis; media disimpan di Postgres |
 
 Volume persisten: `postgres-data`, `redis-data`, `rabbitmq-data`, `minio-data`, `api-uploads` (bukti pembayaran).
 
 > RabbitMQ opsional: bila `RABBITMQ_URL` dikosongkan, API berjalan mode in-process — berguna di environment managed tanpa broker (mis. Railway).
+>
+> MinIO ada di profile `storage` dan **tidak start otomatis** — aplikasi menyimpan media sebagai bytes ter-optimasi di Postgres (bukan object storage), jadi MinIO hanya boros ~300MB RAM bila jalan tanpa dipakai. Aktifkan hanya bila dibutuhkan: `docker compose --profile storage up -d`.
 
 Kebutuhan server (minimum/rekomendasi/maksimal) lihat bagian **"Kebutuhan server"** di [README.md](../README.md).
 

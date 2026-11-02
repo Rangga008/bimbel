@@ -5,13 +5,23 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { createHmac, randomUUID } from 'node:crypto';
-import { access, mkdir, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  readdir,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
+import { MediaService } from '../media/media.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PhoneVerificationService } from '../../common/phone-verification/phone-verification.service';
 import { NotificationEventsService } from '../notifications/notification-events.service';
@@ -90,8 +100,9 @@ export const paymentDetailInclude = {
  * - Gateway dummy: initiate → PENDING; webhook valid → VERIFIED + alokasi + receipt.
  */
 @Injectable()
-export class PaymentsService {
+export class PaymentsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PaymentsService.name);
+  private proofSweepTimer: NodeJS.Timeout | null = null;
   private readonly dummyGateway: DummyGatewayProvider;
   private midtransGateway: MidtransGatewayProvider | null = null;
   private midtransKey = '';
@@ -1269,19 +1280,79 @@ export class PaymentsService {
     'application/pdf': '.pdf',
   };
 
+  /** Masa simpan file bukti yatim (upload tapi payment tak pernah dibuat). */
+  private static readonly PROOF_ORPHAN_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
+
+  onModuleInit() {
+    // Sweep harian: bukti yang diupload tapi tidak pernah direferensikan
+    // payment (user batal submit) dibersihkan agar disk tidak membengkak.
+    void this.sweepOrphanProofs();
+    this.proofSweepTimer = setInterval(
+      () => void this.sweepOrphanProofs(),
+      24 * 3600 * 1000,
+    );
+    this.proofSweepTimer.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.proofSweepTimer) clearInterval(this.proofSweepTimer);
+  }
+
+  /** Hapus file proofDir yang tidak direferensikan payment & lebih tua 7 hari. */
+  private async sweepOrphanProofs() {
+    try {
+      const files = await readdir(this.proofDir);
+      const rows = await this.prisma.payment.findMany({
+        where: { proofUrl: { startsWith: 'proofs/' } },
+        select: { proofUrl: true },
+      });
+      const referenced = new Set(
+        rows.map((r) => basename(r.proofUrl ?? '')),
+      );
+      const cutoff =
+        Date.now() - PaymentsService.PROOF_ORPHAN_MAX_AGE_MS;
+      let removed = 0;
+      for (const name of files) {
+        if (referenced.has(name)) continue;
+        const p = join(this.proofDir, name);
+        try {
+          const st = await stat(p);
+          if (st.mtimeMs < cutoff) {
+            await unlink(p);
+            removed++;
+          }
+        } catch {
+          // Abaikan file yang hilang/tak bisa dibaca.
+        }
+      }
+      if (removed) {
+        this.logger.log(`Sweep bukti yatim: ${removed} file dihapus.`);
+      }
+    } catch (e) {
+      this.logger.warn(`Sweep bukti yatim gagal: ${String(e)}`);
+    }
+  }
+
   async saveProofFile(file: { buffer: Buffer; mimetype: string } | undefined) {
     if (!file?.buffer?.length) {
       throw new BadRequestException('File bukti kosong atau tidak terbaca.');
     }
-    const ext = PaymentsService.PROOF_MIME_EXT[file.mimetype];
-    if (!ext) {
+    if (!PaymentsService.PROOF_MIME_EXT[file.mimetype]) {
       throw new BadRequestException(
         'Format bukti harus JPG, PNG, WebP, atau PDF.',
       );
     }
+    // Foto struk/kamera dikompresi → WebP 1600px (biasanya 8MB → ±150KB);
+    // PDF disimpan apa adanya.
+    let buf = file.buffer;
+    let ext = PaymentsService.PROOF_MIME_EXT[file.mimetype];
+    if (file.mimetype !== 'application/pdf') {
+      buf = await MediaService.optimizeImage(buf, 1600);
+      ext = '.webp';
+    }
     await mkdir(this.proofDir, { recursive: true });
     const filename = `${randomUUID()}${ext}`;
-    await writeFile(join(this.proofDir, filename), file.buffer);
+    await writeFile(join(this.proofDir, filename), buf);
     return { proofUrl: `proofs/${filename}` };
   }
 

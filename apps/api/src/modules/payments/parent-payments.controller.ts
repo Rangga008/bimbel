@@ -94,14 +94,14 @@ export class ParentPaymentsController {
   }
 
   /**
-   * Upload file bukti nyata (JPG/PNG/WebP/PDF, maks 2MB — buffer memory, divalidasi
-   * & ditulis service). Mengembalikan `proofUrl` token untuk dipakai di
-   * POST /me/payments/manual-proof.
+   * Upload file bukti nyata (JPG/PNG/WebP/PDF, maks 8MB — foto langsung
+   * dikompresi WebP 1600px di server jadi biasanya hanya ±150KB yang disimpan).
+   * Mengembalikan `proofUrl` token untuk dipakai di POST /me/payments/manual-proof.
    */
   @Post('me/payments/proof-upload')
   @RequirePermissions(PERMISSION_CODES.PAYMENT_CREATE)
   @UseInterceptors(
-    FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }),
+    FileInterceptor('file', { limits: { fileSize: 8 * 1024 * 1024 } }),
   )
   uploadProof(
     @UploadedFile() file: { buffer: Buffer; mimetype: string } | undefined,

@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Post,
+  Req,
   Res,
   UploadedFile,
   UseGuards,
@@ -14,7 +15,7 @@ import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import { unlink } from 'fs/promises';
 import { createGzip } from 'zlib';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../../modules/auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../modules/auth/current-user.decorator';
 import type { AuthenticatedUser } from '../../modules/auth/types/authenticated-user.type';
@@ -51,6 +52,8 @@ export class BackupController {
 
     res.setHeader('Content-Type', 'application/gzip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    // Dump database berisi seluruh data aplikasi — jangan pernah dicache proxy/browser.
+    res.setHeader('Cache-Control', 'no-store');
 
     const child = this.backup.spawnExport();
     const gzip = createGzip({ level: 6 });
@@ -87,6 +90,13 @@ export class BackupController {
       .catch(() => undefined);
   }
 
+  /** Ringkasan pemakaian storage (DB + media + bukti) untuk panel Pengaturan. */
+  @Get('storage')
+  @RequirePermissions(PERMISSION_CODES.BACKUP_MANAGE)
+  storage() {
+    return this.backup.storageStats();
+  }
+
   @Post('import')
   @RequirePermissions(PERMISSION_CODES.BACKUP_MANAGE)
   @UseInterceptors(
@@ -106,6 +116,7 @@ export class BackupController {
     @UploadedFile()
     file: { path: string; originalname: string; size: number } | undefined,
     @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
   ) {
     if (!file) throw new BadRequestException('File backup wajib diunggah.');
     const name = file.originalname.toLowerCase();
@@ -115,7 +126,15 @@ export class BackupController {
         'Format file tidak dikenal — gunakan file .sql atau .sql.gz hasil export.',
       );
     }
-    await this.backup.importDump(file.path);
+    if (file.size === 0) {
+      await unlink(file.path).catch(() => undefined);
+      throw new BadRequestException(
+        'File backup kosong — unggah file hasil export yang berisi data.',
+      );
+    }
+    // Restore DB besar bisa lebih lama dari request timeout default server.
+    req.setTimeout(11 * 60 * 1000);
+    await this.backup.importDump(file.path, name.endsWith('.gz'));
     await this.audit
       .log({
         actorId: actor.id,

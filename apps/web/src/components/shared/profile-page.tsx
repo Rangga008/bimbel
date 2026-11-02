@@ -246,7 +246,7 @@ export function ProfilePage() {
 										</Button>
 									) : null}
 									<p className="text-xs text-muted-foreground">
-										JPG/PNG/WebP/GIF/SVG — maks 2MB.
+										JPG/PNG/WebP/GIF/SVG — maks 8MB, otomatis dikompresi.
 									</p>
 								</div>
 							</div>

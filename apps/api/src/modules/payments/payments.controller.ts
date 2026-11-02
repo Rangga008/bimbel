@@ -102,6 +102,8 @@ export class PaymentsController {
     const file = await this.payments.getProofFile(id, actor);
     res.setHeader('Content-Type', file.contentType);
     res.setHeader('Content-Disposition', 'inline');
+    // Nama file UUID — konten tak pernah berubah; cache privat 1 hari.
+    res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
     createReadStream(file.path).pipe(res);
   }
 

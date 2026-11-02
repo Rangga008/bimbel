@@ -4,9 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { readFile, unlink } from 'node:fs/promises';
+import sharp from 'sharp';
 import { join } from 'node:path';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PERMISSION_CODES } from '../rbac/permissions.constants';
@@ -59,6 +60,48 @@ export class MediaService {
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   ];
   private static readonly DEFAULT_MAX_SIZE = 2 * 1024 * 1024;
+
+  /** MIME gambar raster yang dioptimasi (di-resize + konversi WebP).
+   * SVG di-skip (vektor sudah kecil & disajikan sebagai attachment), GIF
+   * di-skip agar animasi tidak hilang. */
+  private static readonly OPTIMIZABLE_MIMES = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+  ]);
+
+  /** Dimensi maksimum sisi terpanjang per kategori pemakaian. */
+  private static maxDimFor(category: MediaCategory | undefined): number {
+    return category === 'PROFILE' ? 384 : 1600;
+  }
+
+  /**
+   * Optimasi gambar raster → WebP: koreksi orientasi EXIF (foto HP sering
+   * tersimpan miring), batasi dimensi, lalu kompresi q82. Foto kamera
+   * 3–10MB umumnya turun ke ±50–300KB — penyimpanan & payload ke siswa
+   * menyusut drastis. Melempar BadRequest bila bytes bukan gambar valid.
+   */
+  static async optimizeImage(
+    buffer: Buffer,
+    maxDim: number,
+  ): Promise<Buffer> {
+    try {
+      return await sharp(buffer)
+        .rotate()
+        .resize({
+          width: maxDim,
+          height: maxDim,
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .webp({ quality: 82 })
+        .toBuffer();
+    } catch {
+      throw new BadRequestException(
+        'File bukan gambar yang valid — konversi ke JPG/PNG lalu coba lagi.',
+      );
+    }
+  }
 
   private toDto(asset: {
     id: string;
@@ -157,6 +200,7 @@ export class MediaService {
       uploadedById: actor.id,
       maxSize,
       category,
+      dedupe: true,
     });
   }
 
@@ -172,39 +216,68 @@ export class MediaService {
       uploadedById?: string | null;
       maxSize?: number;
       category?: MediaCategory;
+      /** true → aset identik (kategori + sha256 sama) tidak disimpan ulang. */
+      dedupe?: boolean;
+      /** Override dimensi maksimum gambar (default per kategori). */
+      maxDim?: number;
     },
   ) {
     if (!buffer.length) {
       throw new BadRequestException('File kosong atau tidak terbaca.');
     }
-    const ext = MediaService.ALLOWED_MIME_EXT[opts.mime];
-    if (!ext) {
+    if (!MediaService.ALLOWED_MIME_EXT[opts.mime]) {
       throw new BadRequestException(
         'Format file harus JPG, PNG, WebP, GIF, SVG, atau PDF.',
       );
     }
+    const category = opts.category ?? 'ACADEMIC';
+
+    // Gambar raster → WebP terkompresi; dokumen/SVG/GIF disimpan apa adanya.
+    let buf = buffer;
+    let mime = opts.mime;
+    if (MediaService.OPTIMIZABLE_MIMES.has(mime)) {
+      buf = await MediaService.optimizeImage(
+        buf,
+        opts.maxDim ?? MediaService.maxDimFor(category),
+      );
+      mime = 'image/webp';
+    }
     const maxSize =
-      opts.maxSize ?? MediaService.MAX_SIZE[opts.mime] ?? MediaService.DEFAULT_MAX_SIZE;
-    if (buffer.length > maxSize) {
+      opts.maxSize ??
+      MediaService.MAX_SIZE[opts.mime] ??
+      MediaService.DEFAULT_MAX_SIZE;
+    if (buf.length > maxSize) {
       throw new BadRequestException(
         `Ukuran file melebihi batas ${Math.round(maxSize / 1024 / 1024)}MB.`,
       );
     }
-    // Bytes disimpan di DB — filesystem container bisa ephemeral (Railway/
-    // Fly) jadi disk tidak bisa diandalkan. Disk tetap ditulis sebagai cache
-    // lokal agar aset lama & dev tetap jalan; failure diabaikan.
-    await mkdir(this.mediaDir, { recursive: true }).catch(() => undefined);
-    const filename = `${randomUUID()}${ext}`;
-    await writeFile(join(this.mediaDir, filename), buffer).catch(() => undefined);
+
+    // Dedupe konten: file identik (kategori + sha256) memakai aset yang sudah
+    // ada — diagram/logo yang sama sering diupload berulang untuk banyak soal.
+    const sha256 = createHash('sha256').update(buf).digest('hex');
+    if (opts.dedupe) {
+      const existing = await this.prisma.mediaAsset.findFirst({
+        where: { category, sha256 },
+        include: { uploadedBy: { select: { name: true } } },
+      });
+      if (existing) return this.toDto(existing);
+    }
+
+    // Bytes disimpan di DB sebagai satu-satunya salinan otoritatif — filesystem
+    // container bisa ephemeral (Railway/Fly). Disk TIDAK ditulis lagi untuk aset
+    // baru (menghindari penyimpanan ganda); getFile tetap membaca disk sebagai
+    // fallback untuk aset lama yang belum punya kolom data.
+    const filename = `${randomUUID()}${MediaService.ALLOWED_MIME_EXT[mime]}`;
     const asset = await this.prisma.mediaAsset.create({
       data: {
         filename,
-        data: new Uint8Array(buffer),
+        data: new Uint8Array(buf),
+        sha256,
         // Nama asli bisa mengandung karakter aneh — pangkas wajar saja.
         originalName: opts.originalName?.slice(0, 200) || filename,
-        mime: opts.mime,
-        size: buffer.length,
-        category: opts.category ?? 'ACADEMIC',
+        mime,
+        size: buf.length,
+        category,
         uploadedById: opts.uploadedById ?? null,
       },
     });

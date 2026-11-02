@@ -478,6 +478,20 @@ export class AuthService {
     return this.getProfile(userId);
   }
 
+  /** Avatar ter-dedupe bisa dipakai beberapa user — hapus asetnya hanya bila
+   *  tidak ada user lain yang masih menunjuk URL media yang sama. */
+  private async deleteAvatarAssetIfUnused(
+    avatarUrl: string | null | undefined,
+    exceptUserId: string,
+  ) {
+    const assetId = avatarUrl?.match(/\/api\/media\/([^/]+)\/file/)?.[1];
+    if (!assetId) return;
+    const stillUsed = await this.prisma.user.count({
+      where: { avatarUrl, NOT: { id: exceptUserId } },
+    });
+    if (stillUsed === 0) await this.media.deleteAssetInternal(assetId);
+  }
+
   /**
    * Foto profil self-service: simpan ke media kategori PROFILE (tidak muncul
    * di pustaka media), avatar lama dibersihkan supaya tidak yatim.
@@ -497,8 +511,8 @@ export class AuthService {
         'Format foto harus JPG, PNG, WebP, GIF, atau SVG.',
       );
     }
-    if (file.size > 2 * 1024 * 1024) {
-      throw new BadRequestException('Ukuran foto maksimal 2MB.');
+    if (file.size > 8 * 1024 * 1024) {
+      throw new BadRequestException('Ukuran foto maksimal 8MB.');
     }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.isActive) {
@@ -512,16 +526,18 @@ export class AuthService {
       uploadedById: userId,
       maxSize: 2 * 1024 * 1024,
       category: 'PROFILE',
+      dedupe: true,
     });
     const oldUrl = user.avatarUrl;
     await this.prisma.user.update({
       where: { id: userId },
       data: { avatarUrl: asset.url },
     });
-    // Bersihkan aset avatar lama (bila disimpan sebagai media PROFILE).
+    // Bersihkan aset avatar lama bila tidak dipakai user lain (dedupe dapat
+    // membuat satu media PROFILE dipakai beberapa akun).
     const oldId = oldUrl?.match(/\/api\/media\/([^/]+)\/file/)?.[1];
     if (oldId && oldId !== asset.id) {
-      await this.media.deleteAssetInternal(oldId);
+      await this.deleteAvatarAssetIfUnused(oldUrl, userId);
     }
     return this.getProfile(userId);
   }
@@ -539,8 +555,7 @@ export class AuthService {
       where: { id: userId },
       data: { avatarUrl: null },
     });
-    const oldId = oldUrl?.match(/\/api\/media\/([^/]+)\/file/)?.[1];
-    if (oldId) await this.media.deleteAssetInternal(oldId);
+    await this.deleteAvatarAssetIfUnused(oldUrl, userId);
     return this.getProfile(userId);
   }
 

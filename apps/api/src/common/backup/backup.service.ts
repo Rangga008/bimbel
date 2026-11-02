@@ -6,10 +6,12 @@ import {
 } from '@nestjs/common';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import { createReadStream } from 'fs';
-import { unlink } from 'fs/promises';
+import { open, readdir, stat, unlink } from 'fs/promises';
+import { join } from 'path';
 import { createGunzip } from 'zlib';
 import { pipeline } from 'stream/promises';
-import { Readable } from 'stream';
+import { PassThrough, Readable } from 'stream';
+import { PrismaService } from '../prisma/prisma.service';
 
 interface DbTarget {
   host: string;
@@ -37,6 +39,8 @@ export class BackupService {
   private readonly logger = new Logger(BackupService.name);
   /** Mutex sederhana — dua restore paralel bisa saling menimpa DROP/CREATE. */
   private restoreInProgress = false;
+
+  constructor(private readonly prisma: PrismaService) {}
 
   /** Parse DATABASE_URL → target koneksi untuk peralatan Postgres. */
   private target(): DbTarget {
@@ -100,68 +104,179 @@ export class BackupService {
    * Restore file SQL (polos atau .gz) ke database secara atomik.
    * Melempar BadRequestException dengan ringkasan error psql bila gagal.
    */
-  async importDump(filePath: string): Promise<void> {
+  async importDump(filePath: string, expectGzip?: boolean): Promise<void> {
     if (this.restoreInProgress) {
       throw new BadRequestException(
         'Restore lain sedang berjalan — tunggu sampai selesai.',
       );
     }
     this.restoreInProgress = true;
-    const t = this.target();
-    const head = Buffer.alloc(2);
-    const fd = await (await import('fs/promises')).open(filePath, 'r');
-    try {
-      await fd.read(head, 0, 2, 0);
-    } finally {
-      await fd.close();
-    }
-    const gzip = head[0] === 0x1f && head[1] === 0x8b;
-    const source: Readable = gzip
-      ? createReadStream(filePath).pipe(createGunzip())
-      : createReadStream(filePath);
 
-    const stderrChunks: Buffer[] = [];
-    const child = spawn(
-      'psql',
-      [
-        ...this.args(t),
-        '--single-transaction',
-        '-v',
-        'ON_ERROR_STOP=1',
-        '-q',
-      ],
-      { env: this.childEnv(t) },
+    // Timeout menjaga restore tidak menggantung selamanya saat menunggu lock
+    // dari koneksi aplikasi yang sedang aktif. Bisa ditambah di env produksi.
+    const timeoutMs = Number(
+      process.env.BACKUP_RESTORE_TIMEOUT_MS ?? 10 * 60 * 1000,
     );
-    child.stderr.on('data', (c: Buffer) => stderrChunks.push(c));
+    let timeout: NodeJS.Timeout | undefined;
 
     try {
-      await Promise.all([
-        pipeline(source, child.stdin),
-        new Promise<void>((resolve, reject) => {
-          child.on('error', reject);
-          child.on('close', (code) =>
-            code === 0
-              ? resolve()
-              : reject(
-                  new Error(
-                    `psql keluar dengan kode ${code}: ${Buffer.concat(stderrChunks)
-                      .toString()
-                      .slice(-2000)}`,
-                  ),
-                ),
-          );
-        }),
-      ]);
-      this.logger.log('Restore database selesai (transaksi tunggal).');
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      this.logger.error(`Restore database gagal: ${msg}`);
-      throw new BadRequestException(
-        `Restore gagal — database tidak berubah (rollback otomatis). Detail: ${msg.slice(-500)}`,
+      const t = this.target();
+      const fileStat = await stat(filePath);
+      if (fileStat.size === 0) {
+        throw new BadRequestException(
+          'File backup kosong — unggah file .sql/.sql.gz hasil export yang berisi data.',
+        );
+      }
+
+      const head = Buffer.alloc(2);
+      const fd = await open(filePath, 'r');
+      try {
+        await fd.read(head, 0, 2, 0);
+      } finally {
+        await fd.close();
+      }
+      const gzip = head[0] === 0x1f && head[1] === 0x8b;
+      if (expectGzip === true && !gzip) {
+        throw new BadRequestException(
+          'File .sql.gz tidak valid atau rusak — isinya bukan arsip gzip.',
+        );
+      }
+      if (expectGzip === false && gzip) {
+        throw new BadRequestException(
+          'File yang diunggah adalah gzip — gunakan nama berakhiran .sql.gz.',
+        );
+      }
+
+      const source: Readable = gzip
+        ? createReadStream(filePath).pipe(createGunzip())
+        : createReadStream(filePath);
+      const meter = new PassThrough();
+      let sqlBytes = 0;
+      meter.on('data', (chunk: Buffer) => {
+        sqlBytes += chunk.length;
+      });
+
+      const stderrChunks: Buffer[] = [];
+      const child = spawn(
+        'psql',
+        [
+          ...this.args(t),
+          '--single-transaction',
+          '-v',
+          'ON_ERROR_STOP=1',
+          '-q',
+        ],
+        { env: this.childEnv(t) },
       );
+      child.stderr.on('data', (c: Buffer) => stderrChunks.push(c));
+
+      let timedOut = false;
+      timeout = setTimeout(() => {
+        timedOut = true;
+        source.destroy();
+        child.stdin.destroy();
+        child.kill('SIGKILL');
+      }, timeoutMs);
+
+      const waitForClose = new Promise<void>((resolve, reject) => {
+        child.on('error', reject);
+        child.on('close', (code) =>
+          code === 0
+            ? resolve()
+            : reject(
+                new Error(
+                  `psql keluar dengan kode ${code}: ${Buffer.concat(stderrChunks)
+                    .toString()
+                    .slice(-2000)}`,
+                ),
+              ),
+        );
+      });
+
+      try {
+        // allSettled dipakai supaya error asli psql tidak tertutup error pipe
+        // (mis. EPIPE/premature close yang hanya akibat psql berhenti duluan).
+        const [pipeResult, psqlResult] = await Promise.allSettled([
+          pipeline(source, meter, child.stdin),
+          waitForClose,
+        ]);
+        if (timedOut) {
+          throw new Error(
+            `Restore melebihi batas ${Math.round(timeoutMs / 60000)} menit — kemungkinan menunggu lock database. Transaksi dibatalkan otomatis; coba lagi saat aplikasi tidak sibuk.`,
+          );
+        }
+        if (psqlResult.status === 'rejected') throw psqlResult.reason;
+        if (pipeResult.status === 'rejected') throw pipeResult.reason;
+        if (sqlBytes === 0) {
+          throw new Error(
+            'File backup tidak berisi perintah SQL — database tidak diubah.',
+          );
+        }
+        this.logger.log('Restore database selesai (transaksi tunggal).');
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        this.logger.error(`Restore database gagal: ${msg}`);
+        throw new BadRequestException(
+          `Restore gagal — database tidak berubah (rollback otomatis). Detail: ${msg.slice(-500)}`,
+        );
+      } finally {
+        if (timeout) clearTimeout(timeout);
+      }
     } finally {
       this.restoreInProgress = false;
       await unlink(filePath).catch(() => undefined);
     }
+  }
+
+  /**
+   * Ringkasan pemakaian storage untuk panel "Cadangan & Pemulihan":
+   * ukuran DB, total bytes media (kolom data, per kategori), dan file di disk
+   * (uploads/media aset lama + uploads/payment-proofs).
+   */
+  async storageStats() {
+    const dbRows = await this.prisma.$queryRaw<{ size: bigint }[]>`
+      SELECT pg_database_size(current_database()) AS size`;
+    const groups = await this.prisma.mediaAsset.groupBy({
+      by: ['category'],
+      _count: { _all: true },
+      _sum: { size: true },
+    });
+    const dirBytes = async (dir: string) => {
+      try {
+        const names = await readdir(dir);
+        let bytes = 0;
+        let count = 0;
+        for (const name of names) {
+          try {
+            const st = await stat(join(dir, name));
+            if (st.isFile()) {
+              bytes += st.size;
+              count++;
+            }
+          } catch {
+            // abaikan file yang hilang di tengah iterasi
+          }
+        }
+        return { count, bytes };
+      } catch {
+        return { count: 0, bytes: 0 };
+      }
+    };
+    const uploadsRoot = join(process.cwd(), 'uploads');
+    const [mediaDisk, proofDisk] = await Promise.all([
+      dirBytes(join(uploadsRoot, 'media')),
+      dirBytes(join(uploadsRoot, 'payment-proofs')),
+    ]);
+    return {
+      databaseBytes: Number(dbRows[0]?.size ?? 0),
+      mediaByCategory: groups.map((g) => ({
+        category: g.category,
+        count: g._count._all,
+        bytes: g._sum.size ?? 0,
+      })),
+      mediaDbBytes: groups.reduce((a, g) => a + (g._sum.size ?? 0), 0),
+      mediaDisk,
+      proofDisk,
+    };
   }
 }

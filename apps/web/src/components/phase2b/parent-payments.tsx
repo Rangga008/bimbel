@@ -614,7 +614,7 @@ export function ParentPayments() {
                     htmlFor="pay-proof"
                     label="File bukti transfer"
                     required
-                    hint="JPG/PNG/WebP/PDF, maks 2MB."
+                    hint="JPG/PNG/WebP/PDF, maks 8MB — foto otomatis dikompresi di server."
                   >
                     <Input
                       id="pay-proof"
