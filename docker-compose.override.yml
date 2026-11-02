@@ -22,8 +22,17 @@ services:
     ports: !override
       - "127.0.0.1:3000:3000"
     mem_limit: 1152m
+    # RabbitMQ dimatikan di host kecil ini (lihat service di bawah, profile
+    # "queue"): RABBITMQ_URL kosong → API memproses job in-process seperti
+    # mode yang didukung compose dasar.
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       NODE_OPTIONS: "--max-old-space-size=896"
+      RABBITMQ_URL: ""
     logging:
       driver: json-file
       options:
@@ -48,6 +57,9 @@ services:
         max-size: "5m"
         max-file: "2"
   rabbitmq:
+    # OPSIONAL — API berjalan in-process tanpa broker; hemat ~155MB RAM di
+    # host kecil. Aktifkan hanya bila perlu: docker compose --profile queue up -d
+    profiles: ["queue"]
     ports: !override
       - "127.0.0.1:5672:5672"
       - "127.0.0.1:15672:15672"
