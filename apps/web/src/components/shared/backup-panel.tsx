@@ -56,11 +56,35 @@ export function BackupPanel() {
     setNotice(null);
     try {
       const blob = await apiFetchBlob("/backup/export");
-      if (blob.size === 0) {
+      // pg_dump yang gagal di server lama bisa meninggalkan file ±20B berisi
+      // header gzip saja — jangan pernah menyimpan/mengizinkan restore file itu.
+      if (blob.size < 128) {
         throw new ApiError(
-          "Server mengirim file backup kosong. Coba ulangi export atau cek log API.",
+          `Server mengirim backup tidak valid (hanya ${blob.size} B). Coba ulangi export; bila tetap gagal, cek log pg_dump di API.`,
           500,
         );
+      }
+      // Bila browser mendukung DecompressionStream, validasi juga bahwa isi
+      // gzip benar-benar diawali dump Postgres — bukan header gzip kosong.
+      const Decompression = globalThis.DecompressionStream;
+      if (Decompression) {
+        try {
+          const reader = blob
+            .stream()
+            .pipeThrough(new Decompression("gzip"))
+            .getReader();
+          const first = await reader.read();
+          await reader.cancel().catch(() => undefined);
+          const head = new TextDecoder().decode(first.value ?? new Uint8Array());
+          if (first.done || !head.includes("PostgreSQL database dump")) {
+            throw new Error("invalid dump");
+          }
+        } catch {
+          throw new ApiError(
+            "File backup dari server tidak valid/corrupt — coba export ulang atau cek log pg_dump di API.",
+            500,
+          );
+        }
       }
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -197,15 +221,15 @@ export function BackupPanel() {
                 setFile(picked);
                 setNotice(null);
                 setError(
-                  picked && picked.size === 0
-                    ? "File yang dipilih kosong (0 B). Ini biasanya unduhan gagal/berhenti — unduh ulang backup, tunggu selesai, lalu pilih file .sql.gz hasilnya."
+                  picked && picked.size < 128
+                    ? "File yang dipilih tidak valid (kurang dari 128 B). Ini biasanya unduhan gagal/berhenti — unduh ulang backup, tunggu selesai, lalu pilih file .sql.gz hasilnya."
                     : null,
                 );
               }}
             />
             <Button
               variant="destructive"
-              disabled={!file || file.size === 0 || importing}
+              disabled={!file || file.size < 128 || importing}
               onClick={() => setConfirmOpen(true)}
             >
               {importing ? (

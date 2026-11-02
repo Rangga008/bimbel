@@ -26,7 +26,10 @@ RUN npm run build
 FROM node:22-alpine AS runtime
 WORKDIR /app
 # pg_dump/psql untuk fitur backup & restore database (halaman Pengaturan).
-RUN apk add --no-cache postgresql16-client
+# Pakai client Postgres terbaru yang tersedia di Alpine — pg_dump versi baru
+# tetap bisa membaca server Postgres yang lebih lama, sedangkan client lama
+# gagal saat server managed (Railway/dsb.) memakai Postgres versi lebih baru.
+RUN apk add --no-cache postgresql18-client
 ENV NODE_ENV=production
 ENV PRISMA_SCHEMA_ENGINE_BINARY=/app/prisma-engines/schema-engine-linux-musl-openssl-3.0.x
 COPY --from=build /app/prisma-engines ./prisma-engines

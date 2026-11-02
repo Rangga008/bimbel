@@ -50,44 +50,86 @@ export class BackupController {
       .replace(':', '')}`;
     const filename = `bimbel-backup-${stamp}.sql.gz`;
 
-    res.setHeader('Content-Type', 'application/gzip');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    // Dump database berisi seluruh data aplikasi — jangan pernah dicache proxy/browser.
-    res.setHeader('Cache-Control', 'no-store');
-
     const child = this.backup.spawnExport();
-    const gzip = createGzip({ level: 6 });
+    const stderrChunks: Buffer[] = [];
+    child.stderr.on('data', (c: Buffer) => stderrChunks.push(c));
 
-    child.on('error', (e) => {
-      if (!res.headersSent) {
-        res
-          .status(500)
-          .json({ message: `pg_dump tidak tersedia di server: ${e.message}` });
-      } else res.destroy(e);
-    });
     // Client menutup koneksi lebih dulu → hentikan proses pg_dump.
     res.on('close', () => {
       if (!child.killed) child.kill();
     });
-    child.on('close', (code) => {
-      if (code !== 0) {
-        const msg = `pg_dump gagal (kode ${code}) — backup dibatalkan.`;
-        // Belum ada byte terkirim → masih bisa balas JSON 500.
-        if (!res.headersSent) res.status(500).json({ message: msg });
-        else if (res.writable) res.destroy(new Error(msg));
+
+    try {
+      // Jangan langsung pipe ke response: kalau pg_dump gagal sebelum output,
+      // gzip hanya mengirim header ~20B dengan status 200 dan browser menyimpan
+      // file kosong. Tunggu chunk pertama; error awal bisa dibalas JSON 500.
+      const firstChunk = await new Promise<Buffer | null>(
+        (resolve, reject) => {
+          const cleanup = () => {
+            child.stdout.off('readable', onReadable);
+            child.off('close', onClose);
+            child.off('error', onError);
+          };
+          const onReadable = () => {
+            const chunk = child.stdout.read() as Buffer | null;
+            cleanup();
+            resolve(chunk);
+          };
+          const onClose = (code: number | null) => {
+            cleanup();
+            if (code === 0) resolve(null);
+            else {
+              const detail = Buffer.concat(stderrChunks)
+                .toString()
+                .slice(-1000);
+              reject(
+                new Error(
+                  `pg_dump gagal (kode ${code})${detail ? `: ${detail}` : ''}`,
+                ),
+              );
+            }
+          };
+          const onError = (e: Error) => {
+            cleanup();
+            reject(e);
+          };
+          child.stdout.once('readable', onReadable);
+          child.once('close', onClose);
+          child.once('error', onError);
+        },
+      );
+      if (!firstChunk?.length) {
+        throw new Error('pg_dump tidak menghasilkan data SQL.');
       }
-    });
 
-    child.stdout.pipe(gzip).pipe(res);
+      res.setHeader('Content-Type', 'application/gzip');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      // Dump database berisi seluruh data aplikasi — jangan pernah dicache proxy/browser.
+      res.setHeader('Cache-Control', 'no-store');
 
-    await this.audit
-      .log({
-        actorId: actor.id,
-        action: 'backup.export',
-        entity: 'database',
-        entityId: filename,
-      })
-      .catch(() => undefined);
+      const gzip = createGzip({ level: 6 });
+      // Kembalikan chunk pertama ke antrean lalu stream sisanya — tidak ada
+      // byte SQL yang hilang.
+      child.stdout.unshift(firstChunk);
+      child.stdout.pipe(gzip).pipe(res);
+
+      await this.audit
+        .log({
+          actorId: actor.id,
+          action: 'backup.export',
+          entity: 'database',
+          entityId: filename,
+        })
+        .catch(() => undefined);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!child.killed) child.kill();
+      if (!res.headersSent && !res.destroyed) {
+        res.status(500).json({ message: `Export backup gagal: ${msg}` });
+      } else if (res.writable) {
+        res.destroy(e instanceof Error ? e : new Error(msg));
+      }
+    }
   }
 
   /** Ringkasan pemakaian storage (DB + media + bukti) untuk panel Pengaturan. */
