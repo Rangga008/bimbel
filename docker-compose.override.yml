@@ -3,24 +3,67 @@
 #   oleh route Next.js ke container api.
 # - API & service infra hanya bind ke localhost host — akses lewat SSH tunnel
 #   bila perlu (mis. ssh -L 15672:localhost:15672 user@host).
+# - Limit memory + heap Node: server 3.8GB tanpa swap — tanpa limit, satu
+#   container membesar bisa memicu OOM-killer membunuh Postgres/API.
+# - Rotasi log json-file: tanpa ini log tumbuh tak terbatas di disk 19GB.
 services:
   web:
     ports: !override
       - "80:3000"
+    mem_limit: 640m
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=448"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
   api:
     ports: !override
       - "127.0.0.1:3000:3000"
+    mem_limit: 1152m
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=896"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
   postgres:
     ports: !override
       - "127.0.0.1:5432:5432"
+    mem_limit: 640m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
   redis:
     ports: !override
       - "127.0.0.1:6379:6379"
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
   rabbitmq:
     ports: !override
       - "127.0.0.1:5672:5672"
       - "127.0.0.1:15672:15672"
+    mem_limit: 384m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
   minio:
     ports: !override
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"

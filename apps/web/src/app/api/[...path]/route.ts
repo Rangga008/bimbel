@@ -47,6 +47,13 @@ async function proxy(
 	// browser lalu gagal decode (ERR_CONTENT_DECODING_FAILED).
 	headers.set("accept-encoding", "identity");
 
+	// Teruskan IP klien asli ke API (rate-limit per-IP & audit). Ambil hanya
+	// entry PALING KANAN XFF — itu yang ditambahkan server Next dari socket;
+	// entry di kirinya bisa dipalsukan client untuk menghindari rate limit.
+	const xff = req.headers.get("x-forwarded-for");
+	const clientIp = xff?.split(",").pop()?.trim();
+	if (clientIp) headers.set("x-forwarded-for", clientIp);
+
 	const hasBody = req.method !== "GET" && req.method !== "HEAD";
 	const upstream = await fetch(target, {
 		method: req.method,
