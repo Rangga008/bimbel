@@ -109,9 +109,13 @@ export class BackupController {
 
       const gzip = createGzip({ level: 6 });
       // Kembalikan chunk pertama ke antrean lalu stream sisanya — tidak ada
-      // byte SQL yang hilang.
+      // byte SQL yang hilang. Sanitizer membuang baris dump yang hanya
+      // dipahami Postgres/psql versi baru agar file portable.
       child.stdout.unshift(firstChunk);
-      child.stdout.pipe(gzip).pipe(res);
+      child.stdout
+        .pipe(this.backup.sanitizeDumpStream())
+        .pipe(gzip)
+        .pipe(res);
 
       await this.audit
         .log({

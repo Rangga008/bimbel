@@ -10,7 +10,9 @@ import { open, readdir, stat, unlink } from 'fs/promises';
 import { join } from 'path';
 import { createGunzip } from 'zlib';
 import { pipeline } from 'stream/promises';
-import { PassThrough, Readable } from 'stream';
+import { PassThrough, Readable, Transform } from 'stream';
+import { StringDecoder } from 'string_decoder';
+import type { TransformCallback } from 'stream';
 import { PrismaService } from '../prisma/prisma.service';
 
 interface DbTarget {
@@ -19,6 +21,53 @@ interface DbTarget {
   user: string;
   password: string;
   database: string;
+}
+
+/**
+ * pg_dump ≥17 mengeluarkan `SET transaction_timeout = 0;` di header dump dan
+ * ≥17.4/18 menambah meta-command `\restrict`/`\unrestrict` — keduanya tidak
+ * dikenal Postgres/psql versi lebih tua (mis. server PG16) sehingga restore
+ * `ON_ERROR_STOP=1` gagal total (rollback) padahal data/schema sepenuhnya
+ * kompatibel. Stream ini membuang baris-baris tsb saat lewat — hanya pengaturan
+ * sesi/pengaman dump, tidak pernah bagian dari data. Aman dibuang dua arah:
+ * file hasil export jadi portable & restore tidak lagi gagal di server lama.
+ */
+class StripUnsupportedLinesStream extends Transform {
+  private pending = '';
+  private readonly decoder = new StringDecoder('utf8');
+  private static readonly DROP_LINE =
+    /^[ \t]*(?:SET[ \t]+transaction_timeout[ \t]*=.*|\\(?:un)?restrict\b.*)$/i;
+
+  override _transform(
+    chunk: Buffer,
+    _encoding: BufferEncoding,
+    callback: TransformCallback,
+  ): void {
+    this.pending += this.decoder.write(chunk);
+    // Proses hanya baris yang sudah utuh — sisa (mungkin baris terpotong atau
+    // karakter UTF-8 multi-byte yang terbelah) ditahan untuk chunk berikut.
+    const lastNl = this.pending.lastIndexOf('\n');
+    if (lastNl < 0) {
+      callback();
+      return;
+    }
+    const done = this.pending.slice(0, lastNl + 1);
+    this.pending = this.pending.slice(lastNl + 1);
+    callback(null, this.strip(done));
+  }
+
+  override _flush(callback: TransformCallback): void {
+    this.pending += this.decoder.end();
+    callback(null, this.strip(this.pending));
+    this.pending = '';
+  }
+
+  private strip(text: string): string {
+    return text
+      .split('\n')
+      .filter((line) => !StripUnsupportedLinesStream.DROP_LINE.test(line))
+      .join('\n');
+  }
 }
 
 /**
@@ -98,6 +147,15 @@ export class BackupService {
       this.logger.warn(`pg_dump: ${chunk.toString().trim()}`),
     );
     return child;
+  }
+
+  /**
+   * Stream yang membuang baris dump yang tidak didukung server tujuan
+   * (lihat StripUnsupportedLinesStream). Dipakai di jalur import dan juga
+   * disisipkan controller sebelum gzip pada export.
+   */
+  sanitizeDumpStream(): Transform {
+    return new StripUnsupportedLinesStream();
   }
 
   /**
@@ -197,7 +255,12 @@ export class BackupService {
         // allSettled dipakai supaya error asli psql tidak tertutup error pipe
         // (mis. EPIPE/premature close yang hanya akibat psql berhenti duluan).
         const [pipeResult, psqlResult] = await Promise.allSettled([
-          pipeline(source, meter, child.stdin),
+          pipeline(
+            source,
+            new StripUnsupportedLinesStream(),
+            meter,
+            child.stdin,
+          ),
           waitForClose,
         ]);
         if (timedOut) {

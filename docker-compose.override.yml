@@ -1,0 +1,26 @@
+# Override deploy publik (auto-loaded oleh docker compose):
+# - Hanya port 80 (web) yang diekspos ke internet; /api/* diproxy same-origin
+#   oleh route Next.js ke container api.
+# - API & service infra hanya bind ke localhost host — akses lewat SSH tunnel
+#   bila perlu (mis. ssh -L 15672:localhost:15672 user@host).
+services:
+  web:
+    ports: !override
+      - "80:3000"
+  api:
+    ports: !override
+      - "127.0.0.1:3000:3000"
+  postgres:
+    ports: !override
+      - "127.0.0.1:5432:5432"
+  redis:
+    ports: !override
+      - "127.0.0.1:6379:6379"
+  rabbitmq:
+    ports: !override
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+  minio:
+    ports: !override
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"

@@ -42,6 +42,10 @@ async function proxy(
 	req.headers.forEach((value, key) => {
 		if (!HOP_BY_HOP.has(key.toLowerCase())) headers.set(key, value);
 	});
+	// Jangan minta kompresi ke upstream: fetch Node mendekode body secara
+	// transparan tapi header content-encoding ikut diteruskan apa adanya —
+	// browser lalu gagal decode (ERR_CONTENT_DECODING_FAILED).
+	headers.set("accept-encoding", "identity");
 
 	const hasBody = req.method !== "GET" && req.method !== "HEAD";
 	const upstream = await fetch(target, {
@@ -56,7 +60,8 @@ async function proxy(
 	const resHeaders = new Headers();
 	upstream.headers.forEach((value, key) => {
 		const k = key.toLowerCase();
-		if (!HOP_BY_HOP.has(k) && k !== "set-cookie") resHeaders.append(key, value);
+		if (!HOP_BY_HOP.has(k) && k !== "set-cookie" && k !== "content-encoding")
+			resHeaders.append(key, value);
 	});
 	// Response.headers menggabungkan multi Set-Cookie — ambil tiap-tiap via getSetCookie.
 	const getSetCookie = (
