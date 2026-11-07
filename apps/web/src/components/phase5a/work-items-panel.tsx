@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton';
 import { ComboboxField } from '@/components/shared/combobox-field';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { CurrencyInput } from '@/components/shared/currency-input';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -320,13 +321,12 @@ export function WorkItemsPanel({ period, canManage }: { period: string; canManag
                 value={manual.quantity}
                 onChange={(e) => setManual({ ...manual, quantity: e.target.value })}
               />
-              <input
-                type="number"
-                min={0}
+              <CurrencyInput
                 className={selectCls}
                 placeholder="Tarif/unit (kosong = tarif SPECIAL_TASK)"
                 value={manual.unitAmount}
-                onChange={(e) => setManual({ ...manual, unitAmount: e.target.value })}
+                onChange={(v) => setManual({ ...manual, unitAmount: v })}
+                showPreview={false}
               />
             </div>
             <DialogFooter>
@@ -373,13 +373,12 @@ export function WorkItemsPanel({ period, canManage }: { period: string; canManag
               value={editForm.quantity}
               onChange={(e) => setEditForm({ ...editForm, quantity: e.target.value })}
             />
-            <input
-              type="number"
-              min={0}
+            <CurrencyInput
               className={selectCls}
               placeholder="Tarif/unit manual (opsional — override)"
               value={editForm.unitAmount}
-              onChange={(e) => setEditForm({ ...editForm, unitAmount: e.target.value })}
+              onChange={(v) => setEditForm({ ...editForm, unitAmount: v })}
+              showPreview={false}
             />
             <DialogFooter>
               <Button type="submit" disabled={updateM.isPending}>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api-client";
+import { ComboboxField } from "@/components/shared/combobox-field";
 import { PodiumBoard } from "./podium-board";
 import type { LeaderboardEntry } from "./leaderboard-card";
 
@@ -93,27 +94,27 @@ export function AdminPodiumBoard() {
 					<input type="checkbox" checked={allTime} onChange={(e) => setAllTime(e.target.checked)} />
 					Semua waktu
 				</label>
-				<select
-					className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-					value={groupId}
-					onChange={(e) => setGroupId(e.target.value)}
-				>
-					{groupsQ.data?.map((g) => (
-						<option key={g.id} value={g.id}>{g.name}</option>
-					))}
-				</select>
+				<div className="w-full sm:w-56">
+					<ComboboxField
+						id="podium-group"
+						value={groupId}
+						onChange={setGroupId}
+						options={(groupsQ.data ?? []).map((g) => ({ value: g.id, label: g.name }))}
+						placeholder="Pilih kelompok"
+					/>
+				</div>
 				{/* Kolom gedung hanya untuk role yang boleh lihat daftar gedung
 					(tutor tidak punya building.view → /buildings 403, kolom disembunyikan). */}
 				{!buildingsQ.isError ? (
-					<select
-						className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-						value={buildingId}
-						onChange={(e) => setBuildingId(e.target.value)}
-					>
-						{buildingsQ.data?.map((b) => (
-							<option key={b.id} value={b.id}>{b.name}</option>
-						))}
-					</select>
+					<div className="w-full sm:w-56">
+						<ComboboxField
+							id="podium-building"
+							value={buildingId}
+							onChange={setBuildingId}
+							options={(buildingsQ.data ?? []).map((b) => ({ value: b.id, label: b.name }))}
+							placeholder="Pilih gedung"
+						/>
+					</div>
 				) : null}
 			</div>
 			<PodiumBoard

@@ -212,10 +212,9 @@ export class AuthController {
   }
 
   /**
-   * Minta link reset password via email.
-   * Catatan: `identifier` = email ATAU nomor HP — dipilah di AuthService. Origin request dipakai sebagai base
-   * URL link (fallback env WEB_APP_URL) supaya cocok dengan host yang diakses
-   * user. Selalu 200 — tidak membocorkan apakah email terdaftar.
+   * Minta kode OTP reset password — `identifier` bisa email ATAU nomor HP;
+   * kanal kirim (email/WhatsApp) dipilih di AuthService. Selalu 200 dengan
+   * respons generik agar tidak membocorkan akun yang terdaftar.
    */
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
@@ -223,14 +222,20 @@ export class AuthController {
   async forgotPassword(@Body() dto: ForgotPasswordDto, @Req() req: Request) {
     const origin =
       typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
-    return this.authService.requestPasswordReset(dto.email, origin);
+    return this.authService.requestPasswordReset(
+      dto.identifier ?? dto.email ?? '',
+      origin,
+    );
   }
 
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async resetPassword(@Body() dto: ResetPasswordDto) {
-    return this.authService.resetPassword(dto.token, dto.newPassword);
+    return this.authService.resetPassword(
+      { token: dto.token, identifier: dto.identifier, otp: dto.otp },
+      dto.newPassword,
+    );
   }
 
   @Post('refresh')

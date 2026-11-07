@@ -149,77 +149,73 @@ export function PaymentCard({ p, canVerify, onVerify }: { p: PaymentListItem; ca
   );
 }
 
-const TH = 'px-3 py-2 text-left font-medium whitespace-nowrap';
-const THR = 'px-3 py-2 text-right font-medium whitespace-nowrap';
-const TD = 'px-3 py-2 align-top';
-const TDR = 'px-3 py-2 text-right align-top';
-
-/** Versi tabel dari PaymentCard — daftar pembayaran padat, gampang dipindai. */
+/** Daftar pembayaran berbasis kartu — tetap nyaman di layar sempit tanpa
+ *  scroll horizontal panjang, dan semua aksi tetap terlihat. */
 export function PaymentsTable({ items, canVerify, onVerify }: { items: PaymentListItem[]; canVerify: boolean; onVerify: (id: string) => void }) {
   return (
-    <div className="overflow-x-auto rounded-md border">
-      <table className="w-full min-w-[880px] text-sm">
-        <thead>
-          <tr className="border-b bg-muted/50">
-            <th className={TH}>Invoice / Ref</th>
-            <th className={TH}>Siswa &amp; Kelas</th>
-            <th className={TH}>Dari (Orang Tua)</th>
-            <th className={TH}>Metode</th>
-            <th className={THR}>Jumlah</th>
-            <th className={TH}>Status</th>
-            <th className={TH}>Bukti</th>
-            <th className={TH}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((p) => {
-            const inv = p.allocations?.[0]?.invoice;
-            const enr = inv?.enrollmentLink ?? inv?.enrollment;
-            const kelas = enr?.group?.name ?? [enr?.program?.name, enr?.level?.name].filter(Boolean).join(' · ');
-            return (
-            <tr key={p.id} className="border-b last:border-0">
-              <td className={`${TD} whitespace-nowrap font-medium`}>
-                {inv?.number ?? p.providerRef ?? p.id.slice(0, 8)}
-                {p.account ? <p className="text-xs font-normal text-muted-foreground">{p.account.name}</p> : null}
-                {p.receipts?.[0] ? <p className="text-xs font-normal text-muted-foreground">Kwitansi {p.receipts[0].number}</p> : null}
-              </td>
-              <td className={TD}>
-                {inv?.student?.user?.name ? <p className="font-medium whitespace-nowrap">{inv.student.user.name}</p> : null}
-                {kelas ? <p className="text-xs text-muted-foreground">{kelas}</p> : null}
-                {!inv?.student && !kelas ? <span className="text-xs text-muted-foreground">—</span> : null}
-              </td>
-              <td className={`${TD} text-muted-foreground`}>
-                {(inv?.student?.parentStudents ?? []).map((ps) => ps.parent.user.name).join(', ') || '—'}
-              </td>
-              <td className={`${TD} whitespace-nowrap`}>
-                {p.method} <span className="text-xs text-muted-foreground">({p.channel})</span>
-              </td>
-              <td className={`${TDR} font-medium tabular-nums whitespace-nowrap`}>{rupiah(p.amount)}</td>
-              <td className={`${TD} whitespace-nowrap`}>
+    <div className="grid gap-3">
+      {items.map((p) => {
+        const inv = p.allocations?.[0]?.invoice;
+        const enr = inv?.enrollmentLink ?? inv?.enrollment;
+        const kelas = enr?.group?.name ?? [enr?.program?.name, enr?.level?.name].filter(Boolean).join(' · ');
+        const parents = (inv?.student?.parentStudents ?? []).map((ps) => ps.parent.user.name).join(', ');
+        return (
+          <Card key={p.id}>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 pb-3">
+              <div className="min-w-0">
+                <CardTitle className="text-base font-semibold">
+                  {inv?.number ?? p.providerRef ?? p.id.slice(0, 8)}
+                </CardTitle>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {p.account?.name ? `${p.account.name} · ` : ''}
+                  {p.receipts?.[0] ? `Kwitansi ${p.receipts[0].number}` : 'Belum ada kwitansi'}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
                 <ChannelBadges p={p} />
-                {p.rejectReason ? <p className="mt-0.5 text-xs text-destructive">Ditolak: {p.rejectReason}</p> : null}
-              </td>
-              <td className={`${TD} whitespace-nowrap`}>
-                {p.proofUrl?.startsWith('proofs/') ? (
-                  <Button variant="outline" size="sm" className="text-xs" onClick={() => openProof(p.id)}>
-                    Lihat Bukti
-                  </Button>
-                ) : p.proofUrl ? (
-                  <span className="text-xs text-muted-foreground">{p.proofUrl}</span>
-                ) : (
-                  <span className="text-xs text-muted-foreground">—</span>
-                )}
-              </td>
-              <td className={`${TD} whitespace-nowrap text-right`}>
-                {canVerify && p.status === 'PENDING' ? (
+                <span className="font-semibold tabular-nums">{rupiah(p.amount)}</span>
+              </div>
+            </CardHeader>
+            <CardContent className="grid gap-3 pt-0 text-sm sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Siswa & Kelas</p>
+                <p className="mt-1 font-medium">{inv?.student?.user?.name || '—'}</p>
+                {kelas ? <p className="text-xs text-muted-foreground">{kelas}</p> : null}
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Orang Tua</p>
+                <p className="mt-1">{parents || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Metode</p>
+                <p className="mt-1">{p.method} <span className="text-xs text-muted-foreground">({p.channel})</span></p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Bukti</p>
+                <div className="mt-1">
+                  {p.proofUrl?.startsWith('proofs/') ? (
+                    <Button variant="outline" size="sm" className="text-xs" onClick={() => openProof(p.id)}>
+                      Lihat Bukti
+                    </Button>
+                  ) : p.proofUrl ? (
+                    <p className="break-all text-xs text-muted-foreground">{p.proofUrl}</p>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </div>
+              </div>
+              {p.rejectReason ? (
+                <p className="text-xs text-destructive sm:col-span-2 lg:col-span-4">Ditolak: {p.rejectReason}</p>
+              ) : null}
+              {canVerify && p.status === 'PENDING' ? (
+                <div className="sm:col-span-2 lg:col-span-4">
                   <Button variant="outline" size="sm" onClick={() => onVerify(p.id)}>Verifikasi</Button>
-                ) : null}
-              </td>
-            </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 }

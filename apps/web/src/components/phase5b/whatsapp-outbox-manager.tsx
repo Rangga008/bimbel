@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ListPager } from "@/components/shared/list-pager";
+import { ComboboxField } from "@/components/shared/combobox-field";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 
 interface OutboxStats {
@@ -71,6 +72,7 @@ const EVENT_TYPE_FILTERS = [
 	{ value: "GROUP_REMINDER", label: "Reminder kelompok (ortu/siswa)" },
 	{ value: "TUTOR_WEEKLY_SCHEDULE", label: "Jadwal mingguan tutor" },
 	{ value: "TUTOR_ABSENCE", label: "Ketidakhadiran tutor" },
+	{ value: "PASSWORD_RESET_OTP", label: "OTP reset kata sandi" },
 	{ value: "TEST", label: "Pesan uji" },
 ] as const;
 
@@ -228,19 +230,21 @@ export function WhatsAppOutboxManager({
 								{f.label}
 							</Button>
 						))}
-						<select
-							className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-							value={eventType}
-							onChange={(e) => {
-								setEventType(e.target.value);
-								setPage(0);
-							}}
-							aria-label="Filter tipe antrean"
-						>
-							{EVENT_TYPE_FILTERS.map((f) => (
-								<option key={f.value} value={f.value}>{f.label}</option>
-							))}
-						</select>
+						<div className="w-full sm:w-64">
+							<ComboboxField
+								id="wa-event-filter"
+								value={eventType}
+								onChange={(v) => {
+									setEventType(v);
+									setPage(0);
+								}}
+								options={EVENT_TYPE_FILTERS.filter((f) => f.value !== "").map((f) => ({
+									value: f.value,
+									label: f.label,
+								}))}
+								placeholder="Semua tipe"
+							/>
+						</div>
 						<Button
 							size="sm"
 							variant="outline"

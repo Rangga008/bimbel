@@ -15,6 +15,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ComboboxField } from "@/components/shared/combobox-field";
+import { CurrencyInput } from "@/components/shared/currency-input";
 import { apiFetch, ApiError } from "@/lib/api-client";
 
 interface PricingLevel {
@@ -169,15 +171,31 @@ function LevelPricingForm({
 		setForm({ ...form, [k]: v });
 		setDirty(true);
 	};
-	const num = (k: NumField) => (
-		<Input
-			type="number"
-			min={0}
-			className="h-8"
-			value={form[k]}
-			onChange={(e) => set(k)(e.target.value)}
-		/>
-	);
+	const MONEY_FIELDS = new Set<NumField>([
+		"price",
+		"fullPayPrice",
+		"installment2x",
+		"monthlyAmount",
+		"promoPrice",
+		"registrationFee",
+	]);
+	const num = (k: NumField) =>
+		MONEY_FIELDS.has(k) ? (
+			<CurrencyInput
+				className="h-8"
+				showPreview={false}
+				value={form[k]}
+				onChange={(v) => set(k)(v)}
+			/>
+		) : (
+			<Input
+				type="number"
+				min={0}
+				className="h-8"
+				value={form[k]}
+				onChange={(e) => set(k)(e.target.value)}
+			/>
+		);
 
 	const isReguler = level.priceUnit === "YEAR";
 	const isSession = level.priceUnit === "SESSION";
@@ -330,41 +348,32 @@ export function PricingManager() {
 			{catalogQ.isLoading ? <Skeleton className="h-48 w-full" /> : null}
 			{programs.length > 0 ? (
 				<div className="grid gap-2 sm:grid-cols-2">
-					<div className="flex flex-col gap-1.5">
-						<Label>Program</Label>
-						<select
-							className="border-input bg-background h-9 rounded-md border px-3 text-sm"
-							value={programId}
-							onChange={(e) => {
-								setProgramId(e.target.value);
-								setLevelId("");
-							}}
-						>
-							<option value="">— Pilih program —</option>
-							{programs.map((p) => (
-								<option key={p.id} value={p.id}>
-									{p.name} ({CATEGORY_LABEL[p.category] ?? p.category})
-								</option>
-							))}
-						</select>
-					</div>
-					<div className="flex flex-col gap-1.5">
-						<Label>Jenjang</Label>
-						<select
-							className="border-input bg-background h-9 rounded-md border px-3 text-sm"
-							value={levelId}
-							disabled={!activeProgram}
-							onChange={(e) => setLevelId(e.target.value)}
-						>
-							<option value="">— Pilih jenjang —</option>
-							{activeProgram?.levels.map((l) => (
-								<option key={l.id} value={l.id}>
-									{l.gradeLevel ? `${l.gradeLevel.name} · ` : ""}
-									{l.name}
-								</option>
-							))}
-						</select>
-					</div>
+					<ComboboxField
+						id="pricing-program"
+						label="Program"
+						value={programId}
+						onChange={(v) => {
+							setProgramId(v);
+							setLevelId("");
+						}}
+						options={programs.map((p) => ({
+							value: p.id,
+							label: `${p.name} (${CATEGORY_LABEL[p.category] ?? p.category})`,
+						}))}
+						placeholder="Pilih program"
+					/>
+					<ComboboxField
+						id="pricing-level"
+						label="Jenjang"
+						value={levelId}
+						onChange={setLevelId}
+						disabled={!activeProgram}
+						options={(activeProgram?.levels ?? []).map((l) => ({
+							value: l.id,
+							label: `${l.gradeLevel ? `${l.gradeLevel.name} · ` : ""}${l.name}`,
+						}))}
+						placeholder="Pilih jenjang"
+					/>
 				</div>
 			) : null}
 			{activeProgram ? (
@@ -378,12 +387,11 @@ export function PricingManager() {
 								</CardDescription>
 							</div>
 							<div className="flex items-end gap-2">
-								<div className="flex flex-col gap-1">
-									<Label className="text-xs">Biaya pendaftaran program (Rp)</Label>
-									<Input
-										type="number"
-										min={0}
-										className="h-8 w-40"
+								<div className="flex w-48 flex-col gap-1">
+									<Label className="text-xs">Biaya pendaftaran program</Label>
+									<CurrencyInput
+										className="h-8"
+										showPreview={false}
 										value={
 											regFees[activeProgram.id] ??
 											(activeProgram.registrationFee === null ||
@@ -391,8 +399,8 @@ export function PricingManager() {
 												? ""
 												: String(activeProgram.registrationFee))
 										}
-										onChange={(e) => {
-											setRegFees((m) => ({ ...m, [activeProgram.id]: e.target.value }));
+										onChange={(v) => {
+											setRegFees((m) => ({ ...m, [activeProgram.id]: v }));
 											setRegFeeDirty((m) => ({ ...m, [activeProgram.id]: true }));
 										}}
 									/>

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ComboboxField } from "@/components/shared/combobox-field";
 import { apiFetch } from "@/lib/api-client";
 import type {
 	AuditLogListResponse,
@@ -75,60 +76,36 @@ export function AuditLogsViewer() {
 
 			<Card>
 				<CardContent className="flex flex-wrap items-end gap-2 py-4">
-					<label className="flex flex-col gap-1 text-xs">
-						Actor
-						<select
-							className={selectCls}
+					<div className="w-full sm:w-48">
+						<ComboboxField
+							id="audit-actor"
+							label="Actor"
 							value={actorId}
-							onChange={(e) => {
-								setActorId(e.target.value);
-								setPage(1);
-							}}
-						>
-							<option value="">Semua</option>
-							{metaQ.data?.actors.map((a) => (
-								<option key={a.id} value={a.id}>
-									{a.name}
-								</option>
-							))}
-						</select>
-					</label>
-					<label className="flex flex-col gap-1 text-xs">
-						Action
-						<select
-							className={selectCls}
+							onChange={(v) => { setActorId(v); setPage(1); }}
+							options={(metaQ.data?.actors ?? []).map((a) => ({ value: a.id, label: a.name }))}
+							placeholder="Semua"
+						/>
+					</div>
+					<div className="w-full sm:w-56">
+						<ComboboxField
+							id="audit-action"
+							label="Action"
 							value={action}
-							onChange={(e) => {
-								setAction(e.target.value);
-								setPage(1);
-							}}
-						>
-							<option value="">Semua</option>
-							{metaQ.data?.actions.map((a) => (
-								<option key={a} value={a}>
-									{a}
-								</option>
-							))}
-						</select>
-					</label>
-					<label className="flex flex-col gap-1 text-xs">
-						Entity
-						<select
-							className={selectCls}
+							onChange={(v) => { setAction(v); setPage(1); }}
+							options={(metaQ.data?.actions ?? []).map((a) => ({ value: a, label: a }))}
+							placeholder="Semua"
+						/>
+					</div>
+					<div className="w-full sm:w-48">
+						<ComboboxField
+							id="audit-entity"
+							label="Entity"
 							value={entity}
-							onChange={(e) => {
-								setEntity(e.target.value);
-								setPage(1);
-							}}
-						>
-							<option value="">Semua</option>
-							{metaQ.data?.entities.map((en) => (
-								<option key={en} value={en}>
-									{en}
-								</option>
-							))}
-						</select>
-					</label>
+							onChange={(v) => { setEntity(v); setPage(1); }}
+							options={(metaQ.data?.entities ?? []).map((en) => ({ value: en, label: en }))}
+							placeholder="Semua"
+						/>
+					</div>
 					<label className="flex flex-col gap-1 text-xs">
 						Dari
 						<input

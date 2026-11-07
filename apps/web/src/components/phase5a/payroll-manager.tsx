@@ -12,6 +12,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { ComboboxField } from '@/components/shared/combobox-field';
+import { CurrencyInput } from '@/components/shared/currency-input';
 import { EmptyState } from '@/components/shared/empty-state';
 import { ListPager } from '@/components/shared/list-pager';
 import { SkeletonTableRows } from '@/components/shared/skeletons';
@@ -454,14 +455,15 @@ export function PayrollManager({ canManage }: { canManage: boolean }) {
                       adjM.mutate();
                     }}
                   >
-                    <div className="flex flex-col gap-1">
+                    <div className="flex w-48 flex-col gap-1">
                       <label className="text-xs text-muted-foreground">Nominal (+/−)</label>
-                      <input
-                        type="number"
+                      <CurrencyInput
                         className={selectCls}
                         value={adjForm.amount}
-                        onChange={(e) => setAdjForm({ ...adjForm, amount: e.target.value })}
+                        onChange={(v) => setAdjForm({ ...adjForm, amount: v })}
                         required
+                        allowNegative
+                        showPreview={false}
                       />
                     </div>
                     <div className="flex min-w-48 flex-1 flex-col gap-1">

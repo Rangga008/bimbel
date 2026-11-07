@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FormField, SubmitButton } from '@/components/shared/form-field';
+import { CurrencyInput } from '@/components/shared/currency-input';
 import { apiFetch } from '@/lib/api-client';
 import { rupiah } from '@/components/phase2a/invoices-manager';
 import type { PaymentAccount, PaymentListItem, ReceiptItem } from '@/lib/phase2b-types';
@@ -556,8 +557,8 @@ export function ParentPayments() {
                     : checkout.package?.name ? ` · ${checkout.package.name}` : ''}
                 </p>
               </div>
-              <FormField htmlFor="pay-amount" label="Nominal yang dibayar (Rp)" required hint={`Sisa tagihan ${rupiah(Number(checkout.totalAmount) - Number(checkout.amountPaid))} — bisa bayar sebagian (angsuran).`}>
-                <Input id="pay-amount" type="number" min={1000} max={Number(checkout.totalAmount) - Number(checkout.amountPaid)} required value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <FormField htmlFor="pay-amount" label="Nominal yang dibayar" required hint={`Sisa tagihan ${rupiah(Number(checkout.totalAmount) - Number(checkout.amountPaid))} — bisa bayar sebagian (angsuran).`}>
+                <CurrencyInput id="pay-amount" required value={amount} onChange={setAmount} />
               </FormField>
               {mode === 'MANUAL' ? (
                 <>

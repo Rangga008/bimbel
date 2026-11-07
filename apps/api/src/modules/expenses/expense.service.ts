@@ -91,13 +91,13 @@ export class ExpenseService {
     return this.prisma.$transaction(async (tx) => {
       const expense = await tx.expense.create({
         data: {
-          budgetId: dto.budgetId,
+          budgetId: dto.budgetId ?? null,
           accountId: dto.accountId,
           amount: new Prisma.Decimal(String(dto.amount)),
           description: dto.description.trim(),
           category: dto.category,
           occurredAt: new Date(dto.occurredAt),
-          receiptUrl: dto.receiptUrl,
+          receiptUrl: dto.receiptUrl ?? null,
           createdBy: actorId,
         },
       });

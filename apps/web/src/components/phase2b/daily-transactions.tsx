@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { CurrencyInput } from '@/components/shared/currency-input';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { rupiah } from '@/components/phase2a/invoices-manager';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
@@ -353,10 +354,14 @@ export function DailyTransactions() {
               placeholder={accountsQ.isLoading ? 'Memuat akun...' : 'Pilih akun...'}
               required
             />
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="daily-amt">Nominal (Rp)</Label>
-              <Input id="daily-amt" type="number" min={1} required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="mis. 25000" />
-            </div>
+            <CurrencyInput
+              id="daily-amt"
+              label="Nominal"
+              required
+              value={amount}
+              onChange={setAmount}
+              placeholder="mis. 25.000"
+            />
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="daily-desc">Keterangan</Label>
               <Input id="daily-desc" required maxLength={500} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="mis. Beli spidol / Melayani tamu" />

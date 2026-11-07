@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ComboboxField } from "@/components/shared/combobox-field";
+import { EnrollmentStatusTabs } from "./status-tabs";
 import { PrintStatementButton } from "./statement-print";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import type { GroupListItem } from "@/lib/phase1b-types";
@@ -119,25 +120,12 @@ export function AcademicEnrollments() {
 					Tempatkan siswa baru yang sudah diverifikasi finance ke kelompok belajar.
 				</p>
 			</div>
-			<div className="flex flex-wrap gap-1.5">
-				{STATUS_FILTERS.map((f) => (
-					<button
-						key={f.value || "all"}
-						type="button"
-						onClick={() => setStatus(f.value)}
-						className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-							status === f.value
-								? "border-primary bg-primary text-primary-foreground"
-								: "bg-background hover:border-primary/50"
-						}`}
-					>
-						{f.label}
-						<span className={`ml-1.5 tabular-nums ${status === f.value ? "opacity-80" : "text-muted-foreground"}`}>
-							{countOf(f.value)}
-						</span>
-					</button>
-				))}
-			</div>
+			<EnrollmentStatusTabs
+				options={STATUS_FILTERS}
+				value={status}
+				countOf={countOf}
+				onChange={setStatus}
+			/>
 
 			{/* Filter pencarian + program — difilter lokal dari daftar lengkap. */}
 			<div className="flex flex-wrap items-center gap-2">
@@ -147,16 +135,15 @@ export function AcademicEnrollments() {
 					value={search}
 					onChange={(e) => setSearch(e.target.value)}
 				/>
-				<select
-					className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-					value={programId}
-					onChange={(e) => setProgramId(e.target.value)}
-				>
-					<option value="">Semua program</option>
-					{programOptions.map(([id, name]) => (
-						<option key={id} value={id}>{name}</option>
-					))}
-				</select>
+				<div className="w-full sm:w-56">
+					<ComboboxField
+						id="academic-enr-program-filter"
+						value={programId}
+						onChange={setProgramId}
+						options={programOptions.map(([id, name]) => ({ value: id, label: name }))}
+						placeholder="Semua program"
+					/>
+				</div>
 				{(search || programId) ? (
 					<Button variant="ghost" size="sm" onClick={() => { setSearch(""); setProgramId(""); }}>
 						Reset filter

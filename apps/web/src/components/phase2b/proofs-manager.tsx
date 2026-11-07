@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ListPager } from '@/components/shared/list-pager';
+import { ComboboxField } from '@/components/shared/combobox-field';
 import { apiFetch } from '@/lib/api-client';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { PaymentsEmpty, PaymentsTable, VerifyDialog, usePaymentsList } from '@/components/phase2b/payment-shared';
@@ -60,30 +61,46 @@ function FilterSelects({
   const studentOptions = memberIds ? o.students.filter((s) => memberIds.has(s.id)) : o.students;
   return (
     <>
-      <select className={SEL} value={f.levelId} onChange={(e) => set('levelId', e.target.value)} aria-label="Filter jenjang">
-        <option value="">Semua jenjang</option>
-        {o.levels.map((l) => (
-          <option key={l.id} value={l.id}>{l.name}</option>
-        ))}
-      </select>
-      <select className={SEL} value={f.groupId} onChange={(e) => set('groupId', e.target.value)} aria-label="Filter kelompok">
-        <option value="">Semua kelompok</option>
-        {groupOptions.map((g) => (
-          <option key={g.id} value={g.id}>{g.name}</option>
-        ))}
-      </select>
-      <select className={SEL} value={f.studentId} onChange={(e) => set('studentId', e.target.value)} aria-label="Filter siswa">
-        <option value="">{memberIds ? 'Semua anggota kelompok' : 'Semua siswa'}</option>
-        {studentOptions.map((s) => (
-          <option key={s.id} value={s.id}>{s.user.name}</option>
-        ))}
-      </select>
-      <select className={SEL} value={f.channel} onChange={(e) => set('channel', e.target.value)} aria-label="Filter channel">
-        <option value="">Semua channel</option>
-        <option value="MANUAL">MANUAL</option>
-        <option value="GATEWAY">GATEWAY</option>
-        <option value="CASH">CASH</option>
-      </select>
+      <div className="w-full sm:w-44">
+        <ComboboxField
+          id="proof-level-filter"
+          value={f.levelId}
+          onChange={(v) => set('levelId', v)}
+          options={o.levels.map((l) => ({ value: l.id, label: l.name }))}
+          placeholder="Semua jenjang"
+        />
+      </div>
+      <div className="w-full sm:w-52">
+        <ComboboxField
+          id="proof-group-filter"
+          value={f.groupId}
+          onChange={(v) => set('groupId', v)}
+          options={groupOptions.map((g) => ({ value: g.id, label: g.name }))}
+          placeholder="Semua kelompok"
+        />
+      </div>
+      <div className="w-full sm:w-56">
+        <ComboboxField
+          id="proof-student-filter"
+          value={f.studentId}
+          onChange={(v) => set('studentId', v)}
+          options={studentOptions.map((s) => ({ value: s.id, label: s.user.name }))}
+          placeholder={memberIds ? 'Semua anggota kelompok' : 'Semua siswa'}
+        />
+      </div>
+      <div className="w-full sm:w-40">
+        <ComboboxField
+          id="proof-channel-filter"
+          value={f.channel}
+          onChange={(v) => set('channel', v)}
+          options={[
+            { value: 'MANUAL', label: 'MANUAL' },
+            { value: 'GATEWAY', label: 'GATEWAY' },
+            { value: 'CASH', label: 'CASH' },
+          ]}
+          placeholder="Semua channel"
+        />
+      </div>
     </>
   );
 }
@@ -149,12 +166,19 @@ function ProofsHistory({
           onChange={(e) => { setHistMonth(e.target.value); setPage(0); }}
           aria-label="Bulan riwayat"
         />
-        <select className={SEL} value={histStatus} onChange={(e) => { setHistStatus(e.target.value); setPage(0); }} aria-label="Filter status">
-          <option value="">Semua status</option>
-          <option value="VERIFIED">Terverifikasi</option>
-          <option value="REJECTED">Ditolak</option>
-          <option value="PENDING">Pending</option>
-        </select>
+        <div className="w-full sm:w-44">
+          <ComboboxField
+            id="proof-history-status"
+            value={histStatus}
+            onChange={(v) => { setHistStatus(v); setPage(0); }}
+            options={[
+              { value: 'VERIFIED', label: 'Terverifikasi' },
+              { value: 'REJECTED', label: 'Ditolak' },
+              { value: 'PENDING', label: 'Pending' },
+            ]}
+            placeholder="Semua status"
+          />
+        </div>
         <FilterSelects f={filters} set={(k, v) => { setFilter(k, v); setPage(0); }} o={o} memberIds={memberIds} />
       </div>
 

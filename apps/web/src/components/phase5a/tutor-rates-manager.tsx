@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ComboboxField } from '@/components/shared/combobox-field';
+import { CurrencyInput } from '@/components/shared/currency-input';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -221,14 +222,13 @@ export function TutorRatesManager({ canManage }: { canManage: boolean }) {
               ))}
             </select>
             <div className="grid gap-2 sm:grid-cols-2">
-              <input
-                type="number"
-                min={0}
+              <CurrencyInput
                 className={selectCls}
-                placeholder="Nominal (Rp)"
+                placeholder="Nominal"
                 value={form.amount}
-                onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                onChange={(v) => setForm({ ...form, amount: v })}
                 required
+                showPreview={false}
               />
               <select
                 className={selectCls}

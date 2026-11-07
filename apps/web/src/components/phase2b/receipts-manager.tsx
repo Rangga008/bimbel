@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ComboboxField } from '@/components/shared/combobox-field';
 import { apiFetch } from '@/lib/api-client';
 import { rupiah } from '@/components/phase2a/invoices-manager';
 import { PrintReceiptButton } from '@/components/phase2b/receipt-print';
@@ -52,18 +53,24 @@ export function ReceiptsManager({ title }: { title: string }) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={studentId} onChange={(e) => setStudentId(e.target.value)} aria-label="Filter siswa">
-          <option value="">Semua siswa</option>
-          {(studentsQ.data ?? []).map((s) => (
-            <option key={s.id} value={s.id}>{s.user.name}</option>
-          ))}
-        </select>
-        <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={groupId} onChange={(e) => setGroupId(e.target.value)} aria-label="Filter kelompok">
-          <option value="">Semua kelompok</option>
-          {(groupsQ.data ?? []).map((g) => (
-            <option key={g.id} value={g.id}>{g.name}</option>
-          ))}
-        </select>
+        <div className="w-full sm:w-56">
+          <ComboboxField
+            id="receipt-student-filter"
+            value={studentId}
+            onChange={setStudentId}
+            options={(studentsQ.data ?? []).map((s) => ({ value: s.id, label: s.user.name }))}
+            placeholder="Semua siswa"
+          />
+        </div>
+        <div className="w-full sm:w-52">
+          <ComboboxField
+            id="receipt-group-filter"
+            value={groupId}
+            onChange={setGroupId}
+            options={(groupsQ.data ?? []).map((g) => ({ value: g.id, label: g.name }))}
+            placeholder="Semua kelompok"
+          />
+        </div>
       </div>
       {listQ.isLoading ? <Skeleton className="h-24 w-full" /> : null}
       {listQ.data?.length === 0 ? (

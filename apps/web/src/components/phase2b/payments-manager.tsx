@@ -5,6 +5,8 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ComboboxField } from '@/components/shared/combobox-field';
+import { CurrencyInput } from '@/components/shared/currency-input';
 import { apiFetch } from '@/lib/api-client';
 import { rupiah } from '@/components/phase2a/invoices-manager';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
@@ -136,30 +138,50 @@ export function PaymentsManager({ canVerify }: { canVerify: boolean }) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter status">
-          <option value="">Semua status</option>
-          <option value="PENDING">PENDING</option>
-          <option value="VERIFIED">VERIFIED</option>
-          <option value="REJECTED">REJECTED</option>
-        </select>
-        <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={channel} onChange={(e) => setChannel(e.target.value)} aria-label="Filter channel">
-          <option value="">Semua channel</option>
-          <option value="CASH">CASH</option>
-          <option value="MANUAL">MANUAL</option>
-          <option value="GATEWAY">GATEWAY</option>
-        </select>
-        <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={filterStudent} onChange={(e) => setFilterStudent(e.target.value)} aria-label="Filter siswa">
-          <option value="">Semua siswa</option>
-          {(filterStudentsQ.data ?? []).map((s) => (
-            <option key={s.id} value={s.id}>{s.user.name}</option>
-          ))}
-        </select>
-        <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={filterGroup} onChange={(e) => setFilterGroup(e.target.value)} aria-label="Filter kelompok">
-          <option value="">Semua kelompok</option>
-          {(groupsQ.data ?? []).map((g) => (
-            <option key={g.id} value={g.id}>{g.name}</option>
-          ))}
-        </select>
+        <div className="w-full sm:w-40">
+          <ComboboxField
+            id="pay-status-filter"
+            value={status}
+            onChange={setStatus}
+            options={[
+              { value: 'PENDING', label: 'PENDING' },
+              { value: 'VERIFIED', label: 'VERIFIED' },
+              { value: 'REJECTED', label: 'REJECTED' },
+            ]}
+            placeholder="Semua status"
+          />
+        </div>
+        <div className="w-full sm:w-40">
+          <ComboboxField
+            id="pay-channel-filter"
+            value={channel}
+            onChange={setChannel}
+            options={[
+              { value: 'CASH', label: 'CASH' },
+              { value: 'MANUAL', label: 'MANUAL' },
+              { value: 'GATEWAY', label: 'GATEWAY' },
+            ]}
+            placeholder="Semua channel"
+          />
+        </div>
+        <div className="w-full sm:w-56">
+          <ComboboxField
+            id="pay-student-filter"
+            value={filterStudent}
+            onChange={setFilterStudent}
+            options={(filterStudentsQ.data ?? []).map((s) => ({ value: s.id, label: s.user.name }))}
+            placeholder="Semua siswa"
+          />
+        </div>
+        <div className="w-full sm:w-52">
+          <ComboboxField
+            id="pay-group-filter"
+            value={filterGroup}
+            onChange={setFilterGroup}
+            options={(groupsQ.data ?? []).map((g) => ({ value: g.id, label: g.name }))}
+            placeholder="Semua kelompok"
+          />
+        </div>
       </div>
       <PaymentsEmpty isLoading={listQ.isLoading} isError={listQ.isError} count={listQ.data?.length} />
       {(listQ.data?.length ?? 0) > 0 ? (
@@ -273,10 +295,14 @@ export function PaymentsManager({ canVerify }: { canVerify: boolean }) {
                 </button>
               </div>
             )}
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="cash-amount">Nominal (Rp)</Label>
-              <Input id="cash-amount" type="number" min={1000} required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="mis. 1200000" />
-            </div>
+            <CurrencyInput
+              id="cash-amount"
+              label="Nominal"
+              required
+              value={amount}
+              onChange={setAmount}
+              placeholder="mis. 1.200.000"
+            />
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="cash-note">Catatan (opsional)</Label>
               <Input id="cash-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Diterima dari..." />

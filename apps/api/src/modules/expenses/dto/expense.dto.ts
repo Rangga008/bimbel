@@ -1,8 +1,9 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
 import { BudgetCategory } from '../../budget/dto/budget.dto';
 
 export class CreateExpenseDto {
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
   @IsOptional()
   @IsUUID('4', { message: 'budgetId tidak valid.' })
   budgetId?: string;
@@ -27,6 +28,7 @@ export class CreateExpenseDto {
   @IsNotEmpty({ message: 'Tanggal pengeluaran wajib diisi.' })
   occurredAt: string; // ISO date string
 
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
   @IsOptional()
   @IsString()
   @MaxLength(500, { message: 'URL bukti maksimal 500 karakter.' })
@@ -34,6 +36,7 @@ export class CreateExpenseDto {
 }
 
 export class UpdateExpenseDto {
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
   @IsOptional()
   @IsUUID('4', { message: 'budgetId tidak valid.' })
   budgetId?: string;
@@ -61,6 +64,7 @@ export class UpdateExpenseDto {
   @IsString()
   occurredAt?: string;
 
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
   @IsOptional()
   @IsString()
   @MaxLength(500, { message: 'URL bukti maksimal 500 karakter.' })

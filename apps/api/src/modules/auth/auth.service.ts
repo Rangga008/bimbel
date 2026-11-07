@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -14,6 +15,7 @@ import { UsersService } from '../users/users.service';
 import { MailerService } from '../mailer/mailer.service';
 import { MediaService } from '../media/media.service';
 import { SettingsService } from '../settings/settings.service';
+import { WhatsAppOutboxService } from '../whatsapp/whatsapp-outbox.service';
 import { AuthenticatedUser } from './types/authenticated-user.type';
 import { ROLE_NAMES } from '../rbac/permissions.constants';
 import type { RegisterParentDto } from './dto/register-parent.dto';
@@ -31,9 +33,14 @@ export interface IssuedTokens {
 }
 
 const REFRESH_TOKEN_BYTES = 48;
+const RESET_OTP_TTL_MINUTES = 10;
+const RESET_OTP_RESEND_SECONDS = 60;
+const RESET_OTP_MAX_ATTEMPTS = 5;
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
@@ -42,6 +49,7 @@ export class AuthService {
     private readonly mailer: MailerService,
     private readonly media: MediaService,
     private readonly settings: SettingsService,
+    private readonly waOutbox: WhatsAppOutboxService,
   ) {}
 
   private hashToken(token: string): string {
@@ -559,41 +567,170 @@ export class AuthService {
     return this.getProfile(userId);
   }
 
-  /**
-   * Kirim link reset password via email. Selalu mengembalikan sukses agar
-   * endpoint ini tidak bisa dipakai menebak email terdaftar.
-   */
-  async requestPasswordReset(email: string, origin: string | undefined) {
-    const user = await this.usersService.findByEmailWithRoles(email);
-    if (!user || !user.isActive) {
-      return { sent: true as const };
+  /** Normalisasi identifier reset: email lowercase atau nomor HP format 62xxx. */
+  private resetIdentifier(raw: string): {
+    channel: 'EMAIL' | 'WHATSAPP';
+    key: string;
+  } {
+    const value = raw.trim();
+    if (value.includes('@')) {
+      return { channel: 'EMAIL', key: value.toLowerCase() };
     }
-    const token = randomBytes(32).toString('hex');
-    await this.prisma.passwordResetToken.create({
-      data: {
-        userId: user.id,
-        tokenHash: this.hashToken(token),
-        expiresAt: new Date(Date.now() + 30 * 60 * 1000),
-      },
-    });
-    const branding = await this.settings.get('branding');
-    const base = (
-      origin ||
-      this.config.get<string>('WEB_APP_URL') ||
-      'http://localhost:3001'
-    ).replace(/\/+$/, '');
-    const link = `${base}/reset-password?token=${token}`;
-    await this.mailer.send({
-      to: user.email,
-      subject: `Reset kata sandi ${branding.appName}`,
-      text: `Halo ${user.name},\n\nKami menerima permintaan reset kata sandi untuk akun ${user.email}.\nBuka link berikut untuk membuat kata sandi baru (berlaku 30 menit, sekali pakai):\n\n${link}\n\nAbaikan email ini jika Anda tidak meminta reset.`,
-      html: `<p>Halo ${user.name},</p><p>Kami menerima permintaan reset kata sandi untuk akun <b>${user.email}</b>.</p><p><a href="${link}">Klik di sini untuk membuat kata sandi baru</a> (berlaku 30 menit, sekali pakai).</p><p>Abaikan email ini jika Anda tidak meminta reset.</p><p>— ${branding.appName}</p>`,
-    });
-    return { sent: true as const };
+    const digits = value.replace(/\D/g, '');
+    const key = digits.startsWith('0')
+      ? `62${digits.slice(1)}`
+      : digits.startsWith('8')
+        ? `62${digits}`
+        : digits;
+    return { channel: 'WHATSAPP', key };
   }
 
-  /** Setel ulang kata sandi dari token email; revoke semua sesi aktif. */
-  async resetPassword(token: string, newPassword: string) {
+  private maskResetDestination(destination: string, channel: 'EMAIL' | 'WHATSAPP') {
+    if (channel === 'EMAIL') {
+      const [local = '', domain = ''] = destination.split('@');
+      return `${local.slice(0, 2)}•••@${domain}`;
+    }
+    const digits = destination.replace(/\D/g, '');
+    if (digits.length <= 5) return '•••';
+    return `${digits.slice(0, 4)}•••${digits.slice(-3)}`;
+  }
+
+  private async findPasswordResetUser(
+    rawIdentifier: string,
+    channel: 'EMAIL' | 'WHATSAPP',
+    identifierKey: string,
+  ) {
+    const select = {
+      id: true,
+      email: true,
+      name: true,
+      phone: true,
+      isActive: true,
+    } as const;
+    if (channel === 'EMAIL') {
+      return this.prisma.user.findFirst({
+        where: {
+          isActive: true,
+          email: { equals: identifierKey, mode: 'insensitive' },
+        },
+        select,
+      });
+    }
+    // Bila data lama punya >1 akun aktif dengan nomor sama, pakai akun terbaru.
+    const candidates = await this.prisma.user.findMany({
+      where: {
+        isActive: true,
+        phone: { in: this.phoneVariants(rawIdentifier) },
+      },
+      orderBy: { createdAt: 'desc' },
+      select,
+    });
+    return candidates[0] ?? null;
+  }
+
+  /**
+   * Kirim OTP reset password ke email ATAU WhatsApp sesuai identifier.
+   * Selalu mengembalikan respons generik supaya endpoint ini tidak bisa dipakai
+   * menebak email/no HP yang terdaftar.
+   */
+  async requestPasswordReset(identifier: string, origin: string | undefined) {
+    void origin; // Flow lama memakai origin untuk link; OTP tidak butuh URL.
+    const parsed = this.resetIdentifier(identifier);
+    if (!parsed.key) {
+      throw new BadRequestException('Masukkan email atau nomor HP akun.');
+    }
+    const user = await this.findPasswordResetUser(
+      identifier,
+      parsed.channel,
+      parsed.key,
+    );
+    const fallback = {
+      sent: true as const,
+      channel: parsed.channel,
+      destination: this.maskResetDestination(identifier, parsed.channel),
+      expiresInMinutes: RESET_OTP_TTL_MINUTES,
+    };
+    if (!user) return fallback;
+
+    // Batas kirim ulang per identifier — OTP sebelumnya juga langsung dibatalkan
+    // supaya hanya kode terbaru yang valid.
+    const latest = await this.prisma.passwordResetOtp.findFirst({
+      where: { identifierKey: parsed.key },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    if (
+      latest &&
+      Date.now() - latest.createdAt.getTime() < RESET_OTP_RESEND_SECONDS * 1000
+    ) {
+      return fallback;
+    }
+
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const codeHash = await bcrypt.hash(code, 8);
+    const destination =
+      parsed.channel === 'EMAIL' ? user.email : user.phone || identifier;
+    const otp = await this.prisma.$transaction(async (tx) => {
+      await tx.passwordResetOtp.updateMany({
+        where: { identifierKey: parsed.key, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      return tx.passwordResetOtp.create({
+        data: {
+          userId: user.id,
+          channel: parsed.channel,
+          destination,
+          identifierKey: parsed.key,
+          codeHash,
+          expiresAt: new Date(Date.now() + RESET_OTP_TTL_MINUTES * 60 * 1000),
+        },
+      });
+    });
+
+    const branding = await this.settings.get('branding');
+    try {
+      if (parsed.channel === 'EMAIL') {
+        await this.mailer.send({
+          to: destination,
+          subject: `Kode reset kata sandi ${branding.appName}`,
+          text: `Halo ${user.name},\n\nKode reset kata sandi Anda: ${code}\n\nBerlaku ${RESET_OTP_TTL_MINUTES} menit. Jangan bagikan kode ini ke siapa pun.\nAbaikan email ini jika Anda tidak meminta reset.`,
+          html: `<p>Halo ${user.name},</p><p>Kode reset kata sandi Anda:</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px">${code}</p><p>Berlaku ${RESET_OTP_TTL_MINUTES} menit. Jangan bagikan kode ini ke siapa pun.</p><p>— ${branding.appName}</p>`,
+        });
+      } else {
+        // userId sengaja tidak dikirim — preferensi WA promo tidak boleh memblokir
+        // OTP pemulihan akun yang diminta langsung oleh pemilik nomor.
+        await this.waOutbox.enqueue({
+          phone: destination,
+          name: user.name,
+          eventType: 'PASSWORD_RESET_OTP',
+          referenceType: 'PasswordResetOtp',
+          referenceId: otp.id,
+          message:
+            `*${branding.appName}* — Kode reset kata sandi Anda: *${code}*\n\n` +
+            `Berlaku ${RESET_OTP_TTL_MINUTES} menit. Jangan bagikan kode ini ke siapa pun.`,
+        });
+      }
+    } catch (err) {
+      // Kegagalan kirim tidak boleh bocorkan eksistensi akun — batalkan OTP
+      // yang belum terkirim lalu tetap balas respons generik.
+      this.logger.warn(
+        `Gagal mengirim OTP reset via ${parsed.channel}: ${err instanceof Error ? err.message : err}`,
+      );
+      await this.prisma.passwordResetOtp
+        .delete({ where: { id: otp.id } })
+        .catch(() => undefined);
+      return fallback;
+    }
+    return {
+      sent: true as const,
+      channel: parsed.channel,
+      destination: this.maskResetDestination(destination, parsed.channel),
+      expiresInMinutes: RESET_OTP_TTL_MINUTES,
+    };
+  }
+
+  /** Legacy: reset dari token link email yang sudah terlanjur terkirim. */
+  private async resetPasswordWithToken(token: string, newPassword: string) {
     const rec = await this.prisma.passwordResetToken.findUnique({
       where: { tokenHash: this.hashToken(token) },
     });
@@ -607,10 +744,54 @@ export class AuthService {
       data: { usedAt: new Date() },
     });
     await this.usersService.resetPassword(rec.userId, newPassword);
-    await this.prisma.refreshToken.updateMany({
-      where: { userId: rec.userId, revokedAt: null },
-      data: { revokedAt: new Date() },
+    return { success: true as const };
+  }
+
+  /** Setel ulang kata sandi dari token link lama atau OTP email/WhatsApp. */
+  async resetPassword(
+    payload: { token?: string; identifier?: string; otp?: string },
+    newPassword: string,
+  ) {
+    if (payload.token) {
+      return this.resetPasswordWithToken(payload.token, newPassword);
+    }
+    const parsed = this.resetIdentifier(payload.identifier ?? '');
+    if (!parsed.key || !payload.otp) {
+      throw new BadRequestException(
+        'Masukkan email/nomor HP dan kode OTP 6 digit.',
+      );
+    }
+    const rec = await this.prisma.passwordResetOtp.findFirst({
+      where: { identifierKey: parsed.key, consumedAt: null },
+      orderBy: { createdAt: 'desc' },
     });
+    if (!rec || rec.expiresAt < new Date()) {
+      throw new BadRequestException('Kode OTP tidak valid atau kedaluwarsa.');
+    }
+    if (rec.attempts >= RESET_OTP_MAX_ATTEMPTS) {
+      throw new BadRequestException(
+        'Terlalu banyak percobaan salah — kirim ulang kode OTP baru.',
+      );
+    }
+    const match = await bcrypt.compare(payload.otp, rec.codeHash);
+    if (!match) {
+      await this.prisma.passwordResetOtp.update({
+        where: { id: rec.id },
+        data: { attempts: { increment: 1 } },
+      });
+      const left = RESET_OTP_MAX_ATTEMPTS - (rec.attempts + 1);
+      throw new BadRequestException(
+        left > 0
+          ? `Kode OTP salah — sisa percobaan ${left}x.`
+          : 'Kode OTP salah — kirim ulang kode baru.',
+      );
+    }
+    await this.prisma.passwordResetOtp.update({
+      where: { id: rec.id },
+      data: { consumedAt: new Date() },
+    });
+    // resetPassword() juga merevoke semua refresh token aktif.
+    await this.usersService.resetPassword(rec.userId, newPassword);
     return { success: true as const };
   }
 

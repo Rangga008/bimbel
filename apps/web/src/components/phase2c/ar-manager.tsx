@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ComboboxField } from '@/components/shared/combobox-field';
+import { CurrencyInput } from '@/components/shared/currency-input';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { rupiah } from '@/components/phase2a/invoices-manager';
@@ -277,56 +279,55 @@ export function ArManager({ canRefund }: { canRefund: boolean }) {
 
       <div className="flex flex-wrap gap-2">
         <Input placeholder="Cari nomor / nama siswa" value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
-        <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={reminder} onChange={(e) => setReminder(e.target.value)} aria-label="Filter reminder">
-          <option value="">Semua reminder</option>
-          <option value="NONE">Belum dikirim</option>
-          <option value="PENDING">PENDING</option>
-          <option value="SENT">Sudah dikirim</option>
-        </select>
-        <select
-          className="h-9 max-w-44 rounded-md border border-input bg-background px-3 text-sm"
-          value={studentId}
-          onChange={(e) => setStudentId(e.target.value)}
-          aria-label="Filter siswa"
-        >
-          <option value="">Semua siswa</option>
-          {(studentsQ.data ?? []).map((s) => (
-            <option key={s.id} value={s.id}>{s.user.name}</option>
-          ))}
-        </select>
-        <select
-          className="h-9 max-w-44 rounded-md border border-input bg-background px-3 text-sm"
-          value={programId}
-          onChange={(e) => { setProgramId(e.target.value); setLevelId(''); setGroupId(''); }}
-          aria-label="Filter program"
-        >
-          <option value="">Semua program</option>
-          {(programsQ.data ?? []).map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-        <select
-          className="h-9 max-w-44 rounded-md border border-input bg-background px-3 text-sm"
-          value={levelId}
-          onChange={(e) => { setLevelId(e.target.value); setGroupId(''); }}
-          aria-label="Filter jenjang"
-        >
-          <option value="">Semua jenjang</option>
-          {levelOpts.map((l) => (
-            <option key={l.id} value={l.id}>{l.name}</option>
-          ))}
-        </select>
-        <select
-          className="h-9 max-w-44 rounded-md border border-input bg-background px-3 text-sm"
-          value={groupId}
-          onChange={(e) => setGroupId(e.target.value)}
-          aria-label="Filter kelompok"
-        >
-          <option value="">Semua kelompok</option>
-          {groupOpts.map((g) => (
-            <option key={g.id} value={g.id}>{g.code ? `${g.code} — ${g.name}` : g.name}</option>
-          ))}
-        </select>
+        <div className="w-full sm:w-40">
+          <ComboboxField
+            id="ar-reminder-filter"
+            value={reminder}
+            onChange={setReminder}
+            options={[
+              { value: 'NONE', label: 'Belum dikirim' },
+              { value: 'PENDING', label: 'PENDING' },
+              { value: 'SENT', label: 'Sudah dikirim' },
+            ]}
+            placeholder="Semua reminder"
+          />
+        </div>
+        <div className="w-full sm:w-52">
+          <ComboboxField
+            id="ar-student-filter"
+            value={studentId}
+            onChange={setStudentId}
+            options={(studentsQ.data ?? []).map((s) => ({ value: s.id, label: s.user.name }))}
+            placeholder="Semua siswa"
+          />
+        </div>
+        <div className="w-full sm:w-52">
+          <ComboboxField
+            id="ar-program-filter"
+            value={programId}
+            onChange={(v) => { setProgramId(v); setLevelId(''); setGroupId(''); }}
+            options={(programsQ.data ?? []).map((p) => ({ value: p.id, label: p.name }))}
+            placeholder="Semua program"
+          />
+        </div>
+        <div className="w-full sm:w-48">
+          <ComboboxField
+            id="ar-level-filter"
+            value={levelId}
+            onChange={(v) => { setLevelId(v); setGroupId(''); }}
+            options={levelOpts.map((l) => ({ value: l.id, label: l.name }))}
+            placeholder="Semua jenjang"
+          />
+        </div>
+        <div className="w-full sm:w-52">
+          <ComboboxField
+            id="ar-group-filter"
+            value={groupId}
+            onChange={setGroupId}
+            options={groupOpts.map((g) => ({ value: g.id, label: g.code ? `${g.code} — ${g.name}` : g.name }))}
+            placeholder="Semua kelompok"
+          />
+        </div>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={overdue} onChange={(e) => setOverdue(e.target.checked)} />
           Jatuh tempo saja
@@ -380,10 +381,13 @@ export function ArManager({ canRefund }: { canRefund: boolean }) {
             <p className="text-sm text-muted-foreground">
               Outstanding {refundInv ? rupiah(refundInv.outstanding) : '—'} · Dibayar {refundInv ? rupiah(refundInv.amountPaid) : '—'}
             </p>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="rf-amount">Nominal (Rp)</Label>
-              <Input id="rf-amount" type="number" min={1} required value={amount} onChange={(e) => setAmount(e.target.value)} />
-            </div>
+            <CurrencyInput
+              id="rf-amount"
+              label="Nominal"
+              required
+              value={amount}
+              onChange={setAmount}
+            />
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="rf-reason">Alasan</Label>
               <Input id="rf-reason" required maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Mis. siswa berhenti, sisa sesi dikembalikan" />

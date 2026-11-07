@@ -19,6 +19,9 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
+import { ComboboxField } from "@/components/shared/combobox-field";
+import { CurrencyInput } from "@/components/shared/currency-input";
+import { EnrollmentStatusTabs } from "./status-tabs";
 import { PrintStatementButton } from "./statement-print";
 import { apiFetch, ApiError } from "@/lib/api-client";
 
@@ -185,25 +188,12 @@ export function FinanceEnrollments() {
 					Verifikasi pendaftaran siswa baru — tombol terima aktif setelah invoice pendaftaran lunas.
 				</p>
 			</div>
-			<div className="flex flex-wrap gap-1.5">
-				{STATUS_FILTERS.map((f) => (
-					<button
-						key={f.value || "all"}
-						type="button"
-						onClick={() => setStatus(f.value)}
-						className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-							status === f.value
-								? "border-primary bg-primary text-primary-foreground"
-								: "bg-background hover:border-primary/50"
-						}`}
-					>
-						{f.label}
-						<span className={`ml-1.5 tabular-nums ${status === f.value ? "opacity-80" : "text-muted-foreground"}`}>
-							{countOf(f.value)}
-						</span>
-					</button>
-				))}
-			</div>
+			<EnrollmentStatusTabs
+				options={STATUS_FILTERS}
+				value={status}
+				countOf={countOf}
+				onChange={setStatus}
+			/>
 
 			{/* Filter pencarian + program — difilter lokal dari daftar lengkap. */}
 			<div className="flex flex-wrap items-center gap-2">
@@ -213,16 +203,15 @@ export function FinanceEnrollments() {
 					value={search}
 					onChange={(e) => setSearch(e.target.value)}
 				/>
-				<select
-					className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-					value={programId}
-					onChange={(e) => setProgramId(e.target.value)}
-				>
-					<option value="">Semua program</option>
-					{programOptions.map(([id, name]) => (
-						<option key={id} value={id}>{name}</option>
-					))}
-				</select>
+				<div className="w-full sm:w-56">
+					<ComboboxField
+						id="enr-program-filter"
+						value={programId}
+						onChange={setProgramId}
+						options={programOptions.map(([id, name]) => ({ value: id, label: name }))}
+						placeholder="Semua program"
+					/>
+				</div>
 				{(search || programId) ? (
 					<Button variant="ghost" size="sm" onClick={() => { setSearch(""); setProgramId(""); }}>
 						Reset filter
@@ -397,11 +386,14 @@ export function FinanceEnrollments() {
 						</DialogDescription>
 					</DialogHeader>
 					<form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); discountM.mutate(); }}>
-						<div className="flex flex-col gap-1.5">
-							<Label htmlFor="enr-disc-amount">Diskon per angsuran (Rp)</Label>
-							<Input id="enr-disc-amount" type="number" min={1} required value={discountAmount}
-								onChange={(e) => setDiscountAmount(e.target.value)} placeholder="mis. 10000" />
-						</div>
+						<CurrencyInput
+							id="enr-disc-amount"
+							label="Diskon per angsuran"
+							required
+							value={discountAmount}
+							onChange={setDiscountAmount}
+							placeholder="mis. 10.000"
+						/>
 						<div className="flex flex-col gap-1.5">
 							<Label htmlFor="enr-disc-months">Berlaku untuk</Label>
 							<select

@@ -19,6 +19,7 @@ import { apiFetch, ApiError } from '@/lib/api-client';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import type { InvoiceDetail, InvoiceListItem, ProgramItem, StudentItem } from '@/lib/phase1a-types';
 import { ComboboxField } from '@/components/shared/combobox-field';
+import { CurrencyInput } from '@/components/shared/currency-input';
 import { Phase1aFormDialog, Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
@@ -394,7 +395,7 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
         description="Invoice manual — item utama + item tambahan (biaya admin, diskon, dsb)."
         fields={[
           { name: 'desc', label: 'Deskripsi item', placeholder: 'Biaya pendaftaran...', required: true },
-          { name: 'amount', label: 'Nominal (Rp)', type: 'number', placeholder: '500000', required: true },
+          { name: 'amount', label: 'Nominal', type: 'number', currency: true, placeholder: '500000', required: true },
           { name: 'dueDate', label: 'Jatuh tempo (opsional)', type: 'date' },
         ]}
         values={{ desc, amount, dueDate }}
@@ -435,18 +436,19 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
                     }
                     className="flex-1"
                   />
-                  <Input
-                    type="number"
+                  <CurrencyInput
                     placeholder="Nominal"
                     value={it.unitPrice}
-                    onChange={(e) =>
+                    onChange={(v) =>
                       setExtraItems((prev) =>
                         prev.map((x, j) =>
-                          j === i ? { ...x, unitPrice: e.target.value } : x,
+                          j === i ? { ...x, unitPrice: v } : x,
                         ),
                       )
                     }
-                    className="w-32"
+                    className="w-36"
+                    showPreview={false}
+                    allowNegative
                   />
                   <Button
                     type="button"
@@ -551,11 +553,14 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
                 Sisa tagihan: {rupiah(Number(discountTarget.totalAmount) - Number(discountTarget.amountPaid))}
               </p>
             ) : null}
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="disc-amount">Nominal diskon (Rp)</Label>
-              <Input id="disc-amount" type="number" min={1} required value={discountAmount}
-                onChange={(e) => setDiscountAmount(e.target.value)} placeholder="mis. 250000" />
-            </div>
+            <CurrencyInput
+              id="disc-amount"
+              label="Nominal diskon"
+              required
+              value={discountAmount}
+              onChange={setDiscountAmount}
+              placeholder="mis. 250.000"
+            />
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="disc-reason">Alasan</Label>
               <Input id="disc-reason" required maxLength={200} value={discountReason}

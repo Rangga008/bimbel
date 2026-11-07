@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { score100 } from '@/lib/score';
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { CategoryProgressChart, type CategoryProgressData } from "@/components/shared/category-progress-chart";
+import { ComboboxField } from "@/components/shared/combobox-field";
 
 function err(e: unknown, fb: string) {
   return e instanceof ApiError ? e.message : fb;
@@ -158,16 +159,19 @@ export function StudentPerformance({
           </h1>
           <p className="text-muted-foreground">{subtitle}</p>
         </div>
-        <select
-          value={period}
-          onChange={(e) => setPeriod(e.target.value)}
-          className="h-9 rounded-md border bg-background px-3 text-sm"
-          aria-label="Periode riwayat"
-        >
-          <option value="all">Semua periode</option>
-          <option value="30">30 hari terakhir</option>
-          <option value="90">90 hari terakhir</option>
-        </select>
+        <div className="w-full sm:w-48">
+          <ComboboxField
+            id="perf-period"
+            value={period}
+            onChange={setPeriod}
+            options={[
+              { value: 'all', label: 'Semua periode' },
+              { value: '30', label: '30 hari terakhir' },
+              { value: '90', label: '90 hari terakhir' },
+            ]}
+            placeholder="Periode riwayat"
+          />
+        </div>
       </div>
 
       {/* Overall Statistics */}
@@ -233,30 +237,26 @@ export function StudentPerformance({
           </div>
           <div className="flex flex-wrap gap-2">
             {subjectOptions.length > 1 ? (
-              <select
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-                value={examSubject}
-                onChange={(e) => { setExamSubject(e.target.value); setShowAllExams(false); }}
-                aria-label="Filter mapel"
-              >
-                <option value="">Semua mapel</option>
-                {subjectOptions.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+              <div className="w-full sm:w-48">
+                <ComboboxField
+                  id="perf-subject-filter"
+                  value={examSubject}
+                  onChange={(v) => { setExamSubject(v); setShowAllExams(false); }}
+                  options={subjectOptions.map((s) => ({ value: s, label: s }))}
+                  placeholder="Semua mapel"
+                />
+              </div>
             ) : null}
             {categoryOptions.length > 1 ? (
-              <select
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-                value={examCategory}
-                onChange={(e) => { setExamCategory(e.target.value); setShowAllExams(false); }}
-                aria-label="Filter tipe ujian"
-              >
-                <option value="">Semua tipe</option>
-                {categoryOptions.map((c) => (
-                  <option key={c} value={c}>{CATEGORY_LABELS[c] ?? c}</option>
-                ))}
-              </select>
+              <div className="w-full sm:w-44">
+                <ComboboxField
+                  id="perf-category-filter"
+                  value={examCategory}
+                  onChange={(v) => { setExamCategory(v); setShowAllExams(false); }}
+                  options={categoryOptions.map((c) => ({ value: c, label: CATEGORY_LABELS[c] ?? c }))}
+                  placeholder="Semua tipe"
+                />
+              </div>
             ) : null}
             <Input
               className="h-9 w-full sm:w-48"

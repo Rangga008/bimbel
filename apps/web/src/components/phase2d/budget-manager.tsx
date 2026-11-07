@@ -13,7 +13,9 @@ import { rupiah } from '@/components/phase2a/invoices-manager';
 import type { BudgetRow, BudgetSummary, BudgetVsActual } from '@/lib/phase2d-types';
 import { BUDGET_CATEGORIES } from '@/lib/phase2d-types';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ComboboxField } from '@/components/shared/combobox-field';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { CurrencyInput } from '@/components/shared/currency-input';
 
 function err(e: unknown, fb: string) {
   return e instanceof ApiError ? e.message : fb;
@@ -247,21 +249,15 @@ export function BudgetManager({ canManage }: { canManage: boolean }) {
             <DialogDescription>Set anggaran untuk kategori dan periode tertentu.</DialogDescription>
           </DialogHeader>
           <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); saveM.mutate(); }}>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="bud-category">Kategori</Label>
-              <select
-                id="bud-category"
-                className="h-9 rounded-md border border-input bg-background px-3"
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-                required
-              >
-                <option value="">Pilih kategori</option>
-                {BUDGET_CATEGORIES.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </select>
-            </div>
+            <ComboboxField
+              id="bud-category"
+              label="Kategori"
+              value={form.category}
+              onChange={(v) => setForm({ ...form, category: v })}
+              options={BUDGET_CATEGORIES.map((c) => ({ value: c.value, label: c.label }))}
+              placeholder="Pilih kategori"
+              required
+            />
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="bud-period">Periode (YYYY-MM)</Label>
               <input
@@ -273,18 +269,13 @@ export function BudgetManager({ canManage }: { canManage: boolean }) {
                 required
               />
             </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="bud-amount">Nominal (Rp)</Label>
-              <input
-                id="bud-amount"
-                type="number"
-                min={0}
-                className="h-9 rounded-md border border-input bg-background px-3"
-                value={form.amount}
-                onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                required
-              />
-            </div>
+            <CurrencyInput
+              id="bud-amount"
+              label="Nominal"
+              value={form.amount}
+              onChange={(v) => setForm({ ...form, amount: v })}
+              required
+            />
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="bud-desc">Deskripsi (opsional)</Label>
               <input

@@ -503,19 +503,18 @@ export function AdminAcademicAnalytics() {
             >
               Analisis
             </Button>
-            <select
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-              value={recapGroupId}
-              onChange={(e) => setRecapGroupId(e.target.value)}
-              aria-label="Filter kelompok"
-            >
-              <option value="">Semua kelompok</option>
-              {(groupsQ.data ?? []).map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.code ? `${g.code} — ${g.name}` : g.name}
-                </option>
-              ))}
-            </select>
+            <div className="w-56">
+              <Phase1aSelectField
+                id="analytics-recap-group"
+                value={recapGroupId}
+                onChange={setRecapGroupId}
+                options={(groupsQ.data ?? []).map((g) => ({
+                  value: g.id,
+                  label: g.code ? `${g.code} — ${g.name}` : g.name,
+                }))}
+                placeholder="Semua kelompok"
+              />
+            </div>
             <div className="ml-auto flex flex-wrap gap-2">
               <Button
                 variant="outline"

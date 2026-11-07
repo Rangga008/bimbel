@@ -23,7 +23,7 @@ import {
 const PROGRAM_FIELDS: Phase1aField[] = [
   { name: 'name', label: 'Nama program', placeholder: 'Kelas Reguler SD', required: true },
   { name: 'code', label: 'Kode', placeholder: 'REG-SD', required: true },
-  { name: 'registrationFee', label: 'Biaya pendaftaran (Rp, opsional)', type: 'number', placeholder: '150000' },
+  { name: 'registrationFee', label: 'Biaya pendaftaran (opsional)', type: 'number', currency: true, placeholder: '150000' },
   { name: 'description', label: 'Deskripsi (opsional)' },
 ];
 

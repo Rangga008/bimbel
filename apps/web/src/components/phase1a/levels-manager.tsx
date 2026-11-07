@@ -18,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { CurrencyInput } from '@/components/shared/currency-input';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { LevelItem, MasterItem, ProgramItem } from '@/lib/phase1a-types';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
@@ -345,17 +346,13 @@ export function LevelsManager({ canManage }: { canManage: boolean }) {
               />
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="lvl-price">Harga (Rp)</Label>
-                <Input
-                  id="lvl-price"
-                  type="number"
-                  min={0}
-                  value={form.price}
-                  onChange={(e) => setForm({ ...form, price: e.target.value })}
-                  placeholder="450000"
-                />
-              </div>
+              <CurrencyInput
+                id="lvl-price"
+                label="Harga"
+                value={form.price}
+                onChange={(v) => setForm({ ...form, price: v })}
+                placeholder="450000"
+              />
               <div className="flex flex-col gap-1.5">
                 <Phase1aSelectField
                   id="lvl-price-unit"

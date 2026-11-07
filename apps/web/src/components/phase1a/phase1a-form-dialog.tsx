@@ -8,6 +8,7 @@ import {
   SubmitButton,
 } from '@/components/shared/form-field';
 import { ComboboxField } from '@/components/shared/combobox-field';
+import { CurrencyInput } from '@/components/shared/currency-input';
 import {
   Dialog,
   DialogContent,
@@ -27,6 +28,8 @@ export interface Phase1aField {
   hint?: string;
   /** Bila diisi → render <select> alih-alih input bebas (mis. status aktif). */
   options?: Array<{ value: string; label: string }>;
+  /** Field nominal uang — input diberi prefix Rp + pemisah ribuan otomatis. */
+  currency?: boolean;
 }
 
 function invalidMessage(field: Phase1aField, validity: ValidityState): string {
@@ -122,6 +125,21 @@ export function Phase1aFormDialog({
                         </option>
                       ))}
                     </select>
+                  ) : field.currency ? (
+                    <CurrencyInput
+                      id={`fase1a-${field.name}`}
+                      name={field.name}
+                      placeholder={field.placeholder}
+                      required={field.required}
+                      min={field.min}
+                      aria-invalid={error ? true : undefined}
+                      className={valid ? 'pr-9' : undefined}
+                      value={value}
+                      onChange={(v) => {
+                        onChange(field.name, v);
+                        if (error) setErrors((prev) => ({ ...prev, [field.name]: '' }));
+                      }}
+                    />
                   ) : (
                     <Input
                       id={`fase1a-${field.name}`}

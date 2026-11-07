@@ -42,6 +42,7 @@ model User {
   appSettingsUpdated AppSetting[] @relation("AppSettingUpdater")
   mediaAssets   MediaAsset[] @relation("MediaAssetUploader")
   passwordResetTokens PasswordResetToken[]
+  passwordResetOtps PasswordResetOtp[]
   reviewedEnrollments Enrollment[] @relation("EnrollmentReviewer")
   feedbackEntries FeedbackEntry[] @relation("FeedbackAuthor")
 
@@ -2032,6 +2033,31 @@ model PasswordResetToken {
 
   @@index([userId])
   @@map("password_reset_tokens")
+}
+
+/// OTP reset kata sandi — bisa dikirim lewat email atau WhatsApp. Kode mentah
+/// tidak pernah disimpan; hanya bcrypt hash + batas percobaan.
+model PasswordResetOtp {
+  id             String    @id @default(uuid())
+  userId         String
+  /// EMAIL / WHATSAPP.
+  channel        String
+  /// Tujuan terkirim (email atau nomor HP saat OTP dibuat).
+  destination    String
+  /// Kunci pencarian identifier: email lowercase / nomor HP normalisasi 62xxx.
+  identifierKey  String
+  /// bcrypt hash kode 6 digit — plaintext tidak pernah disimpan.
+  codeHash       String
+  expiresAt      DateTime
+  attempts       Int       @default(0)
+  consumedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consumedAt])
+  @@index([identifierKey, consumedAt])
+  @@map("password_reset_otps")
 }
 
 /// Siapa yang mengisi feedback mingguan — siswa sendiri atau orang tuanya.

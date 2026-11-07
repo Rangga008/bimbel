@@ -9,7 +9,9 @@
 services:
   web:
     ports: !override
-      - "80:3000"
+      # Default 80 untuk host publik; set WEB_PORT di .env lokal bila mau port
+      # lain (mis. WEB_PORT=3001 → http://localhost:3001).
+      - "${WEB_PORT:-80}:3000"
     mem_limit: 640m
     environment:
       NODE_OPTIONS: "--max-old-space-size=448"

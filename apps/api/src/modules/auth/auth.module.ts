@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { UsersModule } from '../users/users.module';
 import { MediaModule } from '../media/media.module';
+import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 import { AuditModule } from '../../common/audit/audit.module';
 
 @Module({
@@ -14,6 +15,7 @@ import { AuditModule } from '../../common/audit/audit.module';
     JwtModule.register({}),
     UsersModule,
     MediaModule,
+    WhatsAppModule,
     AuditModule,
   ],
   controllers: [AuthController],

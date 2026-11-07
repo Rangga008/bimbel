@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { EmptyState } from '@/components/shared/empty-state';
+import { CurrencyInput } from '@/components/shared/currency-input';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { LevelItem, MasterItem, ProgramItem } from '@/lib/phase1a-types';
 import {
@@ -22,7 +23,7 @@ import {
 
 const PROGRAM_EDIT_FIELDS: Phase1aField[] = [
   { name: 'name', label: 'Nama program' },
-  { name: 'registrationFee', label: 'Biaya pendaftaran (Rp)', type: 'number' },
+  { name: 'registrationFee', label: 'Biaya pendaftaran', type: 'number', currency: true },
   { name: 'description', label: 'Deskripsi' },
   { name: 'isActive', label: 'Status akun', options: [ { value: 'true', label: 'Aktif' }, { value: 'false', label: 'Nonaktif' } ] },
 ];
@@ -49,18 +50,28 @@ function PricingFields({
   values: Record<string, string>;
   onChange: (name: string, v: string) => void;
 }) {
-  const Num = ({ name, label, ph }: { name: string; label: string; ph?: string }) => (
+  const Num = ({ name, label, ph, money = true }: { name: string; label: string; ph?: string; money?: boolean }) => (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={name} className="text-sm font-medium">{label}</label>
-      <input
-        id={name}
-        type="number"
-        min={0}
-        value={values[name] ?? ''}
-        onChange={(e) => onChange(name, e.target.value)}
-        placeholder={ph}
-        className="h-9 rounded-md border border-input bg-input/30 px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      />
+      {money ? (
+        <CurrencyInput
+          id={name}
+          value={values[name] ?? ''}
+          onChange={(v) => onChange(name, v)}
+          placeholder={ph}
+          className="h-9"
+        />
+      ) : (
+        <input
+          id={name}
+          type="number"
+          min={0}
+          value={values[name] ?? ''}
+          onChange={(e) => onChange(name, e.target.value)}
+          placeholder={ph}
+          className="h-9 rounded-md border border-input bg-input/30 px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        />
+      )}
     </div>
   );
   if (unit === 'YEAR') {
@@ -71,7 +82,7 @@ function PricingFields({
           <Num name="fullPayPrice" label="Lunas di awal (Rp)" ph="2000000" />
           <Num name="installment2x" label="Angsuran 2x — per angsuran (Rp)" ph="1000000" />
           <Num name="monthlyAmount" label="Angsuran bulanan (Rp)" ph="200000" />
-          <Num name="monthlyCount" label="Jumlah angsuran bulanan" ph="10" />
+          <Num name="monthlyCount" label="Jumlah angsuran bulanan" ph="10" money={false} />
         </div>
       </div>
     );
@@ -86,7 +97,7 @@ function PricingFields({
           {[2, 3, 4, 5].map((n) => (
             <Num key={n} name={`sessionPrice${n}`} label={`${n} siswa`} />
           ))}
-          <Num name="sessionDurationMin" label="Durasi (menit)" ph="60" />
+          <Num name="sessionDurationMin" label="Durasi (menit)" ph="60" money={false} />
         </div>
       </div>
     );
@@ -153,12 +164,12 @@ function pricingBodyEdit(f: Record<string, string>) {
 
 const LEVEL_FIELDS: Phase1aField[] = [
   { name: 'name', label: 'Nama level', placeholder: 'Otomatis dari Level Kelas bila dipilih' },
-  { name: 'price', label: 'Harga (Rp)', type: 'number', placeholder: '450000' },
+  { name: 'price', label: 'Harga', type: 'number', currency: true, placeholder: '450000' },
 ];
 
 const LEVEL_EDIT_FIELDS: Phase1aField[] = [
   { name: 'name', label: 'Nama level' },
-  { name: 'price', label: 'Harga (Rp) — kosongkan untuk hapus', type: 'number' },
+  { name: 'price', label: 'Harga — kosongkan untuk hapus', type: 'number', currency: true },
   { name: 'isActive', label: 'Status akun', options: [ { value: 'true', label: 'Aktif' }, { value: 'false', label: 'Nonaktif' } ] },
 ];
 
@@ -541,17 +552,13 @@ export function ProgramDetailPage({ programId, basePath, canManage }: { programI
               values={levelForm}
               onChange={(n, v) => setLevelForm((p) => ({ ...p, [n]: v }))}
             />
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="level-regfee" className="text-sm font-medium">Biaya pendaftaran (Rp) — kosong = ikut program</label>
-              <input
-                id="level-regfee"
-                type="number"
-                min={0}
-                value={levelForm.registrationFee ?? ''}
-                onChange={(e) => setLevelForm((p) => ({ ...p, registrationFee: e.target.value }))}
-                className="h-9 rounded-md border border-input bg-input/30 px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              />
-            </div>
+            <CurrencyInput
+              id="level-regfee"
+              label="Biaya pendaftaran — kosong = ikut program"
+              value={levelForm.registrationFee ?? ''}
+              onChange={(v) => setLevelForm((p) => ({ ...p, registrationFee: v }))}
+              className="h-9"
+            />
             <SubjectMultiPicker
               idPrefix="level-subjects"
               value={levelForm.subjectIds ?? ''}
@@ -636,17 +643,13 @@ export function ProgramDetailPage({ programId, basePath, canManage }: { programI
               values={editLevelForm}
               onChange={(n, v) => setEditLevelForm((p) => ({ ...p, [n]: v }))}
             />
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="edit-level-regfee" className="text-sm font-medium">Biaya pendaftaran (Rp) — kosong = ikut program</label>
-              <input
-                id="edit-level-regfee"
-                type="number"
-                min={0}
-                value={editLevelForm.registrationFee ?? ''}
-                onChange={(e) => setEditLevelForm((p) => ({ ...p, registrationFee: e.target.value }))}
-                className="h-9 rounded-md border border-input bg-input/30 px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              />
-            </div>
+            <CurrencyInput
+              id="edit-level-regfee"
+              label="Biaya pendaftaran — kosong = ikut program"
+              value={editLevelForm.registrationFee ?? ''}
+              onChange={(v) => setEditLevelForm((p) => ({ ...p, registrationFee: v }))}
+              className="h-9"
+            />
             <SubjectMultiPicker
               idPrefix="edit-level-subjects"
               value={editLevelForm.subjectIds ?? ''}

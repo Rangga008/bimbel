@@ -26,6 +26,7 @@ import { UserAvatar } from '@/components/shared/user-avatar';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { SessionCalendar } from '@/components/shared/session-calendar';
 import { LearningReportButton } from '@/components/shared/learning-report-button';
+import { CurrencyInput } from '@/components/shared/currency-input';
 import { scoreLabel100 } from '@/lib/score';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useAuthStore } from '@/stores/auth-store';
@@ -665,14 +666,12 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="discount-amount">Diskon per angsuran (Rp)</Label>
-              <Input
+              <CurrencyInput
                 id="discount-amount"
-                type="number"
-                min={0}
-                placeholder="mis. 10000"
+                label="Diskon per angsuran"
+                placeholder="mis. 10.000"
                 value={discountAmount}
-                onChange={(e) => setDiscountAmount(e.target.value)}
+                onChange={setDiscountAmount}
               />
               <p className="text-xs text-muted-foreground">
                 Tiap invoice angsuran siswa ini dipotong sebesar nominal ini.
