@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ContentCategoriesService } from '../content-categories/content-categories.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TutorScopeService } from '../../common/tutor-scope/tutor-scope.service';
@@ -391,9 +396,44 @@ export class ExamsService {
     });
   }
 
-  async update(id: string, dto: UpdateExamDto) {
+  /**
+   * Batasi tutor ke ujian dalam scope mengampunya (program/level/mapel).
+   * Admin/owner (scope null) dan panggilan tanpa actor tidak dibatasi.
+   */
+  async assertExamScope(
+    actor: AuthenticatedUser | undefined,
+    exam: {
+      programId: string | null;
+      levelId: string | null;
+      subjectId: string | null;
+      createdBy?: string | null;
+    },
+  ) {
+    if (!actor) return;
+    const scope = await this.tutorScope.for(actor);
+    if (scope) {
+      // Ujian yang dibuat tutor ini sendiri selalu boleh dia kelola.
+      if (exam.createdBy === actor.id) return;
+      // Ujian global (tanpa jenjang/mapel) adalah wilayah admin — tutor
+      // tidak boleh mengubahnya lewat celah "konten umum".
+      if (!exam.programId && !exam.levelId && !exam.subjectId) {
+        throw new ForbiddenException(
+          'Ujian global hanya bisa dikelola admin akademik/owner.',
+        );
+      }
+      this.tutorScope.assertContentRef(
+        scope,
+        exam.programId,
+        exam.levelId,
+        exam.subjectId,
+      );
+    }
+  }
+
+  async update(id: string, dto: UpdateExamDto, actor?: AuthenticatedUser) {
     const exam = await this.prisma.exam.findUnique({ where: { id } });
     if (!exam) throw new NotFoundException('Ujian tidak ditemukan.');
+    await this.assertExamScope(actor, exam);
 
     // Validasi status transition
     if (dto.status === 'ENDED') {
@@ -538,9 +578,10 @@ export class ExamsService {
     });
   }
 
-  async delete(id: string) {
+  async delete(id: string, actor?: AuthenticatedUser) {
     const exam = await this.prisma.exam.findUnique({ where: { id } });
     if (!exam) throw new NotFoundException('Ujian tidak ditemukan.');
+    await this.assertExamScope(actor, exam);
 
     if (exam.status !== 'DRAFT') {
       throw new BadRequestException('Hanya ujian berstatus Draft yang bisa dihapus.');

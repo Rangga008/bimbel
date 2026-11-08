@@ -53,6 +53,10 @@ export const PERMISSION_CODES = {
   PAYMENT_VIEW: 'payment.view',
   PAYMENT_CREATE: 'payment.create',
   PAYMENT_VERIFY: 'payment.verify',
+  // Self-service ortu/siswa — endpoint /me/* yang sudah di-scope ke
+  // keluarga sendiri oleh service. TIDAK boleh dipakai di endpoint staff.
+  PAYMENT_VIEW_OWN: 'payment.view_own',
+  PAYMENT_CREATE_OWN: 'payment.create_own',
   // --- Fase 2c: Piutang (AR), Refund, Ledger Kas/Bank ---
   AR_VIEW: 'ar.view',
   REFUND_MANAGE: 'refund.manage',

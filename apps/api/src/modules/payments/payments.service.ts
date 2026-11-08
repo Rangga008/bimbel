@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import {
   access,
   mkdir,
@@ -104,6 +104,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PaymentsService.name);
   private proofSweepTimer: NodeJS.Timeout | null = null;
   private readonly dummyGateway: DummyGatewayProvider;
+  private readonly webhookSecret: string;
   private midtransGateway: MidtransGatewayProvider | null = null;
   private midtransKey = '';
 
@@ -115,9 +116,19 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     private readonly enrollments: EnrollmentsService,
     private readonly phoneVerification: PhoneVerificationService,
   ) {
-    this.dummyGateway = new DummyGatewayProvider(
-      this.config.get<string>('PAYMENT_WEBHOOK_SECRET', 'dev-webhook-secret'),
-    );
+    // Tanpa env, pakai secret acak per-boot — webhook DUMMY yang ditempa
+    // dengan secret publik "dev-webhook-secret" tidak akan pernah lolos.
+    // Simulasi lokal tetap jalan karena sign & verify memakai instance sama.
+    this.webhookSecret =
+      this.config.get<string>('PAYMENT_WEBHOOK_SECRET') ??
+      randomBytes(32).toString('hex');
+    if (!this.config.get<string>('PAYMENT_WEBHOOK_SECRET')) {
+      this.logger.warn(
+        'PAYMENT_WEBHOOK_SECRET tidak diset — memakai secret acak per-boot. ' +
+          'Set env ini bila webhook DUMMY perlu diverifikasi lintas restart.',
+      );
+    }
+    this.dummyGateway = new DummyGatewayProvider(this.webhookSecret);
   }
 
   /**
@@ -145,10 +156,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   signWebhookPayload(rawBody: string): string {
-    return createHmac(
-      'sha256',
-      this.config.get<string>('PAYMENT_WEBHOOK_SECRET', 'dev-webhook-secret'),
-    )
+    return createHmac('sha256', this.webhookSecret)
       .update(rawBody)
       .digest('hex');
   }
@@ -1392,6 +1400,18 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
    * berlaku (tanda tangan diverifikasi oleh handleWebhook).
    */
   async simulateGateway(actor: AuthenticatedUser, dto: SimulateGatewayDto) {
+    // Simulate harus diaktifkan eksplisit — di produksi endpoint ini membuat
+    // ortu bisa menyetujui pembayarannya sendiri bila provider = DUMMY.
+    const flag = this.config.get<string>('PAYMENT_GATEWAY_SIMULATE_ENABLED');
+    const allowed =
+      flag === 'true' ||
+      flag === '1' ||
+      this.config.get<string>('NODE_ENV') !== 'production';
+    if (!allowed) {
+      throw new ForbiddenException(
+        'Simulasi gateway tidak aktif di environment ini.',
+      );
+    }
     const gateway = await this.resolveGateway();
     if (gateway.name !== 'DUMMY') {
       throw new BadRequestException(

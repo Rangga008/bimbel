@@ -6,7 +6,6 @@ import { toast } from 'sonner';
 import { Plus, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -19,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { CurrencyInput } from '@/components/shared/currency-input';
+import { ComboboxField } from '@/components/shared/combobox-field';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { LevelItem, MasterItem, ProgramItem } from '@/lib/phase1a-types';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
@@ -65,6 +65,8 @@ const PRICE_UNIT_OPTIONS = [
 export function LevelsManager({ canManage }: { canManage: boolean }) {
   const qc = useQueryClient();
   const [programFilter, setProgramFilter] = useState('');
+  const [gradeFilter, setGradeFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingLevel, setEditingLevel] = useState<LevelItem | null>(null);
@@ -160,13 +162,19 @@ export function LevelsManager({ canManage }: { canManage: boolean }) {
   };
 
   const levels = levelsQ.data ?? [];
-  const filteredLevels = search
-    ? levels.filter(
-        (l) =>
-          l.name.toLowerCase().includes(search.toLowerCase()) ||
-          (l.program?.name ?? '').toLowerCase().includes(search.toLowerCase()),
-      )
-    : levels;
+  const q = search.trim().toLowerCase();
+  const filteredLevels = levels.filter((l) => {
+    if (gradeFilter && l.gradeLevelId !== gradeFilter) return false;
+    if (statusFilter === 'aktif' && !l.isActive) return false;
+    if (statusFilter === 'nonaktif' && l.isActive) return false;
+    if (!q) return true;
+    return (
+      l.name.toLowerCase().includes(q) ||
+      (l.program?.name ?? '').toLowerCase().includes(q) ||
+      (l.gradeLevel?.name ?? '').toLowerCase().includes(q) ||
+      (l.subject?.name ?? l.program?.subject?.name ?? '').toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div className="flex flex-col gap-4">
@@ -177,13 +185,37 @@ export function LevelsManager({ canManage }: { canManage: boolean }) {
         </p>
       </div>
       <div className="flex flex-wrap items-end gap-3">
-        <div className="w-full sm:w-44">
-          <Phase1aSelectField
+        <div className="w-full sm:w-52">
+          <ComboboxField
             id="lvl-program-filter"
             label="Program"
             value={programFilter}
             onChange={setProgramFilter}
             options={programsQ.data?.map((p) => ({ value: p.id, label: p.name })) || []}
+            placeholder="Semua program"
+          />
+        </div>
+        <div className="w-full sm:w-52">
+          <ComboboxField
+            id="lvl-grade-filter"
+            label="Level Kelas"
+            value={gradeFilter}
+            onChange={setGradeFilter}
+            options={(gradeLevelsQ.data ?? []).map((g) => ({ value: g.id, label: `${g.code} — ${g.name}` }))}
+            placeholder="Semua level kelas"
+          />
+        </div>
+        <div className="w-full sm:w-40">
+          <Phase1aSelectField
+            id="lvl-status-filter"
+            label="Status"
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={[
+              { value: 'aktif', label: 'Aktif' },
+              { value: 'nonaktif', label: 'Non-aktif' },
+            ]}
+            placeholder="Semua status"
           />
         </div>
         <div className="grid w-full gap-1.5 sm:w-56">
@@ -192,7 +224,7 @@ export function LevelsManager({ canManage }: { canManage: boolean }) {
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               id="lvl-search"
-              placeholder="Cari nama level/program..."
+              placeholder="Cari nama level/program/mapel..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
@@ -213,47 +245,74 @@ export function LevelsManager({ canManage }: { canManage: boolean }) {
         <p className="text-sm text-muted-foreground">Belum ada level untuk filter ini.</p>
       ) : null}
 
-      <div className="grid gap-3 md:grid-cols-2">
-        {filteredLevels.map((level) => (
-          <Card key={level.id}>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between gap-2 text-base">
-                <span className="truncate">{level.name}</span>
-                <div className="flex gap-1">
-                  {level.gradeLevel ? <Badge variant="outline">{level.gradeLevel.code}</Badge> : null}
-                  {!level.isActive && <Badge variant="destructive">Non-aktif</Badge>}
-                </div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2 text-sm">
-              <p className="text-muted-foreground">Program: {level.program?.name ?? '—'}</p>
-              <p className="text-muted-foreground">
-                {level.gradeLevel ? `Level Kelas: ${level.gradeLevel.name} · ` : ''}
-                Mapel: {level.subject?.name ?? level.program?.subject?.name ?? '—'}
-              </p>
-              {(level.levelSubjects ?? []).length > 0 ? (
-                <div className="flex flex-wrap gap-1">
-                  {(level.levelSubjects ?? []).map((ls) => (
-                    <Badge key={ls.subjectId} variant="outline" className="text-[11px]">
-                      {ls.subject?.name ?? ls.subjectId}
-                    </Badge>
-                  ))}
-                </div>
-              ) : null}
-              <p className="text-muted-foreground">
-                Harga: {level.price !== null && level.price !== undefined ? `Rp ${Number(level.price).toLocaleString('id-ID')}` : '—'}
-                {level.priceUnit ? ` / ${PRICE_UNIT_OPTIONS.find((u) => u.value === level.priceUnit)?.label.toLowerCase() ?? level.priceUnit}` : ''}
-                {' · '}Urutan: {level.sortOrder}
-              </p>
-              {canManage && (
-                <Button variant="outline" size="sm" className="w-fit mt-1" onClick={() => openEdit(level)}>
-                  Edit
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {filteredLevels.length > 0 ? (
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full min-w-[860px] text-sm">
+            <thead>
+              <tr className="border-b bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
+                <th className="px-3 py-2.5 text-left font-medium">Level</th>
+                <th className="px-3 py-2.5 text-left font-medium">Program</th>
+                <th className="px-3 py-2.5 text-left font-medium">Level Kelas</th>
+                <th className="px-3 py-2.5 text-left font-medium">Mapel</th>
+                <th className="px-3 py-2.5 text-right font-medium">Harga</th>
+                <th className="px-3 py-2.5 text-center font-medium">Urutan</th>
+                <th className="px-3 py-2.5 text-center font-medium">Status</th>
+                {canManage ? <th className="px-3 py-2.5 text-left font-medium">Aksi</th> : null}
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {filteredLevels.map((level) => (
+                <tr key={level.id} className="align-top hover:bg-muted/30">
+                  <td className="px-3 py-2.5 font-medium">{level.name}</td>
+                  <td className="px-3 py-2.5">{level.program?.name ?? '—'}</td>
+                  <td className="px-3 py-2.5 whitespace-nowrap">
+                    {level.gradeLevel ? (
+                      <Badge variant="outline">{level.gradeLevel.code} — {level.gradeLevel.name}</Badge>
+                    ) : '—'}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <p>{level.subject?.name ?? level.program?.subject?.name ?? '—'}</p>
+                    {(level.levelSubjects ?? []).length > 0 ? (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {(level.levelSubjects ?? []).map((ls) => (
+                          <Badge key={ls.subjectId} variant="outline" className="text-[11px]">
+                            {ls.subject?.name ?? ls.subjectId}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap tabular-nums">
+                    {level.price !== null && level.price !== undefined
+                      ? `Rp ${Number(level.price).toLocaleString('id-ID')}`
+                      : '—'}
+                    {level.priceUnit ? (
+                      <p className="text-xs font-normal text-muted-foreground">
+                        {PRICE_UNIT_OPTIONS.find((u) => u.value === level.priceUnit)?.label.toLowerCase() ?? level.priceUnit}
+                      </p>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-2.5 text-center tabular-nums">{level.sortOrder}</td>
+                  <td className="px-3 py-2.5 text-center">
+                    {level.isActive ? (
+                      <Badge variant="secondary">Aktif</Badge>
+                    ) : (
+                      <Badge variant="destructive">Non-aktif</Badge>
+                    )}
+                  </td>
+                  {canManage ? (
+                    <td className="px-3 py-2.5">
+                      <Button variant="outline" size="sm" onClick={() => openEdit(level)}>
+                        Edit
+                      </Button>
+                    </td>
+                  ) : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
 
       <Dialog open={dialogOpen} onOpenChange={(o) => { if (!o) closeDialog(); }}>
         <DialogContent>

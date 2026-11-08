@@ -30,16 +30,18 @@ async function bootstrap() {
     app.getHttpAdapter().getInstance().set('trust proxy', 1);
   }
 
-  // Peringatan keras bila secret default dev ikut terbawa ke produksi —
-  // JWT yang ditandatangani secret publik berarti siapa pun bisa menempa token.
+  // Secret default dev yang bocor ke produksi = siapa pun bisa menempa JWT
+  // (termasuk token owner). Produksi menolak start; dev lokal lolos lewat
+  // ALLOW_DEV_SECRETS=1 yang diset di docker-compose.
   if (
     process.env.NODE_ENV === 'production' &&
+    process.env.ALLOW_DEV_SECRETS !== '1' &&
     (process.env.JWT_ACCESS_SECRET ?? 'dev-access-secret-change-me') ===
       'dev-access-secret-change-me'
   ) {
-    console.error(
-      '[SECURITY] JWT_ACCESS_SECRET masih nilai default dev — WAJIB diganti ' +
-        'dengan secret acak sebelum API dipublikasikan ke internet!',
+    throw new Error(
+      '[SECURITY] JWT_ACCESS_SECRET masih nilai default dev — set secret ' +
+        'acak kuat di environment (atau ALLOW_DEV_SECRETS=1 untuk dev lokal saja).',
     );
   }
   app.setGlobalPrefix('api');

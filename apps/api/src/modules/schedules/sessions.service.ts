@@ -32,12 +32,52 @@ export class SessionsService {
     private readonly waOutbox: WhatsAppOutboxService,
   ) {}
 
+  /**
+   * Scope kelompok untuk SISWA/ORANG_TUA — mereka hanya boleh melihat sesi
+   * kelompok yang (anak-anaknya) ikuti. `null` = tidak dibatasi (staff/tutor
+   * ditangani terpisah), `[]` = tak punya kelompok → tak lihat sesi apa pun.
+   */
+  private async familyGroupIds(
+    actor: AuthenticatedUser,
+  ): Promise<string[] | null> {
+    if (actor.roles.includes('ORANG_TUA')) {
+      const parent = await this.prisma.parent.findUnique({
+        where: { userId: actor.id },
+        select: { parentStudents: { select: { studentId: true } } },
+      });
+      if (!parent) return [];
+      const studentIds = parent.parentStudents.map((p) => p.studentId);
+      if (!studentIds.length) return [];
+      const members = await this.prisma.groupMember.findMany({
+        where: { studentId: { in: studentIds } },
+        select: { groupId: true },
+      });
+      return [...new Set(members.map((m) => m.groupId))];
+    }
+    if (actor.roles.includes('SISWA')) {
+      const scope = await this.tutorScope.forStudent(actor);
+      return scope ? scope.groupIds : null;
+    }
+    return null;
+  }
+
   async list(actor: AuthenticatedUser, q: SessionsQueryDto) {
     // Tutor hanya melihat sesi kelompok yang dia ampu / yang dia ajar.
     const scope = await this.tutorScope.for(actor);
+    // Siswa/ortu hanya melihat sesi kelompoknya sendiri — jangan bocorkan
+    // roster & nomor HP tutor kelompok lain ke semua akun self-register.
+    const familyGroups = await this.familyGroupIds(actor);
+    if (
+      familyGroups !== null &&
+      q.groupId &&
+      !familyGroups.includes(q.groupId)
+    ) {
+      return [];
+    }
     return this.prisma.session.findMany({
       where: {
         ...(q.groupId ? { groupId: q.groupId } : {}),
+        ...(familyGroups !== null ? { groupId: { in: familyGroups } } : {}),
         ...(q.tutorId ? { tutorId: q.tutorId } : {}),
         ...(q.roomId ? { roomId: q.roomId } : {}),
         // Detail siswa: semua sesi kelompok tempat siswa ini jadi anggota.
@@ -80,6 +120,10 @@ export class SessionsService {
         const isTeacher = s.tutorId === scope.tutorId;
         if (!inGroup && !isTeacher)
           throw new NotFoundException('Sesi tidak ditemukan.');
+      }
+      const familyGroups = await this.familyGroupIds(actor);
+      if (familyGroups !== null && !familyGroups.includes(s.groupId)) {
+        throw new NotFoundException('Sesi tidak ditemukan.');
       }
     }
     return s;

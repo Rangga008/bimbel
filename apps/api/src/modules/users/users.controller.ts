@@ -206,6 +206,15 @@ export class UsersController {
     @CurrentUser() actor: AuthenticatedUser,
     @Req() req: Request,
   ) {
+    // Akun ber-role OWNER tidak boleh di-reset passwordnya oleh non-owner.
+    const target = await this.usersService.findByIdWithRoles(id);
+    if (!target) throw new NotFoundException('User tidak ditemukan.');
+    const targetIsOwner = target.userRoles.some((ur) => ur.role.name === 'OWNER');
+    if (targetIsOwner && !actor.roles.includes('OWNER')) {
+      throw new ForbiddenException(
+        'Hanya Owner yang dapat me-reset password akun Owner.',
+      );
+    }
     await this.usersService.resetPassword(id, dto.newPassword);
     await this.auditService.log({
       actorId: actor.id,
@@ -234,6 +243,13 @@ export class UsersController {
     ]);
     if (!user) throw new NotFoundException('User tidak ditemukan.');
     if (!role) throw new NotFoundException('Role tidak ditemukan.');
+    // Role OWNER hanya boleh diberikan oleh OWNER — admin finance/akademik
+    // tidak boleh mengangkat dirinya/orang lain jadi owner.
+    if (role.name === 'OWNER' && !actor.roles.includes('OWNER')) {
+      throw new ForbiddenException(
+        'Hanya Owner yang dapat memberikan role Owner.',
+      );
+    }
 
     const before = await this.usersService.findByIdWithRoles(userId);
     await this.usersService.assignRole(userId, dto.roleId);

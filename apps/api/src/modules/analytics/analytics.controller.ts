@@ -49,8 +49,11 @@ export class AnalyticsController {
    */
   @Get('exam/:examId/questions')
   @RequirePermissions(PERMISSION_CODES.ANALYTICS_EXAM_VIEW)
-  async getExamQuestionAnalytics(@Param('examId') examId: string) {
-    return this.analytics.getExamQuestionAnalytics(examId);
+  async getExamQuestionAnalytics(
+    @Param('examId') examId: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.analytics.getExamQuestionAnalytics(examId, actor);
   }
 
   /**
@@ -71,9 +74,10 @@ export class AnalyticsController {
   @RequirePermissions(PERMISSION_CODES.ANALYTICS_EXAM_VIEW)
   async getExamScoreRecap(
     @Param('examId') examId: string,
+    @CurrentUser() actor: AuthenticatedUser,
     @Query('groupId') groupId?: string,
   ) {
-    return this.analytics.getExamScoreRecap(examId, groupId || undefined);
+    return this.analytics.getExamScoreRecap(examId, groupId || undefined, actor);
   }
 
   /**
@@ -83,9 +87,10 @@ export class AnalyticsController {
   @RequirePermissions(PERMISSION_CODES.ANALYTICS_EXAM_VIEW)
   async getExamAnswerRecap(
     @Param('examId') examId: string,
+    @CurrentUser() actor: AuthenticatedUser,
     @Query('groupId') groupId?: string,
   ) {
-    return this.analytics.getExamAnswerRecap(examId, groupId || undefined);
+    return this.analytics.getExamAnswerRecap(examId, groupId || undefined, actor);
   }
 
   /** Export rekap nilai ujian ke .xlsx. */
@@ -93,10 +98,11 @@ export class AnalyticsController {
   @RequirePermissions(PERMISSION_CODES.ANALYTICS_EXAM_VIEW)
   async exportExamScoreRecap(
     @Param('examId') examId: string,
+    @CurrentUser() actor: AuthenticatedUser,
     @Query('groupId') groupId: string | undefined,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { buffer, filename } = await this.analytics.exportExamScoreRecapXlsx(examId, groupId || undefined);
+    const { buffer, filename } = await this.analytics.exportExamScoreRecapXlsx(examId, groupId || undefined, actor);
     res.set({
       'Content-Type':
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -111,10 +117,11 @@ export class AnalyticsController {
   @RequirePermissions(PERMISSION_CODES.ANALYTICS_EXAM_VIEW)
   async exportExamAnswerRecap(
     @Param('examId') examId: string,
+    @CurrentUser() actor: AuthenticatedUser,
     @Query('groupId') groupId: string | undefined,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { buffer, filename } = await this.analytics.exportExamAnswerRecapXlsx(examId, groupId || undefined);
+    const { buffer, filename } = await this.analytics.exportExamAnswerRecapXlsx(examId, groupId || undefined, actor);
     res.set({
       'Content-Type':
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -129,9 +136,10 @@ export class AnalyticsController {
   @RequirePermissions(PERMISSION_CODES.ANALYTICS_EXAM_VIEW)
   async exportExamAnalysis(
     @Param('examId') examId: string,
+    @CurrentUser() actor: AuthenticatedUser,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { buffer, filename } = await this.analytics.exportExamAnalysisXlsx(examId);
+    const { buffer, filename } = await this.analytics.exportExamAnalysisXlsx(examId, actor);
     res.set({
       'Content-Type':
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -150,6 +158,7 @@ export class AnalyticsController {
   @RequirePermissions(PERMISSION_CODES.ANALYTICS_EXAM_VIEW)
   async printExam(
     @Param('examId') examId: string,
+    @CurrentUser() actor: AuthenticatedUser,
     @Query('part') part: string,
     @Query('key') key: string,
     @Query('groupId') groupId: string | undefined,
@@ -157,16 +166,16 @@ export class AnalyticsController {
   ) {
     let html: string;
     if (part === 'answers') {
-      const recap = await this.analytics.getExamAnswerRecap(examId, groupId || undefined);
+      const recap = await this.analytics.getExamAnswerRecap(examId, groupId || undefined, actor);
       html = await this.analytics.renderAnswerRecapHtml(recap);
     } else if (part === 'scores') {
-      const recap = await this.analytics.getExamScoreRecap(examId, groupId || undefined);
+      const recap = await this.analytics.getExamScoreRecap(examId, groupId || undefined, actor);
       html = await this.analytics.renderScoreRecapHtml(recap);
     } else if (part === 'analysis') {
-      const analysis = await this.analytics.getQuestionAnalysisItems(examId);
+      const analysis = await this.analytics.getQuestionAnalysisItems(examId, actor);
       html = await this.analytics.renderQuestionAnalysisHtml(analysis);
     } else {
-      const sheet = await this.analytics.getExamQuestionSheet(examId, key === '1');
+      const sheet = await this.analytics.getExamQuestionSheet(examId, key === '1', actor);
       html = await this.analytics.renderQuestionSheetHtml(sheet);
     }
     res.set({ 'Content-Type': 'text/html; charset=utf-8' });

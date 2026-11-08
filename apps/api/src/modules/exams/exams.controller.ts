@@ -139,7 +139,7 @@ export class ExamsController {
     @Req() req: Request,
   ) {
     const before = await this.exams.get(id);
-    const updated = await this.exams.update(id, dto);
+    const updated = await this.exams.update(id, dto, actor);
     // Transisi status (DRAFT→PUBLISHED→LOCKED) adalah aksi kritis tersendiri —
     // beri action eksplisit supaya mudah dilacak di halaman Audit.
     const statusChanged = before.status !== updated.status;
@@ -163,7 +163,7 @@ export class ExamsController {
     @Req() req: Request,
   ) {
     const before = await this.exams.get(id);
-    await this.exams.delete(id);
+    await this.exams.delete(id, actor);
     await this.audit.log({
       actorId: actor.id,
       action: 'EXAM_DELETED',

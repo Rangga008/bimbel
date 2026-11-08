@@ -121,15 +121,18 @@ export class ExamAttemptsController {
 
   @Get('exams/:examId/attempts')
   @RequirePermissions(PERMISSION_CODES.EXAM_VIEW)
-  getExamAttempts(@Param('examId') examId: string) {
-    return this.attempts.getExamAttempts(examId);
+  getExamAttempts(
+    @Param('examId') examId: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.attempts.getExamAttempts(examId, actor);
   }
 
   /** Detail jawaban attempt untuk koreksi manual (esai/isian singkat). */
   @Get('exam-attempts/:id/review')
   @RequirePermissions(PERMISSION_CODES.EXAM_VIEW)
-  getReview(@Param('id') id: string) {
-    return this.attempts.getAttemptReview(id);
+  getReview(@Param('id') id: string, @CurrentUser() actor: AuthenticatedUser) {
+    return this.attempts.getAttemptReview(id, actor);
   }
 
   /**
@@ -149,6 +152,7 @@ export class ExamAttemptsController {
       id,
       questionId,
       Number(score),
+      actor,
     );
     await this.audit.log({
       actorId: actor.id,
@@ -173,7 +177,7 @@ export class ExamAttemptsController {
     @CurrentUser() actor: AuthenticatedUser,
     @Req() req: Request,
   ) {
-    const result = await this.attempts.resetAttempt(id);
+    const result = await this.attempts.resetAttempt(id, actor);
     await this.audit.log({
       actorId: actor.id,
       action: 'EXAM_ATTEMPT_RESET',
@@ -193,7 +197,7 @@ export class ExamAttemptsController {
     @CurrentUser() actor: AuthenticatedUser,
     @Req() req: Request,
   ) {
-    const result = await this.attempts.endExam(examId);
+    const result = await this.attempts.endExam(examId, actor);
     await this.audit.log({
       actorId: actor.id,
       action: 'EXAM_ENDED',

@@ -424,8 +424,10 @@ export function AdvancedReportsManager() {
 		if (!activeKind) return;
 		// Buka tab SEKARANG (masih dalam gesture klik) — kalau ditunggu sampai
 		// fetch selesai, window.open kerap diblokir popup blocker browser.
+		// Catatan: fitur "noopener" di window.open membuat browser mengembalikan
+		// null sehingga tab gagal dibuka — jangan dipakai di sini.
 		const pdfTab =
-			ext === "pdf" ? window.open("", "_blank", "noopener") : null;
+			ext === "pdf" ? window.open("", "_blank") : null;
 		if (ext === "pdf" && !pdfTab) {
 			toast.error(
 				"Tab baru diblokir browser — izinkan popup untuk mencetak/menyimpan PDF.",
@@ -433,6 +435,7 @@ export function AdvancedReportsManager() {
 			return;
 		}
 		if (pdfTab) {
+			pdfTab.opener = null;
 			pdfTab.document.title = "Menyiapkan laporan…";
 			pdfTab.document.body.innerHTML =
 				'<p style="font-family:sans-serif;color:#555;padding:24px">Menyiapkan dokumen laporan…</p>';

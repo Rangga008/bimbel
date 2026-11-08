@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
 	ArrowLeft,
 	ChartLine,
@@ -77,11 +78,28 @@ async function downloadBlob(path: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-/** Buka dokumen cetak (HTML print) di tab baru — user print/Save as PDF. */
+/** Buka dokumen cetak (HTML print) di tab baru — user print/Save as PDF.
+ *  Tab kosong dibuka sinkron saat klik; setelah blob siap, tab dinavigasikan.
+ *  Jangan pakai fitur 'noopener' di window.open — browser mengembalikan null. */
 async function openPrintDoc(path: string) {
-  const blob = await apiFetchBlob(path);
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank', 'noopener');
+  const win = window.open('', '_blank');
+  if (!win) {
+    toast.error('Tab baru diblokir browser — izinkan popup untuk mencetak/menyimpan PDF.');
+    return;
+  }
+  win.opener = null;
+  win.document.title = 'Menyiapkan dokumen…';
+  win.document.body.innerHTML =
+    '<p style="font-family:sans-serif;color:#555;padding:24px">Menyiapkan dokumen…</p>';
+  try {
+    const blob = await apiFetchBlob(path);
+    const url = URL.createObjectURL(blob);
+    win.location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (e) {
+    win.close();
+    toast.error(e instanceof ApiError ? e.message : 'Gagal memuat dokumen cetak.');
+  }
 }
 
 

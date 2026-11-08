@@ -16,7 +16,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { PermissionsGuard } from '../rbac/permissions.guard';
-import { RequirePermissions } from '../rbac/permissions.decorator';
+import { RequirePermissions, RequireAnyPermissions } from '../rbac/permissions.decorator';
 import { PERMISSION_CODES } from '../rbac/permissions.constants';
 import { AuditService } from '../../common/audit/audit.service';
 import { PaymentsService } from './payments.service';
@@ -39,7 +39,7 @@ export class ParentPaymentsController {
   ) {}
 
   @Get('me/invoices')
-  @RequirePermissions(PERMISSION_CODES.PAYMENT_VIEW)
+  @RequireAnyPermissions(PERMISSION_CODES.PAYMENT_VIEW, PERMISSION_CODES.PAYMENT_VIEW_OWN)
   myInvoices(
     @CurrentUser() actor: AuthenticatedUser,
     @Query('studentId') studentId?: string,
@@ -52,7 +52,7 @@ export class ParentPaymentsController {
    * terbit) — dipakai tampilan Pembayaran ortu "pilih anak → angsuran".
    */
   @Get('me/payment-plan')
-  @RequirePermissions(PERMISSION_CODES.PAYMENT_VIEW)
+  @RequireAnyPermissions(PERMISSION_CODES.PAYMENT_VIEW, PERMISSION_CODES.PAYMENT_VIEW_OWN)
   myPaymentPlan(
     @CurrentUser() actor: AuthenticatedUser,
     @Query('studentId') studentId?: string,
@@ -61,20 +61,20 @@ export class ParentPaymentsController {
   }
 
   @Get('me/payments')
-  @RequirePermissions(PERMISSION_CODES.PAYMENT_VIEW)
+  @RequireAnyPermissions(PERMISSION_CODES.PAYMENT_VIEW, PERMISSION_CODES.PAYMENT_VIEW_OWN)
   myPayments(@CurrentUser() actor: AuthenticatedUser) {
     return this.payments.myPayments(actor.id);
   }
 
   /** Daftar rekening tujuan transfer — dipakai ortu saat upload bukti manual. */
   @Get('me/payment-accounts')
-  @RequirePermissions(PERMISSION_CODES.PAYMENT_VIEW)
+  @RequireAnyPermissions(PERMISSION_CODES.PAYMENT_VIEW, PERMISSION_CODES.PAYMENT_VIEW_OWN)
   paymentAccounts() {
     return this.payments.listPaymentAccounts();
   }
 
   @Post('me/payments/manual-proof')
-  @RequirePermissions(PERMISSION_CODES.PAYMENT_CREATE)
+  @RequireAnyPermissions(PERMISSION_CODES.PAYMENT_CREATE, PERMISSION_CODES.PAYMENT_CREATE_OWN)
   async manualProof(
     @Body() dto: CreateManualProofDto,
     @CurrentUser() actor: AuthenticatedUser,
@@ -99,7 +99,7 @@ export class ParentPaymentsController {
    * Mengembalikan `proofUrl` token untuk dipakai di POST /me/payments/manual-proof.
    */
   @Post('me/payments/proof-upload')
-  @RequirePermissions(PERMISSION_CODES.PAYMENT_CREATE)
+  @RequireAnyPermissions(PERMISSION_CODES.PAYMENT_CREATE, PERMISSION_CODES.PAYMENT_CREATE_OWN)
   @UseInterceptors(
     FileInterceptor('file', { limits: { fileSize: 8 * 1024 * 1024 } }),
   )
@@ -114,7 +114,7 @@ export class ParentPaymentsController {
    * memprosesnya lewat jalur webhook asli. Scope: pembuat transaksi / staff.
    */
   @Post('me/payments/gateway/simulate')
-  @RequirePermissions(PERMISSION_CODES.PAYMENT_CREATE)
+  @RequireAnyPermissions(PERMISSION_CODES.PAYMENT_CREATE, PERMISSION_CODES.PAYMENT_CREATE_OWN)
   async simulateGateway(
     @Body() dto: SimulateGatewayDto,
     @CurrentUser() actor: AuthenticatedUser,
@@ -139,7 +139,7 @@ export class ParentPaymentsController {
    * klien tidak bisa memaksa status; hanya pembacaan + jalur outcome yang sama.
    */
   @Post('me/payments/:id/check-status')
-  @RequirePermissions(PERMISSION_CODES.PAYMENT_CREATE)
+  @RequireAnyPermissions(PERMISSION_CODES.PAYMENT_CREATE, PERMISSION_CODES.PAYMENT_CREATE_OWN)
   async checkStatus(
     @Param('id') id: string,
     @CurrentUser() actor: AuthenticatedUser,
@@ -161,7 +161,7 @@ export class ParentPaymentsController {
   }
 
   @Post('me/payments/gateway/initiate')
-  @RequirePermissions(PERMISSION_CODES.PAYMENT_CREATE)
+  @RequireAnyPermissions(PERMISSION_CODES.PAYMENT_CREATE, PERMISSION_CODES.PAYMENT_CREATE_OWN)
   async initiate(
     @Body() dto: InitiateGatewayDto,
     @CurrentUser() actor: AuthenticatedUser,
@@ -186,7 +186,7 @@ export class ParentPaymentsController {
   }
 
   @Get('me/receipts')
-  @RequirePermissions(PERMISSION_CODES.PAYMENT_VIEW)
+  @RequireAnyPermissions(PERMISSION_CODES.PAYMENT_VIEW, PERMISSION_CODES.PAYMENT_VIEW_OWN)
   async myReceipts(@CurrentUser() actor: AuthenticatedUser) {
     const allowed = await this.payments.allowedStudentsOrThrow(actor.id);
     const all = await Promise.all(
@@ -199,7 +199,7 @@ export class ParentPaymentsController {
   }
 
   @Get('me/receipts/:id')
-  @RequirePermissions(PERMISSION_CODES.PAYMENT_VIEW)
+  @RequireAnyPermissions(PERMISSION_CODES.PAYMENT_VIEW, PERMISSION_CODES.PAYMENT_VIEW_OWN)
   async myReceipt(
     @Param('id') id: string,
     @CurrentUser() actor: AuthenticatedUser,

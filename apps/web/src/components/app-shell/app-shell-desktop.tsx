@@ -132,8 +132,8 @@ export function AppShellDesktop({
 	}
 
 	const [logoutOpen, setLogoutOpen] = useState(false);
-	// Grup menu collapsible — default: hanya grup berisi halaman aktif yang terbuka
-	// (grup "Utama" selalu terbuka). Pilihan user diingat di localStorage.
+	// Grup menu collapsible — default: grup "Utama" + grup berisi halaman aktif
+	// terbuka; sisanya tertutup. Pilihan user diingat di localStorage.
 	const [openOverrides, setOpenOverrides] = useState<Record<string, boolean>>(
 		() => (typeof window !== "undefined" ? readOpenGroups() : {}),
 	);
@@ -143,9 +143,10 @@ export function AppShellDesktop({
 		g.items.some((item) => item.slug === currentSlug),
 	)?.name;
 	const isGroupOpen = (name?: string) =>
-		name === undefined || name === "Utama"
+		name === undefined
 			? true
-			: (openOverrides[`${role}:${name}`] ?? name === activeGroupName);
+			: (openOverrides[`${role}:${name}`] ??
+				(name === "Utama" || name === activeGroupName));
 	function toggleGroup(name: string) {
 		setOpenOverrides((prev) => {
 			const next = { ...prev, [`${role}:${name}`]: !isGroupOpen(name) };

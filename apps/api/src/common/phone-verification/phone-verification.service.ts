@@ -142,34 +142,45 @@ export class PhoneVerificationService {
     if (verification.expiresAt < new Date()) {
       throw new BadRequestException('Kode kedaluwarsa — kirim ulang kode baru.');
     }
-    if (verification.attempts >= MAX_ATTEMPTS) {
+    // Atomik — request paralel tidak bisa melewati MAX_ATTEMPTS ataupun
+    // memakai kode yang sama dua kali.
+    const spent = await this.prisma.phoneVerification.updateMany({
+      where: {
+        id: verification.id,
+        consumedAt: null,
+        attempts: { lt: MAX_ATTEMPTS },
+      },
+      data: { attempts: { increment: 1 } },
+    });
+    if (spent.count === 0) {
       throw new BadRequestException(
         'Terlalu banyak percobaan salah — kirim ulang kode baru.',
       );
     }
     const match = await bcrypt.compare(normalized, verification.codeHash);
     if (!match) {
-      await this.prisma.phoneVerification.update({
+      const fresh = await this.prisma.phoneVerification.findUnique({
         where: { id: verification.id },
-        data: { attempts: { increment: 1 } },
+        select: { attempts: true },
       });
-      const left = MAX_ATTEMPTS - (verification.attempts + 1);
+      const left = MAX_ATTEMPTS - (fresh?.attempts ?? 0);
       throw new BadRequestException(
         left > 0
           ? `Kode salah — sisa percobaan ${left}x.`
           : 'Kode salah — kirim ulang kode baru.',
       );
     }
-    await this.prisma.$transaction([
-      this.prisma.phoneVerification.update({
-        where: { id: verification.id },
-        data: { consumedAt: new Date() },
-      }),
-      this.prisma.user.update({
-        where: { id: userId },
-        data: { phoneVerifiedAt: new Date() },
-      }),
-    ]);
+    const consumed = await this.prisma.phoneVerification.updateMany({
+      where: { id: verification.id, consumedAt: null },
+      data: { consumedAt: new Date() },
+    });
+    if (consumed.count === 0) {
+      throw new BadRequestException('Kode sudah dipakai — kirim ulang kode baru.');
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { phoneVerifiedAt: new Date() },
+    });
     return { verified: true };
   }
 }

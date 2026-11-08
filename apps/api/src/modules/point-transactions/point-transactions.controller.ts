@@ -11,13 +11,14 @@ import {
   Query,
   UseGuards,
   Body,
+  ForbiddenException,
   NotFoundException,
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../rbac/permissions.guard';
-import { RequirePermissions } from '../rbac/permissions.decorator';
+import { RequirePermissions, RequireAnyPermissions } from '../rbac/permissions.decorator';
 import { PERMISSION_CODES } from '../rbac/permissions.constants';
 import { PointTransactionsService } from './point-transactions.service';
 import { CreatePointTransactionDto } from './dto/create-point-transaction.dto';
@@ -75,9 +76,13 @@ export class PointTransactionsController {
    * Access: Student (own data), Parent (child data), Tutor (group students), Admin Academic
    */
   @Get('student/:studentId')
-  @RequirePermissions(PERMISSION_CODES.POINT_TRANSACTIONS_VIEW)
+  @RequireAnyPermissions(
+    PERMISSION_CODES.POINT_TRANSACTIONS_VIEW,
+    PERMISSION_CODES.POINT_TRANSACTIONS_VIEW_OWN,
+  )
   async findByStudent(
     @Param('studentId') studentId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('eventType') eventType?: PointEventType,
     @Query('period') period?: string,
     @Query('limit') limit?: string,
@@ -91,6 +96,7 @@ export class PointTransactionsController {
     if (period) filters.period = period;
     if (limit) filters.limit = parseInt(limit);
 
+    await this.assertStudentAccess(user, studentId);
     return this.pointTransactionsService.findByStudent(studentId, filters);
   }
 
@@ -99,11 +105,16 @@ export class PointTransactionsController {
    * Access: Student (own data), Parent (child data), Tutor (group students), Admin Academic
    */
   @Get('student/:studentId/total')
-  @RequirePermissions(PERMISSION_CODES.POINT_TRANSACTIONS_VIEW)
+  @RequireAnyPermissions(
+    PERMISSION_CODES.POINT_TRANSACTIONS_VIEW,
+    PERMISSION_CODES.POINT_TRANSACTIONS_VIEW_OWN,
+  )
   async getStudentTotalPoints(
     @Param('studentId') studentId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('period') period?: string,
   ) {
+    await this.assertStudentAccess(user, studentId);
     return this.pointTransactionsService.getStudentTotalPoints(
       studentId,
       period,
@@ -290,8 +301,43 @@ export class PointTransactionsController {
    * Access: Admin Academic, Owner
    */
   @Get(':id')
-  @RequirePermissions(PERMISSION_CODES.POINT_TRANSACTIONS_VIEW)
-  async findOne(@Param('id') id: string) {
-    return this.pointTransactionsService.findOne(id);
+  @RequireAnyPermissions(
+    PERMISSION_CODES.POINT_TRANSACTIONS_VIEW,
+    PERMISSION_CODES.POINT_TRANSACTIONS_VIEW_OWN,
+  )
+  async findOne(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const tx = await this.pointTransactionsService.findOne(id);
+    if (tx) await this.assertStudentAccess(user, tx.studentId);
+    return tx;
+  }
+
+  /**
+   * Self-service (view_own): siswa hanya boleh melihat poin dirinya, ortu
+   * hanya anak yang tertaut di parent_students. Staff dengan
+   * point_transactions.view penuh bebas.
+   */
+  private async assertStudentAccess(
+    user: AuthenticatedUser,
+    studentId: string,
+  ) {
+    if (user.permissions.includes(PERMISSION_CODES.POINT_TRANSACTIONS_VIEW)) {
+      return;
+    }
+    const student = await this.prisma.student.findFirst({
+      where: {
+        id: studentId,
+        OR: [
+          { userId: user.id },
+          { parentStudents: { some: { parent: { userId: user.id } } } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!student) {
+      throw new ForbiddenException('Riwayat poin siswa ini di luar akses Anda.');
+    }
   }
 }

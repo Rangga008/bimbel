@@ -5,6 +5,7 @@
  * Does NOT duplicate exam schema - pure aggregation
  */
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import ExcelJS from 'exceljs';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TutorScopeService } from '../../common/tutor-scope/tutor-scope.service';
@@ -142,7 +143,44 @@ export class AnalyticsService {
   /**
    * Get per-question analytics for all questions in an exam
    */
-  async getExamQuestionAnalytics(examId: string) {
+
+  /**
+   * Batasi tutor ke ujian dalam scope mengampunya (program/level/mapel).
+   * Role lain (admin/owner, scope null) tidak dibatasi.
+   */
+  private async assertExamScope(
+    actor: { id: string; roles: string[]; permissions: string[] } | undefined,
+    examId: string,
+  ) {
+    if (!actor) return;
+    const scope = await this.tutorScope.for(actor);
+    if (!scope) return;
+    const exam = await this.prisma.exam.findUnique({
+      where: { id: examId },
+      select: {
+        programId: true,
+        levelId: true,
+        subjectId: true,
+        createdBy: true,
+      },
+    });
+    if (!exam) throw new ForbiddenException('Ujian tidak ditemukan.');
+    if (exam.createdBy === actor.id) return;
+    if (!exam.programId && !exam.levelId && !exam.subjectId) {
+      throw new ForbiddenException(
+        'Ujian global hanya bisa diakses admin akademik/owner.',
+      );
+    }
+    this.tutorScope.assertContentRef(
+      scope,
+      exam.programId,
+      exam.levelId,
+      exam.subjectId,
+    );
+  }
+
+  async getExamQuestionAnalytics(examId: string, actor?: AuthenticatedUser) {
+    await this.assertExamScope(actor, examId);
     const exam = await this.prisma.exam.findUnique({
       where: { id: examId },
       include: {
@@ -798,7 +836,12 @@ export class AnalyticsService {
   }
 
   /** Rekap nilai semua siswa dalam satu ujian — ala "HASIL SIMULASI" (PDF1). */
-  async getExamScoreRecap(examId: string, groupId?: string) {
+  async getExamScoreRecap(
+    examId: string,
+    groupId?: string,
+    actor?: AuthenticatedUser,
+  ) {
+    await this.assertExamScope(actor, examId);
     const { exam, attempts, catName } = await this.loadExamRecapBase(examId, groupId);
     const { columns, keyOf } = this.recapColumns(exam, catName);
     const colMax = new Map<string, number>(columns.map((c) => [c.key, 0]));
@@ -858,7 +901,12 @@ export class AnalyticsService {
    * Rekap jawaban per nomor — ala "JAWABAN SISWA" (PDF2):
    * baris KUNCI + jawaban tiap siswa per nomor soal.
    */
-  async getExamAnswerRecap(examId: string, groupId?: string) {
+  async getExamAnswerRecap(
+    examId: string,
+    groupId?: string,
+    actor?: AuthenticatedUser,
+  ) {
+    await this.assertExamScope(actor, examId);
     const { exam, attempts } = await this.loadExamRecapBase(examId, groupId);
 
     // Kunci per soal: huruf opsi benar (A,B,…) / kunci isian / label esai.
@@ -927,7 +975,12 @@ export class AnalyticsService {
   }
 
   /** Lembar soal untuk dicetak (opsional sertakan kunci + pembahasan). */
-  async getExamQuestionSheet(examId: string, withKey: boolean) {
+  async getExamQuestionSheet(
+    examId: string,
+    withKey: boolean,
+    actor?: AuthenticatedUser,
+  ) {
+    await this.assertExamScope(actor, examId);
     const { exam } = await this.loadExamRecapBase(examId);
     return {
       exam: {
@@ -959,7 +1012,12 @@ export class AnalyticsService {
   }
 
   /** Export rekap nilai ujian ke .xlsx (ExcelJS). */
-  async exportExamScoreRecapXlsx(examId: string, groupId?: string) {
+  async exportExamScoreRecapXlsx(
+    examId: string,
+    groupId?: string,
+    actor?: AuthenticatedUser,
+  ) {
+    await this.assertExamScope(actor, examId);
     const recap = await this.getExamScoreRecap(examId, groupId);
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Rekap Nilai');
@@ -1034,7 +1092,12 @@ export class AnalyticsService {
    * Export rekap jawaban per nomor ke .xlsx — baris KUNCI + jawaban tiap
    * siswa per nomor, sel benar hijau / salah merah (matriks "JAWABAN SISWA").
    */
-  async exportExamAnswerRecapXlsx(examId: string, groupId?: string) {
+  async exportExamAnswerRecapXlsx(
+    examId: string,
+    groupId?: string,
+    actor?: AuthenticatedUser,
+  ) {
+    await this.assertExamScope(actor, examId);
     const recap = await this.getExamAnswerRecap(examId, groupId);
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Rekap Jawaban');
@@ -1915,7 +1978,8 @@ ${report.main && report.main.rows.length ? sectionTable(report.main) : '<p><i>Be
   // =====================================================================
 
   /** Baris analisis: nomor soal, potongan teks, jumlah benar/salah, % benar. */
-  async getQuestionAnalysisItems(examId: string) {
+  async getQuestionAnalysisItems(examId: string, actor?: AuthenticatedUser) {
+    await this.assertExamScope(actor, examId);
     const data = await this.getExamQuestionAnalytics(examId);
     const stripHtml = (s: string) =>
       String(s ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -1963,7 +2027,8 @@ ${report.main && report.main.rows.length ? sectionTable(report.main) : '<p><i>Be
   }
 
   /** Export analisis soal ke .xlsx — tabel + gambar bar chart. */
-  async exportExamAnalysisXlsx(examId: string) {
+  async exportExamAnalysisXlsx(examId: string, actor?: AuthenticatedUser) {
+    await this.assertExamScope(actor, examId);
     const analysis = await this.getQuestionAnalysisItems(examId);
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Analisis Soal');

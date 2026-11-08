@@ -805,28 +805,43 @@ export class AuthService {
     if (!rec || rec.expiresAt < new Date()) {
       throw new BadRequestException('Kode OTP tidak valid atau kedaluwarsa.');
     }
-    if (rec.attempts >= RESET_OTP_MAX_ATTEMPTS) {
+    // Atomik: setiap verifikasi menghabiskan satu percobaan — request paralel
+    // tidak bisa melewati batas MAX maupun memakai kode yang sama dua kali.
+    const spent = await this.prisma.passwordResetOtp.updateMany({
+      where: {
+        id: rec.id,
+        consumedAt: null,
+        attempts: { lt: RESET_OTP_MAX_ATTEMPTS },
+      },
+      data: { attempts: { increment: 1 } },
+    });
+    if (spent.count === 0) {
       throw new BadRequestException(
         'Terlalu banyak percobaan salah — kirim ulang kode OTP baru.',
       );
     }
     const match = await bcrypt.compare(payload.otp, rec.codeHash);
     if (!match) {
-      await this.prisma.passwordResetOtp.update({
+      const fresh = await this.prisma.passwordResetOtp.findUnique({
         where: { id: rec.id },
-        data: { attempts: { increment: 1 } },
+        select: { attempts: true },
       });
-      const left = RESET_OTP_MAX_ATTEMPTS - (rec.attempts + 1);
+      const left = RESET_OTP_MAX_ATTEMPTS - (fresh?.attempts ?? 0);
       throw new BadRequestException(
         left > 0
           ? `Kode OTP salah — sisa percobaan ${left}x.`
           : 'Kode OTP salah — kirim ulang kode baru.',
       );
     }
-    await this.prisma.passwordResetOtp.update({
-      where: { id: rec.id },
+    const consumed = await this.prisma.passwordResetOtp.updateMany({
+      where: { id: rec.id, consumedAt: null },
       data: { consumedAt: new Date() },
     });
+    if (consumed.count === 0) {
+      throw new BadRequestException(
+        'Kode OTP sudah dipakai — kirim ulang kode baru.',
+      );
+    }
     // resetPassword() juga merevoke semua refresh token aktif.
     await this.usersService.resetPassword(rec.userId, newPassword);
     return { success: true as const };

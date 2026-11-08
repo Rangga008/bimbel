@@ -15,6 +15,22 @@ import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { QuestionsService } from './questions.service';
 import type { CreateQuestionDto } from './dto/question.dto';
 
+/** Batas waktu parse arsip .docx — mencegah request menggantung di file korup. */
+const DOCX_PARSE_TIMEOUT_MS = 15_000;
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  message: string,
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new BadRequestException(message)), ms),
+    ),
+  ]);
+}
+
 /** Satu soal hasil parse file import (sebelum divalidasi jadi DTO). */
 interface ParsedRow {
   no: number;
@@ -314,8 +330,15 @@ export class QuestionsImportService {
   ): Promise<{ rows: ParsedRow[]; images: Map<string, { name: string; mime: string; buffer: Buffer }> }> {
     let zip: JSZip;
     try {
-      zip = await JSZip.loadAsync(buffer);
-    } catch {
+      // Timeout — arsip korup/terpotong bisa membuat dekompresi JSZip menggantung
+      // dan mengunci event-loop request ini.
+      zip = await withTimeout(
+        JSZip.loadAsync(buffer),
+        DOCX_PARSE_TIMEOUT_MS,
+        'File Word tidak dapat diproses dalam batas waktu — file kemungkinan rusak.',
+      );
+    } catch (e) {
+      if (e instanceof BadRequestException) throw e;
       throw new BadRequestException(
         'File Word tidak terbaca — gunakan template .docx yang disediakan.',
       );
@@ -335,7 +358,11 @@ export class QuestionsImportService {
       while ((rm = relRe.exec(relsXml))) relTargets.set(rm[1], rm[2]);
     }
 
-    const xml = await doc.async('string');
+    const xml = await withTimeout(
+      doc.async('string'),
+      DOCX_PARSE_TIMEOUT_MS,
+      'File Word tidak dapat diproses dalam batas waktu — file kemungkinan rusak.',
+    );
     const usedRelIds = new Set<string>();
     const rows: ParsedRow[] = [];
     let pendingLines: string[] = [];

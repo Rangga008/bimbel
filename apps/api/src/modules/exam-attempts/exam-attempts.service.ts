@@ -371,11 +371,13 @@ export class ExamAttemptsService {
       create: {
         attemptId,
         questionId,
-        selectedOptionIds: dto.selectedOptionIds ?? [],
+        // Dedupe — opsi yang sama dikirim berulang ([A,A]) tidak boleh
+        // dihitung lebih dari sekali saat penilaian.
+        selectedOptionIds: [...new Set(dto.selectedOptionIds ?? [])],
         textAnswer: dto.textAnswer,
       },
       update: {
-        selectedOptionIds: dto.selectedOptionIds ?? [],
+        selectedOptionIds: [...new Set(dto.selectedOptionIds ?? [])],
         textAnswer: dto.textAnswer,
       },
     });
@@ -668,13 +670,15 @@ export class ExamAttemptsService {
       let isCorrect = false;
       let questionScore = 0;
 
-      // Auto-grade for choice questions
+      // Auto-grade for choice questions — opsi jawaban selalu di-dedupe
+      // (defense-in-depth; data lama mungkin masih berisi duplikat).
+      const pickedIds = new Set(answer.selectedOptionIds);
       if (question.type === 'SINGLE_CHOICE' || question.type === 'TRUE_FALSE') {
         const correctOption = question.options.find((o) => o.isCorrect);
         if (
           correctOption &&
-          answer.selectedOptionIds.length === 1 &&
-          answer.selectedOptionIds[0] === correctOption.id
+          pickedIds.size === 1 &&
+          pickedIds.has(correctOption.id)
         ) {
           isCorrect = true;
           questionScore = item.points;
@@ -684,8 +688,8 @@ export class ExamAttemptsService {
           .filter((o) => o.isCorrect)
           .map((o) => o.id);
         if (
-          answer.selectedOptionIds.length === correctOptions.length &&
-          answer.selectedOptionIds.every((id) => correctOptions.includes(id))
+          pickedIds.size === correctOptions.length &&
+          correctOptions.every((id) => pickedIds.has(id))
         ) {
           isCorrect = true;
           questionScore = item.points;
@@ -736,7 +740,26 @@ export class ExamAttemptsService {
    * Attempt LOCKED dibiarkan — unlock manual tetap bisa, lalu worker
    * auto-submit menangkapnya (status ENDED tetap memblokir jawaban baru).
    */
-  async endExam(examId: string) {
+  /** Batasi tutor ke ujian dalam scope mengampunya (delegasi ke ExamsService). */
+  private async assertExamScope(
+    actor: AuthenticatedUser | undefined,
+    examId: string,
+  ) {
+    const exam = await this.prisma.exam.findUnique({
+      where: { id: examId },
+      select: {
+        programId: true,
+        levelId: true,
+        subjectId: true,
+        createdBy: true,
+      },
+    });
+    if (!exam) throw new NotFoundException('Ujian tidak ditemukan.');
+    await this.exams.assertExamScope(actor, exam);
+  }
+
+  async endExam(examId: string, actor?: AuthenticatedUser) {
+    await this.assertExamScope(actor, examId);
     const exam = await this.prisma.exam.findUnique({
       where: { id: examId },
       select: { id: true, status: true },
@@ -950,7 +973,8 @@ export class ExamAttemptsService {
    * Get all attempts for an exam (for admin/tutor).
    * Fase 3d: include proctoring status fields.
    */
-  async getExamAttempts(examId: string) {
+  async getExamAttempts(examId: string, actor?: AuthenticatedUser) {
+    await this.assertExamScope(actor, examId);
     return this.prisma.examAttempt.findMany({
       where: { examId },
       select: {
@@ -997,12 +1021,13 @@ export class ExamAttemptsService {
    * Dipanggil admin/tutor dari halaman proctoring. Mengembalikan info
    * attempt yang dihapus untuk audit log.
    */
-  async resetAttempt(attemptId: string) {
+  async resetAttempt(attemptId: string, actor?: AuthenticatedUser) {
     const attempt = await this.prisma.examAttempt.findUnique({
       where: { id: attemptId },
       include: { student: { select: { user: { select: { name: true } } } } },
     });
     if (!attempt) throw new NotFoundException('Attempt tidak ditemukan.');
+    await this.assertExamScope(actor, attempt.examId);
     await this.prisma.examAttempt.delete({ where: { id: attemptId } });
     return {
       success: true,
@@ -1017,7 +1042,7 @@ export class ExamAttemptsService {
    * jawaban siswa + poin tiap item — tanpa batasan anti-leak karena dipakai
    * admin/tutor yang mengoreksi esai/isian singkat.
    */
-  async getAttemptReview(attemptId: string) {
+  async getAttemptReview(attemptId: string, actor?: AuthenticatedUser) {
     const attempt = await this.prisma.examAttempt.findUnique({
       where: { id: attemptId },
       include: {
@@ -1042,6 +1067,7 @@ export class ExamAttemptsService {
       },
     });
     if (!attempt) throw new NotFoundException('Attempt tidak ditemukan.');
+    await this.assertExamScope(actor, attempt.examId);
     const byQ = new Map(attempt.answers.map((a) => [a.questionId, a]));
     return {
       id: attempt.id,
@@ -1084,12 +1110,18 @@ export class ExamAttemptsService {
    * untuk tipe lain) — dibatasi 0 s.d. poin soal di ujian ini, lalu total
    * skor attempt dihitung ulang dari semua jawaban.
    */
-  async gradeAnswer(attemptId: string, questionId: string, score: number) {
+  async gradeAnswer(
+    attemptId: string,
+    questionId: string,
+    score: number,
+    actor?: AuthenticatedUser,
+  ) {
     const attempt = await this.prisma.examAttempt.findUnique({
       where: { id: attemptId },
       include: { exam: { select: { items: true } } },
     });
     if (!attempt) throw new NotFoundException('Attempt tidak ditemukan.');
+    await this.assertExamScope(actor, attempt.examId);
     const item = attempt.exam.items.find((i) => i.questionId === questionId);
     if (!item) throw new NotFoundException('Soal tidak ada di ujian ini.');
     if (!Number.isFinite(score)) {

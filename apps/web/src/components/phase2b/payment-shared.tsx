@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, apiFetchBlob, ApiError } from '@/lib/api-client';
 import { rupiah } from '@/components/phase2a/invoices-manager';
+import { PrintReceiptButton } from '@/components/phase2b/receipt-print';
 import type { PaymentListItem } from '@/lib/phase2b-types';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -103,15 +104,28 @@ export function VerifyDialog({ verifyId, onClose }: { verifyId: string | null; o
   );
 }
 
-/** Buka file bukti tersimpan (endpoint terproteksi → fetch blob + objectURL). */
+/** Buka file bukti tersimpan (endpoint terproteksi → fetch blob + objectURL).
+ *  Tab kosong dibuka SINKRON saat klik — kalau ditunda sampai fetch selesai,
+ *  browser memblokirnya sebagai popup. Fitur 'noopener' tidak dipakai karena
+ *  membuat window.open mengembalikan null di beberapa browser. */
 async function openProof(paymentId: string) {
+  const win = window.open('', '_blank');
+  if (!win) {
+    toast.error('Tab baru diblokir browser — izinkan popup untuk melihat bukti.');
+    return;
+  }
+  win.opener = null;
+  win.document.title = 'Memuat bukti…';
+  win.document.body.innerHTML =
+    '<p style="font-family:sans-serif;color:#555;padding:24px">Memuat file bukti…</p>';
   try {
     const blob = await apiFetchBlob(`/payments/${paymentId}/proof`);
     const url = URL.createObjectURL(blob);
-    window.open(url, '_blank', 'noopener');
-    // Revoke ditunda — objectURL harus hidup sampai tab terbuka & render.
+    win.location.href = url;
+    // Revoke ditunda — objectURL harus hidup sampai tab selesai render.
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   } catch (e) {
+    win.close();
     toast.error(e instanceof ApiError ? e.message : 'Gagal membuka file bukti.');
   }
 }
@@ -165,7 +179,7 @@ export function PaymentsTable({ items, canVerify, onVerify }: { items: PaymentLi
             <th className="px-3 py-2.5 font-medium text-right">Jumlah</th>
             <th className="px-3 py-2.5 font-medium">Kwitansi</th>
             <th className="px-3 py-2.5 font-medium">Bukti</th>
-            {canVerify ? <th className="px-3 py-2.5 font-medium">Aksi</th> : null}
+            <th className="px-3 py-2.5 font-medium">Aksi</th>
           </tr>
         </thead>
         <tbody className="divide-y">
@@ -211,13 +225,19 @@ export function PaymentsTable({ items, canVerify, onVerify }: { items: PaymentLi
                     <span className="text-xs text-muted-foreground">—</span>
                   )}
                 </td>
-                {canVerify ? (
-                  <td className="px-3 py-2.5">
-                    {p.status === 'PENDING' ? (
+                <td className="px-3 py-2.5">
+                  <div className="flex flex-wrap gap-1.5">
+                    {canVerify && p.status === 'PENDING' ? (
                       <Button variant="outline" size="sm" onClick={() => onVerify(p.id)}>Verifikasi</Button>
                     ) : null}
-                  </td>
-                ) : null}
+                    {p.receipts?.[0] ? (
+                      <PrintReceiptButton receiptId={p.receipts[0].id} detailBase="/receipts" />
+                    ) : null}
+                    {!((canVerify && p.status === 'PENDING') || p.receipts?.[0]) ? (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    ) : null}
+                  </div>
+                </td>
               </tr>
             );
           })}

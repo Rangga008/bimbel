@@ -107,6 +107,11 @@ services:
       # RabbitMQ — antrean job (trigger outbox WA, pencatatan poin). Kosongkan
       # untuk mode in-process (API tetap jalan tanpa broker).
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-bimbel}:${RABBITMQ_PASSWORD:-bimbel_secret}@rabbitmq:5672
+      # Secret dev lokal — JANGAN dipakai di deployment publik. Di produksi
+      # (tanpa ALLOW_DEV_SECRETS) API menolak start bila secret ini default.
+      ALLOW_DEV_SECRETS: ${ALLOW_DEV_SECRETS:-1}
+      # Endpoint simulasi gateway DUMMY (sandbox lokal) — jangan set di produksi.
+      PAYMENT_GATEWAY_SIMULATE_ENABLED: ${PAYMENT_GATEWAY_SIMULATE_ENABLED:-true}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me}
       JWT_ACCESS_TTL_SECONDS: "900"
       JWT_REFRESH_TTL_DAYS: "7"

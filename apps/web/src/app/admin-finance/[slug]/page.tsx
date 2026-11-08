@@ -5,7 +5,6 @@ import { InvoicesManager } from "@/components/phase2a/invoices-manager";
 import { PaymentsManager } from "@/components/phase2b/payments-manager";
 import { DailyTransactions } from "@/components/phase2b/daily-transactions";
 import { ProofsManager } from "@/components/phase2b/proofs-manager";
-import { ReceiptsManager } from "@/components/phase2b/receipts-manager";
 import { ArManager } from "@/components/phase2c/ar-manager";
 import { KasBankManager } from "@/components/phase2c/kas-bank-manager";
 import { BudgetManager } from "@/components/phase2d/budget-manager";
@@ -43,13 +42,7 @@ export default async function AdminFinanceMenuPage({
 	if (slug === "orang-tua") return <ParentsManager canManage basePath="/admin-finance" />;
 	if (slug === "invoice") return <InvoicesManager canManage />;
 	if (slug === "transaksi-harian") return <DailyTransactions />;
-	if (slug === "pembayaran")
-		return (
-			<div className="flex flex-col gap-8">
-				<PaymentsManager canVerify />
-				<ReceiptsManager title="Kwitansi" />
-			</div>
-		);
+	if (slug === "pembayaran") return <PaymentsManager canVerify />;
 	if (slug === "bukti") return <ProofsManager canVerify />;
 	if (slug === "piutang") return <ArManager canRefund />;
 	if (slug === "kas-bank") return <KasBankManager />;

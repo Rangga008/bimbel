@@ -140,6 +140,9 @@ export function ParentPayments() {
     setProofNote('');
     setAccountId('');
   };
+  // Tab pembayaran gateway dibuka sinkron saat submit (masih dalam gesture
+  // klik) — kalau dibuka setelah await respons, browser memblokir popup-nya.
+  const gatewayWinRef = useRef<Window | null>(null);
   const payM = useMutation({
     mutationFn: async () => {
       if (!checkout) throw new Error('Pilih tagihan dulu.');
@@ -172,16 +175,29 @@ export function ParentPayments() {
     },
     onSuccess: (created) => {
       toast.success(mode === 'MANUAL' ? 'Bukti terkirim — menunggu verifikasi admin.' : 'Tagihan gateway dibuat — lanjutkan pembayaran.');
-      // Gateway asli (Midtrans): langsung buka halaman Snap-nya.
+      // Gateway asli (Midtrans): navigasikan tab yang sudah dibuka saat submit.
       if (mode === 'GATEWAY' && created.redirectUrl && created.provider !== 'DUMMY') {
-        window.open(created.redirectUrl, '_blank', 'noopener,noreferrer');
+        const w = gatewayWinRef.current;
+        if (w && !w.closed) {
+          w.opener = null;
+          w.location.href = created.redirectUrl;
+        } else {
+          window.open(created.redirectUrl, '_blank');
+        }
+      } else {
+        gatewayWinRef.current?.close();
       }
+      gatewayWinRef.current = null;
       resetCheckout();
       qc.invalidateQueries({ queryKey: ['me-payments'] });
       qc.invalidateQueries({ queryKey: ['me-invoices'] });
       qc.invalidateQueries({ queryKey: ['me-payment-plan'] });
     },
-    onError: (e) => toast.error(err2b(e, 'Gagal memproses pembayaran.')),
+    onError: (e) => {
+      gatewayWinRef.current?.close();
+      gatewayWinRef.current = null;
+      toast.error(err2b(e, 'Gagal memproses pembayaran.'));
+    },
   });
   const simM = useMutation({
     mutationFn: (args: { providerRef: string; status: 'SUCCESS' | 'FAILED' | 'EXPIRED' }) =>
@@ -547,7 +563,18 @@ export function ParentPayments() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); payM.mutate(); }}>
+            <form className="flex flex-col gap-3" onSubmit={(e) => {
+              e.preventDefault();
+              if (mode === 'GATEWAY') {
+                gatewayWinRef.current = window.open('', '_blank');
+                if (gatewayWinRef.current) {
+                  gatewayWinRef.current.document.title = 'Menyiapkan pembayaran…';
+                  gatewayWinRef.current.document.body.innerHTML =
+                    '<p style="font-family:sans-serif;color:#555;padding:24px">Menghubungkan ke payment gateway…</p>';
+                }
+              }
+              payM.mutate();
+            }}>
               <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
                 <p className="font-medium">{checkout.number}</p>
                 <p className="text-xs text-muted-foreground">
