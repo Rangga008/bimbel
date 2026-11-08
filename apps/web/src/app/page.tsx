@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 import {
 	ArrowRight,
 	BadgeCheck,
@@ -52,9 +51,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { resolveAssetUrl } from "@/lib/api-client";
-import { useAuthStore } from "@/stores/auth-store";
 import { useBranding } from "@/lib/use-branding";
-import { ROLE_KEY_BY_BACKEND_NAME } from "@/config/role-nav";
 import { SiteHeader } from "@/components/public/site-header";
 import { SiteFooter } from "@/components/public/site-footer";
 import {
@@ -453,20 +450,12 @@ function PackageSlider({ slides }: { slides: PackageSlide[] }) {
 }
 
 export default function LandingPage() {
-	const router = useRouter();
-	const user = useAuthStore((state) => state.user);
-	const isBootstrapping = useAuthStore((state) => state.isBootstrapping);
-
 	const branding = useBranding();
 	const landingQ = useLanding();
 
-	// Pengguna yang sudah login langsung diarahkan ke dashboard rolenya
-	// (perilaku lama halaman root dipertahankan).
-	useEffect(() => {
-		if (isBootstrapping || !user) return;
-		const roleKey = ROLE_KEY_BY_BACKEND_NAME[user.roles[0]];
-		if (roleKey) router.replace(`/${roleKey}`);
-	}, [user, isBootstrapping, router]);
+	// User yang sudah login TIDAK di-redirect otomatis — header menampilkan
+	// tombol "Akunku" agar mereka bisa buka dashboard sendiri (landing tetap
+	// bisa dilihat, mis. untuk cek pengumuman/program terbaru).
 
 	// Scroll halus untuk link anchor navbar.
 	useEffect(() => {

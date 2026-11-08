@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowRight, ChevronDown, Menu } from "lucide-react";
+import { ArrowRight, ChevronDown, LayoutDashboard, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	Sheet,
@@ -20,6 +20,8 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useBranding } from "@/lib/use-branding";
+import { useAuthStore } from "@/stores/auth-store";
+import { ROLE_KEY_BY_BACKEND_NAME } from "@/config/role-nav";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import {
 	DEFAULT_REGISTRATION_URL,
@@ -43,6 +45,12 @@ export function SiteHeader() {
 	const programs = landingQ.data?.catalog ?? [];
 	const regUrl =
 		landingQ.data?.display?.registrationUrl || DEFAULT_REGISTRATION_URL;
+	// Sudah login → tampilkan tombol "Akunku" ke dashboard role, jangan
+	// auto-redirect (user yang login masih boleh melihat landing).
+	const user = useAuthStore((state) => state.user);
+	const isBootstrapping = useAuthStore((state) => state.isBootstrapping);
+	const roleKey = user ? ROLE_KEY_BY_BACKEND_NAME[user.roles[0]] : undefined;
+	const dashboardHref = roleKey ? `/${roleKey}` : null;
 
 	const programMenu = (
 		<DropdownMenu>
@@ -120,21 +128,33 @@ export function SiteHeader() {
 					>
 						Info Pendaftaran
 					</Button>
-					<Button
-						variant="ghost"
-						size="sm"
-						render={<Link href="/login" />}
-						className="text-brand-blue-100 hover:bg-white/10 hover:text-white"
-					>
-						Masuk
-					</Button>
-					<Button
-						render={<Link href="/daftar" />}
-						className="gap-2 bg-brand-gold-400 text-brand-blue-900 hover:bg-brand-gold-300"
-					>
-						Daftar
-						<ArrowRight className="size-4" />
-					</Button>
+					{isBootstrapping ? null : dashboardHref ? (
+						<Button
+							render={<Link href={dashboardHref} />}
+							className="gap-2 bg-brand-gold-400 font-semibold text-brand-blue-900 hover:bg-brand-gold-300"
+						>
+							<LayoutDashboard className="size-4" />
+							Akunku
+						</Button>
+					) : (
+						<>
+							<Button
+								variant="ghost"
+								size="sm"
+								render={<Link href="/login" />}
+								className="text-brand-blue-100 hover:bg-white/10 hover:text-white"
+							>
+								Masuk
+							</Button>
+							<Button
+								render={<Link href="/daftar" />}
+								className="gap-2 bg-brand-gold-400 text-brand-blue-900 hover:bg-brand-gold-300"
+							>
+								Daftar
+								<ArrowRight className="size-4" />
+							</Button>
+						</>
+					)}
 				</div>
 				<span className="lg:hidden">
 					<ThemeToggle />
@@ -193,16 +213,26 @@ export function SiteHeader() {
 										Info Pendaftaran (Buku Tamu)
 									</span>
 								</SheetClose>
-								<SheetClose render={<Link href="/daftar" />}>
-									<span className="block rounded-lg bg-brand-gold-400 px-3 py-2.5 text-center text-sm font-semibold text-brand-blue-900">
-										Daftar Akun Orang Tua
-									</span>
-								</SheetClose>
-								<SheetClose render={<Link href="/login" />}>
-									<span className="block rounded-lg border px-3 py-2.5 text-center text-sm font-medium">
-										Masuk
-									</span>
-								</SheetClose>
+								{isBootstrapping ? null : dashboardHref ? (
+									<SheetClose render={<Link href={dashboardHref} />}>
+										<span className="block rounded-lg bg-brand-gold-400 px-3 py-2.5 text-center text-sm font-semibold text-brand-blue-900">
+											Akunku →
+										</span>
+									</SheetClose>
+								) : (
+									<>
+										<SheetClose render={<Link href="/daftar" />}>
+											<span className="block rounded-lg bg-brand-gold-400 px-3 py-2.5 text-center text-sm font-semibold text-brand-blue-900">
+												Daftar Akun Orang Tua
+											</span>
+										</SheetClose>
+										<SheetClose render={<Link href="/login" />}>
+											<span className="block rounded-lg border px-3 py-2.5 text-center text-sm font-medium">
+												Masuk
+											</span>
+										</SheetClose>
+									</>
+								)}
 							</div>
 						</nav>
 					</SheetContent>

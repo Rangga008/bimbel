@@ -331,21 +331,16 @@ export function AppShellDesktop({
 									{userInitials(user?.name)}
 								</AvatarFallback>
 							</Avatar>
-							<Tooltip>
-								<TooltipTrigger
-									render={
-										<Button
-											variant="destructive"
-											size="icon-sm"
-											onClick={() => setLogoutOpen(true)}
-											aria-label="Logout"
-										/>
-									}
-								>
-									<LogOut className="size-4" />
-								</TooltipTrigger>
-								<TooltipContent side="bottom">Logout</TooltipContent>
-							</Tooltip>
+							<Button
+								variant="destructive"
+								size="sm"
+								onClick={() => setLogoutOpen(true)}
+								aria-label="Logout"
+								className="gap-1.5 font-semibold"
+							>
+								<LogOut className="size-4" />
+								Logout
+							</Button>
 						</div>
 					</header>
 					<main className="min-w-0 flex-1 overflow-y-auto p-6">
