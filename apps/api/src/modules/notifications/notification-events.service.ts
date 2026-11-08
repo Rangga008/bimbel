@@ -56,22 +56,26 @@ export class NotificationEventsService {
     companyName: string,
   ) {
     try {
-      const [company, finance] = await Promise.all([
+      const [company, finance, branding] = await Promise.all([
         this.settings.get('company'),
         this.settings.get('finance'),
+        this.settings.get('branding').catch(() => ({}) as Record<string, string>),
       ]);
-      // Tanda tangan kwitansi — gambar media lokal (/api/media/<id>/file)
-      // dipetakan ke path disk agar pdfkit bisa menyematkannya.
-      let signaturePath: string | undefined;
-      const sigUrl = finance.receiptSignatureUrl ?? '';
-      const mediaMatch = sigUrl.match(/\/api\/media\/([0-9a-f-]+)\/file/i);
-      if (mediaMatch) {
+      // Gambar media lokal (/api/media/<id>/file) dipetakan ke path disk
+      // agar pdfkit bisa menyematkannya — dipakai TTD & logo kop.
+      const mediaPath = async (url: string | undefined) => {
+        const m = (url ?? '').match(/\/api\/media\/([0-9a-f-]+)\/file/i);
+        if (!m) return undefined;
         try {
-          signaturePath = (await this.media.getFile(mediaMatch[1])).path;
+          return (await this.media.getFile(m[1])).path;
         } catch {
-          signaturePath = undefined;
+          return undefined;
         }
-      }
+      };
+      const [signaturePath, logoPath] = await Promise.all([
+        mediaPath(finance.receiptSignatureUrl ?? ''),
+        mediaPath((branding as Record<string, string>).logoUrl ?? ''),
+      ]);
       const pdf = await buildReceiptPdf(receipt, {
         name: company.name || companyName,
         address: company.address,
@@ -80,6 +84,7 @@ export class NotificationEventsService {
         signerName: finance.receiptSignerName,
         signerTitle: finance.receiptSignerTitle,
         signaturePath,
+        logoPath,
       });
       const asset = await this.media.saveBuffer(pdf, {
         mime: 'application/pdf',

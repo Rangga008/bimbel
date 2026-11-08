@@ -27,6 +27,7 @@ import {
 	ImagePickerField,
 	MediaLibraryDialog,
 } from "@/components/shared/image-picker-field";
+import { SignaturePadDialog } from "@/components/shared/signature-pad-dialog";
 
 interface CompanySettings {
 	name: string;
@@ -334,6 +335,7 @@ export function FinanceSettings() {
 	const [editingAcc, setEditingAcc] = useState<FinancialAccount | null>(null);
 	const [accToDelete, setAccToDelete] = useState<FinancialAccount | null>(null);
 	const [heroPickerOpen, setHeroPickerOpen] = useState(false);
+	const [sigPadOpen, setSigPadOpen] = useState(false);
 
 	// Sinkronkan hasil query ke state form saat data berubah —
 	// pola "adjust state during render" (pengganti setState di dalam effect).
@@ -1399,7 +1401,28 @@ export function FinanceSettings() {
 									setFinance({ ...finance, receiptSignatureUrl: url })
 								}
 								category="FINANCE"
-								hint="Scan/foto tanda tangan (PNG latar transparan paling bagus). Otomatis tercetak di semua kwitansi; kosongkan untuk tanpa gambar."
+								hint="Upload scan/foto TTD, atau tulis manual lewat tombol di bawah. Otomatis tercetak di semua kwitansi; kosongkan untuk tanpa gambar."
+							/>
+							<div className="flex flex-wrap items-center gap-2">
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									onClick={() => setSigPadOpen(true)}
+								>
+									Tulis tanda tangan manual
+								</Button>
+								<p className="text-xs text-muted-foreground">
+									Gambar langsung di layar — hasilnya disimpan seperti TTD foto.
+								</p>
+							</div>
+							<SignaturePadDialog
+								open={sigPadOpen}
+								onOpenChange={setSigPadOpen}
+								category="FINANCE"
+								onPick={(url) =>
+									setFinance({ ...finance, receiptSignatureUrl: url })
+								}
 							/>
 							<Button
 								type="submit"

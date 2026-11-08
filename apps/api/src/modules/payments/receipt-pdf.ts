@@ -42,6 +42,8 @@ export interface ReceiptCompanyInfo {
   signerTitle?: string;
   /** Path file gambar tanda tangan di disk (jika dari media library). */
   signaturePath?: string;
+  /** Path file logo di disk — kop surat kwitansi. */
+  logoPath?: string;
 }
 
 const rp = (n: Money) =>
@@ -93,10 +95,20 @@ export function buildReceiptPdf(
       .filter(Boolean)
       .join('  •  ');
 
-    // Header
-    doc.fontSize(15).font('Helvetica-Bold').text(company);
+    // Header — logo di kiri kop bila tersedia, teks bergeser ke kanannya.
+    let textX = 36;
+    if (c?.logoPath) {
+      try {
+        doc.image(c.logoPath, 36, doc.y, { fit: [40, 40] });
+        textX = 84;
+        doc.x = textX;
+      } catch {
+        textX = 36;
+      }
+    }
+    doc.fontSize(15).font('Helvetica-Bold').text(company, textX, doc.y);
     if (companyLines) {
-      doc.fontSize(8).font('Helvetica').fillColor('#555555').text(companyLines);
+      doc.fontSize(8).font('Helvetica').fillColor('#555555').text(companyLines, textX);
     }
     doc.moveDown(0.2);
     doc.moveTo(36, doc.y).lineTo(560, doc.y).strokeColor('#cccccc').stroke();

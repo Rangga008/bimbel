@@ -1,13 +1,15 @@
 "use client";
 
 import { Fragment, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import Link from "next/link";
+import { BookOpenCheck, ChevronDown } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { score100 } from '@/lib/score';
+import { cn } from '@/lib/utils';
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { CategoryProgressChart, type CategoryProgressData } from "@/components/shared/category-progress-chart";
 import { ComboboxField } from "@/components/shared/combobox-field";
@@ -17,6 +19,10 @@ function err(e: unknown, fb: string) {
 }
 
 interface ExamHistoryItem {
+  /** Attempt siswa — dipakai tombol "Hasil & Pembahasan" (review jawaban). */
+  attemptId?: string;
+  /** Hasil sudah dirilis → review jawaban benar/salah bisa dibuka. */
+  resultReleased?: boolean;
   examId: string;
   examTitle: string;
   examDate: string;
@@ -289,11 +295,29 @@ export function StudentPerformance({
                         {exam.category ? <Badge variant="secondary">{CATEGORY_LABELS[exam.category] ?? exam.category}</Badge> : null}
                       </div>
                     </div>
-                    <div className="shrink-0 text-right">
-                      <div className="text-lg font-bold tabular-nums">{exam.percentage.toFixed(1)}%</div>
-                      <div className="text-xs text-muted-foreground tabular-nums">
-                        {score100(exam.score, exam.maxScore)} / 100
+                    <div className="flex shrink-0 flex-col items-end gap-1.5">
+                      <div className="text-right">
+                        <div className="text-lg font-bold tabular-nums">{exam.percentage.toFixed(1)}%</div>
+                        <div className="text-xs text-muted-foreground tabular-nums">
+                          {score100(exam.score, exam.maxScore)} / 100
+                        </div>
                       </div>
+                      {/* Tombol cepat review jawaban benar/salah + pembahasan —
+                          hanya di tampilan siswa sendiri & hasil sudah dirilis. */}
+                      {showPoints && exam.attemptId ? (
+                        exam.resultReleased ? (
+                          <Link
+                            href={`/siswa/ujian/${exam.attemptId}`}
+                            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'h-7 text-xs')}
+                          >
+                            <BookOpenCheck className="size-3.5" /> Hasil &amp; Pembahasan
+                          </Link>
+                        ) : (
+                          <Button size="sm" variant="ghost" className="h-7 text-xs" disabled>
+                            Hasil belum dirilis
+                          </Button>
+                        )
+                      ) : null}
                     </div>
                   </div>
                   <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">

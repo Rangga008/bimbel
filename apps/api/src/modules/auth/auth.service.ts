@@ -585,6 +585,43 @@ export class AuthService {
     return { channel: 'WHATSAPP', key };
   }
 
+  /**
+   * Boolean availability untuk form — hanya melaporkan field yang dikirim,
+   * supaya respon tidak bisa dipakai menebak field lain sekaligus.
+   */
+  async checkAvailability(
+    email?: string,
+    phone?: string,
+    excludeUserId?: string,
+  ) {
+    const result: { emailTaken?: boolean; phoneTaken?: boolean } = {};
+    const emailNorm = email?.trim().toLowerCase();
+    if (emailNorm) {
+      const clash = await this.prisma.user.findFirst({
+        where: {
+          email: { equals: emailNorm, mode: 'insensitive' },
+          isActive: true,
+          ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+        },
+        select: { id: true },
+      });
+      result.emailTaken = !!clash;
+    }
+    const phoneTrim = phone?.trim();
+    if (phoneTrim && /\d/.test(phoneTrim)) {
+      const clash = await this.prisma.user.findFirst({
+        where: {
+          phone: { in: this.phoneVariants(phoneTrim) },
+          isActive: true,
+          ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+        },
+        select: { id: true },
+      });
+      result.phoneTaken = !!clash;
+    }
+    return result;
+  }
+
   private maskResetDestination(destination: string, channel: 'EMAIL' | 'WHATSAPP') {
     if (channel === 'EMAIL') {
       const [local = '', domain = ''] = destination.split('@');

@@ -44,7 +44,14 @@ export interface AttendanceRecap {
 }
 
 export interface ParentAttendanceRecap {
-  children: Array<{ student: { id: string; user: { name: string } }; total: number; byStatus: Record<string, number>; rows: AttendanceRow[] }>;
+  children: Array<{
+    student: { id: string; user: { name: string } };
+    total: number;
+    byStatus: Record<string, number>;
+    rows: AttendanceRow[];
+    /** Sesi kelompok anak yang sudah berlangsung — pembagi "hadir dari X sesi". */
+    expected?: { total: number; byMonth: Record<string, number> };
+  }>;
 }
 
 export interface NotificationItem {

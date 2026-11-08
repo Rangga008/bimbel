@@ -626,6 +626,108 @@ export function RoleHome({
 							</Card>
 						) : null}
 
+						{/* Ranking siswa — tutor. */}
+						{data.role === "TUTOR" && (data.topStudents ?? []).length > 0 ? (
+							<Card>
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2 text-base">
+										<Star className="size-4.5 text-brand-blue-600" />
+										Ranking Siswa
+									</CardTitle>
+								</CardHeader>
+								<CardContent className="flex flex-col gap-2 text-sm">
+									{data.topStudents!.map((s, i) => (
+										<div
+											key={s.studentId}
+											className="flex items-center justify-between gap-2"
+										>
+											<span className="flex min-w-0 items-center gap-2">
+												<span
+													className={cn(
+														"flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums",
+														i === 0
+															? "bg-brand-gold-100 text-brand-gold-700"
+															: i < 3
+																? "bg-brand-blue-50 text-brand-blue-600"
+																: "bg-muted text-muted-foreground",
+													)}
+												>
+													{i + 1}
+												</span>
+												<span className="min-w-0 truncate">{s.name}</span>
+											</span>
+											<Badge variant={s.avgPct >= 75 ? "success" : s.avgPct >= 50 ? "warning" : "destructive"}>
+												<span className="tabular-nums">{s.avgPct}%</span>
+												<span className="font-normal"> · {s.examCount} ujian</span>
+											</Badge>
+										</div>
+									))}
+								</CardContent>
+							</Card>
+						) : null}
+
+						{/* Rata-rata nilai per kelompok — tutor. */}
+						{data.role === "TUTOR" && (data.groupAvgs ?? []).length > 0 ? (
+							<Card>
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2 text-base">
+										<ChartColumn className="size-4.5 text-brand-blue-600" />
+										Rata-rata per Kelompok
+									</CardTitle>
+								</CardHeader>
+								<CardContent className="flex flex-col gap-2 text-sm">
+									{data.groupAvgs!.map((g) => (
+										<div
+											key={g.groupId}
+											className="flex items-center justify-between gap-2"
+										>
+											<span className="min-w-0 truncate">
+												{g.name}
+												<span className="text-muted-foreground">
+													{" "}
+													— {g.students} siswa
+												</span>
+											</span>
+											<Badge variant={g.avgPct >= 75 ? "success" : g.avgPct >= 50 ? "warning" : "destructive"}>
+												<span className="tabular-nums">{g.avgPct}%</span>
+											</Badge>
+										</div>
+									))}
+								</CardContent>
+							</Card>
+						) : null}
+
+						{/* Attempt ujian terbaru siswa — tutor. */}
+						{data.role === "TUTOR" && (data.recentAttempts ?? []).length > 0 ? (
+							<Card>
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2 text-base">
+										<TrendingUp className="size-4.5 text-brand-blue-600" />
+										Ujian Terakhir Dikerjakan
+									</CardTitle>
+								</CardHeader>
+								<CardContent className="flex flex-col gap-2 text-sm">
+									{data.recentAttempts!.map((a) => (
+										<div
+											key={a.id}
+											className="flex items-center justify-between gap-2"
+										>
+											<span className="min-w-0 truncate">
+												{a.studentName}
+												<span className="text-muted-foreground">
+													{" "}
+													— {a.examTitle}
+												</span>
+											</span>
+											<Badge variant={a.pct >= 75 ? "success" : a.pct >= 50 ? "warning" : "destructive"}>
+												<span className="tabular-nums">{a.pct}%</span>
+											</Badge>
+										</div>
+									))}
+								</CardContent>
+							</Card>
+						) : null}
+
 						{/* Status sesi minggu ini — tutor. */}
 						{data.role === "TUTOR" &&
 						data.sessionWeek &&

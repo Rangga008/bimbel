@@ -23,6 +23,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { ComboboxField } from "@/components/shared/combobox-field";
 import { ParentStatementDialog } from "@/components/enrollments/parent-statement-dialog";
+import { TakenHint, useAvailability } from "@/components/shared/availability";
 import { apiFetch, ApiError } from "@/lib/api-client";
 
 interface CatalogLevel {
@@ -197,6 +198,13 @@ export function ParentEnrollments() {
 	const [statementFor, setStatementFor] = useState<string | null>(null);
 	/** Surat pernyataan yang dibuka setelah dialog login anak ditutup. */
 	const [pendingStatement, setPendingStatement] = useState<string | null>(null);
+
+	// Peringatan duplikat — dialog tambah anak & dialog edit anak.
+	const addAvail = useAvailability(form.childEmail, form.childPhone);
+	const editAvail = useAvailability(childEditForm.email, childEditForm.phone, {
+		excludeEmail: editChild?.email,
+		excludePhone: editChild?.phone ?? undefined,
+	});
 
 	const enrollmentsQ = useQuery({
 		queryKey: ["my-enrollments"],
@@ -731,6 +739,9 @@ export function ParentEnrollments() {
 										placeholder="08..."
 										minLength={9}
 									/>
+									<TakenHint show={addAvail.phoneTaken}>
+										Nomor HP ini sudah dipakai akun lain — anak tidak akan bisa login dengannya.
+									</TakenHint>
 								</div>
 								<div className="flex flex-col gap-1.5">
 									<Label htmlFor="enr-cemail" className="text-xs">Email Anak (opsional)</Label>
@@ -741,6 +752,9 @@ export function ParentEnrollments() {
 										onChange={(e) => setForm({ ...form, childEmail: e.target.value })}
 										placeholder="nama@email.com"
 									/>
+									<TakenHint show={addAvail.emailTaken}>
+										Email ini sudah dipakai akun lain.
+									</TakenHint>
 								</div>
 							</div>
 							<div className="flex flex-col gap-1.5">
@@ -1032,6 +1046,9 @@ export function ParentEnrollments() {
 									onChange={(e) => setChildEditForm({ ...childEditForm, phone: e.target.value })}
 									placeholder="08..."
 								/>
+								<TakenHint show={editAvail.phoneTaken}>
+									Nomor HP ini sudah dipakai akun aktif lain.
+								</TakenHint>
 							</div>
 							<div className="flex flex-col gap-1.5">
 								<Label htmlFor="ce-email">Email (opsional)</Label>
@@ -1042,6 +1059,9 @@ export function ParentEnrollments() {
 									onChange={(e) => setChildEditForm({ ...childEditForm, email: e.target.value })}
 									placeholder="nama@email.com"
 								/>
+								<TakenHint show={editAvail.emailTaken}>
+									Email ini sudah dipakai akun aktif lain.
+								</TakenHint>
 							</div>
 						</div>
 						<div className="flex flex-col gap-1.5">

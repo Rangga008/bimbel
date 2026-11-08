@@ -153,9 +153,108 @@ export function MergedAttendanceCalendar({ rows }: { rows: MergedRow[] }) {
   );
 }
 
-/** Halaman "Kehadiran" milik Orang Tua — satu kalender untuk semua anak. */
+function monthLabelId(ym: string) {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+}
+
+/** Rekap bulanan satu anak: hadir+terlambat dibanding sesi seharusnya. */
+function ChildMonthlyRecap({ child }: { child: ParentAttendanceRecap['children'][number] }) {
+  // Status per bulan dari baris absensi anak ini.
+  const byMonth = useMemo(() => {
+    const m = new Map<string, Partial<Record<AttendanceStatus, number>>>();
+    for (const r of child.rows) {
+      const ym = r.session.startsAt.slice(0, 7);
+      const cur = m.get(ym) ?? {};
+      cur[r.status] = (cur[r.status] ?? 0) + 1;
+      m.set(ym, cur);
+    }
+    return m;
+  }, [child.rows]);
+
+  const expected = child.expected?.byMonth ?? {};
+  const months = [...new Set([...byMonth.keys(), ...Object.keys(expected)])].sort().reverse();
+
+  const totalPresent = (child.byStatus.HADIR ?? 0) + (child.byStatus.TERLAMBAT ?? 0);
+  const totalExpected = child.expected?.total ?? child.total;
+  const pct = totalExpected ? Math.min(100, Math.round((totalPresent / totalExpected) * 100)) : 0;
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Ringkas: hadir (HADIR+TERLAMBAT) dari sesi seharusnya. */}
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium">Total keseluruhan</p>
+        <Badge variant="secondary">
+          {totalPresent}/{totalExpected} sesi hadir · {pct}%
+        </Badge>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} />
+      </div>
+
+      {months.length === 0 ? (
+        <p className="py-4 text-center text-sm text-muted-foreground">
+          Belum ada sesi untuk anak ini.
+        </p>
+      ) : (
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b bg-muted/50 text-muted-foreground">
+                <th className="px-3 py-2 font-medium">Bulan</th>
+                <th className="px-3 py-2 font-medium">Sesi</th>
+                <th className="px-3 py-2 font-medium">Hadir</th>
+                <th className="px-3 py-2 font-medium">Terlambat</th>
+                <th className="px-3 py-2 font-medium">Izin</th>
+                <th className="px-3 py-2 font-medium">Sakit</th>
+                <th className="px-3 py-2 font-medium">Alfa</th>
+                <th className="px-3 py-2 font-medium">%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {months.map((ym) => {
+                const st = byMonth.get(ym) ?? {};
+                const exp = expected[ym] ?? 0;
+                const present = (st.HADIR ?? 0) + (st.TERLAMBAT ?? 0);
+                const denom = exp || (st.HADIR ?? 0) + (st.TERLAMBAT ?? 0) + (st.IZIN ?? 0) + (st.SAKIT ?? 0) + (st.ALFA ?? 0);
+                const mpct = denom ? Math.min(100, Math.round((present / denom) * 100)) : 0;
+                return (
+                  <tr key={ym} className="border-b last:border-0">
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">{monthLabelId(ym)}</td>
+                    <td className="px-3 py-2 tabular-nums">{exp || '—'}</td>
+                    <td className="px-3 py-2 tabular-nums text-emerald-700">{st.HADIR ?? 0}</td>
+                    <td className="px-3 py-2 tabular-nums text-amber-700">{st.TERLAMBAT ?? 0}</td>
+                    <td className="px-3 py-2 tabular-nums text-sky-700">{st.IZIN ?? 0}</td>
+                    <td className="px-3 py-2 tabular-nums text-violet-700">{st.SAKIT ?? 0}</td>
+                    <td className="px-3 py-2 tabular-nums text-red-700">{st.ALFA ?? 0}</td>
+                    <td className="px-3 py-2">
+                      <span className={cn(
+                        'inline-block rounded px-1.5 py-0.5 font-semibold tabular-nums',
+                        mpct >= 80 ? 'bg-emerald-500/15 text-emerald-700' : mpct >= 50 ? 'bg-amber-500/15 text-amber-700' : 'bg-red-500/15 text-red-700',
+                      )}>
+                        {mpct}%
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">
+        “Sesi” = sesi kelompok yang sudah berlangsung bulan itu; selisih dengan
+        total absen berarti sesi belum tercatat/absen belum diisi tutor.
+      </p>
+    </div>
+  );
+}
+
+/** Halaman "Kehadiran" milik Orang Tua — kalender dulu, lalu pilih anak
+ *  untuk melihat rekap kehadiran per bulan (hadir vs sesi seharusnya). */
 export function ParentAttendanceView() {
   const q = useQuery({ queryKey: ['attendance-children'], queryFn: () => apiFetch<ParentAttendanceRecap>('/attendance/mine-children') });
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const mergedRows = useMemo<MergedRow[]>(
     () =>
@@ -170,12 +269,15 @@ export function ParentAttendanceView() {
     return <Card><CardContent className="py-10 text-center text-sm text-destructive">Gagal memuat kehadiran anak.</CardContent></Card>;
   }
   const children = q.data?.children ?? [];
+  // Satu anak → langsung terpilih; multi-anak → ortu memilih dulu.
+  const selected = children.find((c) => c.student.id === (selectedId ?? (children.length === 1 ? children[0].student.id : ''))) ?? null;
+
   return (
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Kehadiran</h1>
         <p className="text-sm text-muted-foreground">
-          Satu kalender untuk semua anak — tiap tanggal menampilkan status tiap anak. Klik tanggal untuk detail sesi.
+          Klik tanggal di kalender untuk detail sesi; pilih anak di bawahnya untuk rekap per bulan.
         </p>
       </div>
       {children.length === 0 ? (
@@ -183,31 +285,7 @@ export function ParentAttendanceView() {
       ) : null}
       {children.length > 0 ? (
         <>
-          {/* Ringkasan per anak — persentase hadir + jumlah per status. */}
-          <div className={`grid gap-3 ${children.length > 1 ? 'sm:grid-cols-2' : ''}`}>
-            {children.map((c) => {
-              const pct = c.total ? Math.round(((c.byStatus.HADIR ?? 0) / c.total) * 100) : 0;
-              return (
-                <Card key={c.student.id}>
-                  <CardContent className="flex flex-col gap-2 py-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate font-medium">{c.student.user.name}</p>
-                      <Badge variant="secondary">{c.byStatus.HADIR ?? 0}/{c.total} hadir · {pct}%</Badge>
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                      <div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} />
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {(Object.keys(STATUS_STYLE) as AttendanceStatus[]).map((s) =>
-                        (c.byStatus[s] ?? 0) > 0 ? <StatusChip key={s} status={s} count={c.byStatus[s]} /> : null,
-                      )}
-                      {c.total === 0 ? <span className="text-xs text-muted-foreground">Belum ada absensi.</span> : null}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+          {/* 1) Kalender gabungan semua anak — tampil pertama. */}
           <Card>
             <CardContent className="flex flex-col gap-3 py-4">
               <p className="flex items-center gap-2 font-medium">
@@ -225,6 +303,34 @@ export function ParentAttendanceView() {
                   </span>
                 ))}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* 2) Pilih anak — rekap bulanan baru tampil setelah dipilih. */}
+          <Card>
+            <CardContent className="flex flex-col gap-3 py-4">
+              <p className="text-sm font-medium">Pilih siswa</p>
+              <div className="flex flex-wrap gap-2">
+                {children.map((c) => (
+                  <Button
+                    key={c.student.id}
+                    size="sm"
+                    variant={selected?.student.id === c.student.id ? 'default' : 'outline'}
+                    onClick={() => setSelectedId(c.student.id)}
+                  >
+                    {c.student.user.name}
+                  </Button>
+                ))}
+              </div>
+              {selected ? (
+                <div className="border-t pt-3">
+                  <ChildMonthlyRecap child={selected} />
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Pilih salah satu anak untuk melihat rekap kehadiran per bulannya.
+                </p>
+              )}
             </CardContent>
           </Card>
         </>

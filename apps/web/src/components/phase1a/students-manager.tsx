@@ -355,6 +355,7 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
         onSubmit={() => editMutation.mutate()}
         isSubmitting={editMutation.isPending}
         submitLabel="Simpan Perubahan"
+        excludeUserId={editTarget?.user.id}
         extra={
           <Phase1aSelectField
             id="fase1a-student-edit-gender"

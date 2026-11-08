@@ -158,16 +158,16 @@ export class AnalyticsController {
     let html: string;
     if (part === 'answers') {
       const recap = await this.analytics.getExamAnswerRecap(examId, groupId || undefined);
-      html = this.analytics.renderAnswerRecapHtml(recap);
+      html = await this.analytics.renderAnswerRecapHtml(recap);
     } else if (part === 'scores') {
       const recap = await this.analytics.getExamScoreRecap(examId, groupId || undefined);
-      html = this.analytics.renderScoreRecapHtml(recap);
+      html = await this.analytics.renderScoreRecapHtml(recap);
     } else if (part === 'analysis') {
       const analysis = await this.analytics.getQuestionAnalysisItems(examId);
-      html = this.analytics.renderQuestionAnalysisHtml(analysis);
+      html = await this.analytics.renderQuestionAnalysisHtml(analysis);
     } else {
       const sheet = await this.analytics.getExamQuestionSheet(examId, key === '1');
-      html = this.analytics.renderQuestionSheetHtml(sheet);
+      html = await this.analytics.renderQuestionSheetHtml(sheet);
     }
     res.set({ 'Content-Type': 'text/html; charset=utf-8' });
     res.send(html);

@@ -304,11 +304,80 @@ export class DashboardService {
     let weekTotal = 0;
     for (const g of weekSessions) { sessionWeek[g.status] = g._count.status; weekTotal += g._count.status; }
     const studentsTotal = groups.reduce((s, g) => s + g._count.members, 0);
+
+    // Data tambahan beranda: ranking siswa + rata-rata per kelompok + attempt
+    // terbaru — semua di-scope ke kelompok yang diampu tutor ini.
+    const groupIds = groups.map((g) => g.id);
+    const emptyScope = { topStudents: [] as { studentId: string; name: string; avgPct: number; examCount: number }[], groupAvgs: [] as { groupId: string; name: string; avgPct: number; students: number }[], recentAttempts: [] as { id: string; studentName: string; examId: string; examTitle: string; pct: number; submittedAt: Date | null }[] };
+    const scoped = groupIds.length
+      ? await Promise.all([
+          // Top 5 siswa per rata-rata persen (min 1 ujian submit).
+          this.prisma.$queryRaw<{ studentId: string; name: string; avgPct: number; examCount: number }[]>`
+            SELECT ea."studentId", u.name,
+                   ROUND(AVG(ea.score::float / NULLIF(ea."maxScore"::float, 0) * 100)::numeric, 1)::float AS "avgPct",
+                   COUNT(*)::int AS "examCount"
+            FROM exam_attempts ea
+            JOIN students s ON s.id = ea."studentId"
+            JOIN users u ON u.id = s."userId"
+            WHERE ea.status = 'SUBMITTED'
+              AND ea."studentId" IN (
+                SELECT "studentId" FROM group_members WHERE "groupId" = ANY(${groupIds}::text[])
+              )
+            GROUP BY ea."studentId", u.name
+            ORDER BY "avgPct" DESC
+            LIMIT 5
+          `,
+          // Rata-rata % per kelompok yang diampu.
+          this.prisma.$queryRaw<{ groupId: string; avgPct: number; students: number }[]>`
+            SELECT gm."groupId",
+                   ROUND(AVG(ea.score::float / NULLIF(ea."maxScore"::float, 0) * 100)::numeric, 1)::float AS "avgPct",
+                   COUNT(DISTINCT ea."studentId")::int AS students
+            FROM exam_attempts ea
+            JOIN group_members gm ON gm."studentId" = ea."studentId"
+            WHERE ea.status = 'SUBMITTED' AND gm."groupId" = ANY(${groupIds}::text[])
+            GROUP BY gm."groupId"
+          `,
+          // 8 attempt terakhir siswa kelompok yang diampu.
+          this.prisma.examAttempt.findMany({
+            where: {
+              status: 'SUBMITTED',
+              student: { groupMembers: { some: { groupId: { in: groupIds } } } },
+            },
+            orderBy: { submittedAt: 'desc' },
+            take: 8,
+            select: {
+              id: true, score: true, maxScore: true, submittedAt: true,
+              examId: true,
+              exam: { select: { title: true } },
+              student: { select: { user: { select: { name: true } } } },
+            },
+          }),
+        ])
+      : null;
+    const topStudents = scoped?.[0] ?? emptyScope.topStudents;
+    const groupAvgs = (scoped?.[1] ?? emptyScope.groupAvgs)
+      .map((r) => ({
+        groupId: r.groupId,
+        name: groups.find((g) => g.id === r.groupId)?.name ?? 'Kelompok',
+        avgPct: r.avgPct,
+        students: r.students,
+      }));
+    const recentAttempts = (scoped?.[2] ?? [])
+      .map((a) => ({
+        id: a.id,
+        studentName: a.student.user.name,
+        examId: a.examId,
+        examTitle: a.exam.title,
+        pct: a.maxScore > 0 ? Math.round((Number(a.score) / Number(a.maxScore)) * 1000) / 10 : 0,
+        submittedAt: a.submittedAt,
+      }));
+
     return {
       role: 'TUTOR', user: tutor.user.name, todaySessions, groups, pendingAttendance,
       upcomingSessions: upcomingWeek,
       sessionWeek: { ...sessionWeek, TOTAL: weekTotal },
       studentsTotal,
+      topStudents, groupAvgs, recentAttempts,
       unreadNotifications: unread,
     };
   }

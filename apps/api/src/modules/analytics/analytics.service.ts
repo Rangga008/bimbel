@@ -201,6 +201,8 @@ export class AnalyticsService {
             title: true,
             scheduledEndAt: true,
             category: true,
+            status: true,
+            showResultImmediately: true,
             subject: { select: { name: true } },
           },
         },
@@ -209,15 +211,22 @@ export class AnalyticsService {
     });
 
     // Build exam history
+    const now = new Date();
     const examHistory = attempts.map((attempt) => {
       const percentage = attempt.maxScore > 0
         ? (attempt.score / attempt.maxScore) * 100
         : 0;
 
       return {
+        attemptId: attempt.id,
         examId: attempt.exam.id,
         examTitle: attempt.exam.title,
         examDate: attempt.exam.scheduledEndAt,
+        // Sama dengan exam-attempts.getAttempt: hasil tampil setelah
+        // showResultImmediately / exam ENDED / jadwal berakhir.
+        resultReleased: attempt.exam.showResultImmediately
+          ? true
+          : attempt.exam.status === 'ENDED' || now >= attempt.exam.scheduledEndAt,
         subjectName: attempt.exam.subject?.name ?? null,
         category: attempt.exam.category ?? null,
         score: attempt.score,
@@ -1105,16 +1114,58 @@ th{background:#eee;font-size:11px}.num{text-align:center;width:26px}.ctr{text-al
 img{max-width:320px;max-height:200px;display:block;margin:6px 0}
 table.dt{border-collapse:collapse;font-size:11px;margin:4px 0}
 .dt th,.dt td{border:1px solid #999;padding:2px 6px;text-align:left}
-.hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:12px}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #999;padding-bottom:8px;margin-bottom:12px}
+.lh{display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:3px double #1e3a5f;padding-bottom:8px;margin-bottom:14px}
+.lh-brand{display:flex;align-items:center;gap:10px}.lh-brand img{height:44px;width:44px;max-width:44px;object-fit:contain;margin:0}
+.lh-name{font-size:16px;font-weight:800;color:#1e3a5f}.lh-tag{font-size:10px;color:#777}.lh-addr{font-size:10.5px;color:#555;margin-top:1px}
 @media print{body{padding:0}.noprint{display:none}}`;
   }
 
-  private printDoc(title: string, body: string, extraCss = '') {
-    return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>${this.printCss()}</style>${extraCss ? `<style>${extraCss}</style>` : ''}</head><body>${body}<script>window.onload=()=>setTimeout(()=>window.print(),300)</script></body></html>`;
+  /**
+   * Kop surat bersama untuk dokumen cetak: logo + nama + tagline + kontak dari
+   * Pengaturan (branding/company). `base` = appUrl untuk <base href> supaya
+   * path media relatif (/api/media/…) tetap resolve saat dokumen dibuka
+   * lewat blob object URL.
+   */
+  private async printAssets() {
+    const [companyRow, brandingRow] = await Promise.all([
+      this.prisma.appSetting.findUnique({ where: { key: 'company' } }),
+      this.prisma.appSetting.findUnique({ where: { key: 'branding' } }),
+    ]);
+    const company = (companyRow?.value ?? {}) as Record<string, unknown>;
+    const branding = (brandingRow?.value ?? {}) as Record<string, unknown>;
+    const appUrl = ((branding.appUrl as string) || '').replace(/\/+$/, '');
+    const name =
+      (company.name as string) || (branding.appName as string) || 'Bimbel GFS';
+    const logoUrl = (branding.logoUrl as string) || '';
+    const tagline = (branding.tagline as string) || '';
+    const contact = [company.address, company.phone, company.email]
+      .filter((v): v is string => typeof v === 'string' && !!v)
+      .join('  ·  ');
+    const absLogo =
+      logoUrl.startsWith('/api/') && appUrl ? `${appUrl}${logoUrl}` : logoUrl;
+    const html =
+      `<div class="lh"><div class="lh-brand">` +
+      (absLogo
+        ? `<img src="${esc(absLogo)}" alt="" onerror="this.style.display='none'">`
+        : '') +
+      `<div><div class="lh-name">${esc(name)}</div>` +
+      (tagline ? `<div class="lh-tag">${esc(tagline)}</div>` : '') +
+      (contact ? `<div class="lh-addr">${esc(contact)}</div>` : '') +
+      `</div></div>` +
+      `<div class="sub" style="text-align:right">Dicetak: ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</div>` +
+      `</div>`;
+    return { html, base: appUrl ? `${appUrl}/` : '' };
+  }
+
+  private async printDoc(title: string, body: string, extraCss = '') {
+    const assets = await this.printAssets();
+    const baseTag = assets.base ? `<base href="${esc(assets.base)}">` : '';
+    return `<!doctype html><html><head><meta charset="utf-8">${baseTag}<title>${esc(title)}</title><style>${this.printCss()}</style>${extraCss ? `<style>${extraCss}</style>` : ''}</head><body>${assets.html}${body}<script>window.onload=()=>setTimeout(()=>window.print(),300)</script></body></html>`;
   }
 
   /** HTML cetak soal ujian. */
-  renderQuestionSheetHtml(sheet: Awaited<ReturnType<typeof this.getExamQuestionSheet>>) {
+  async renderQuestionSheetHtml(sheet: Awaited<ReturnType<typeof this.getExamQuestionSheet>>) {
     const e = sheet.exam;
     const meta = [
       e.programName,
@@ -1141,12 +1192,12 @@ table.dt{border-collapse:collapse;font-size:11px;margin:4px 0}
       .join('');
     return this.printDoc(
       `Soal — ${e.title}`,
-      `<div class="hdr"><div><h1>${esc(e.title)}</h1><div class="sub">${esc(meta)} · ${fmtDateId(e.scheduledStartAt)} · ${sheet.questions.length} soal${sheet.withKey ? ' · DENGAN KUNCI' : ''}</div></div><div class="sub">Bimbel GFS</div></div>${qs}`,
+      `<div class="hdr"><div><h1>${esc(e.title)}</h1><div class="sub">${esc(meta)} · ${fmtDateId(e.scheduledStartAt)} · ${sheet.questions.length} soal${sheet.withKey ? ' · DENGAN KUNCI' : ''}</div></div></div>${qs}`,
     );
   }
 
   /** HTML rekap jawaban siswa per nomor (baris KUNCI + jawaban tiap siswa). */
-  renderAnswerRecapHtml(recap: Awaited<ReturnType<typeof this.getExamAnswerRecap>>) {
+  async renderAnswerRecapHtml(recap: Awaited<ReturnType<typeof this.getExamAnswerRecap>>) {
     const e = recap.exam;
     const head =
       `<tr><th class="num">NO</th><th>NAMA</th><th>ASAL SEKOLAH</th>` +
@@ -1171,7 +1222,7 @@ table.dt{border-collapse:collapse;font-size:11px;margin:4px 0}
       .join('');
     return this.printDoc(
       `Jawaban Siswa — ${e.title}`,
-      `<div class="hdr"><div><h1>JAWABAN SISWA — ${esc(e.title)}</h1><div class="sub">${esc([e.levelName, e.subjectName].filter(Boolean).join(' · '))} · ${recap.participantCount} peserta</div></div><div class="sub">Bimbel GFS</div></div><table>${head}${keyRow}${rows}</table>`,
+      `<div class="hdr"><div><h1>JAWABAN SISWA — ${esc(e.title)}</h1><div class="sub">${esc([e.levelName, e.subjectName].filter(Boolean).join(' · '))} · ${recap.participantCount} peserta</div></div></div><table>${head}${keyRow}${rows}</table>`,
       // Sel benar/salah diwarnai; kolom nomor rapat agar banyak soal tetap muat.
       `td.ok{background:#e7f6ec}td.bad{background:#fdecec}
 td,th{padding:2px 4px;font-size:10px}`,
@@ -1179,7 +1230,7 @@ td,th{padding:2px 4px;font-size:10px}`,
   }
 
   /** HTML rekap nilai semua siswa (kolom BENAR/SKOR per mapel/bab — PDF1). */
-  renderScoreRecapHtml(recap: Awaited<ReturnType<typeof this.getExamScoreRecap>>) {
+  async renderScoreRecapHtml(recap: Awaited<ReturnType<typeof this.getExamScoreRecap>>) {
     const e = recap.exam;
     const cols = recap.columns;
     const head1 =
@@ -1202,7 +1253,7 @@ td,th{padding:2px 4px;font-size:10px}`,
       .join('');
     return this.printDoc(
       `Hasil — ${e.title}`,
-      `<div class="hdr"><div><h1>HASIL ${esc(e.title)}</h1><div class="sub">${esc([e.programName, e.levelName, e.subjectName].filter(Boolean).join(' · '))} · ${fmtDateId(e.scheduledStartAt)} · ${recap.participantCount} peserta</div></div><div class="sub">Bimbel GFS</div></div><table>${head1}${head2}${rows}</table>`,
+      `<div class="hdr"><div><h1>HASIL ${esc(e.title)}</h1><div class="sub">${esc([e.programName, e.levelName, e.subjectName].filter(Boolean).join(' · '))} · ${fmtDateId(e.scheduledStartAt)} · ${recap.participantCount} peserta</div></div></div><table>${head1}${head2}${rows}</table>`,
     );
   }
 
@@ -1680,13 +1731,18 @@ td,th{padding:2px 4px;font-size:10px}`,
       (branding.appName as string) ||
       'Bimbel GFS';
     const tagline = (branding.tagline as string) || '';
-    const logoUrl = (branding.logoUrl as string) || '';
+    // Media path relatif (/api/media/…) dijadikan absolut — dokumen ini dibuka
+    // lewat blob object URL, jadi path relatif tidak akan resolve.
+    const appUrl = ((branding.appUrl as string) || '').replace(/\/+$/, '');
+    const absUrl = (u: string) =>
+      u.startsWith('/api/') && appUrl ? `${appUrl}${u}` : u;
+    const logoUrl = absUrl((branding.logoUrl as string) || '');
     const address = (company.address as string) || '';
     const phone = (company.phone as string) || '';
     const signerName = (finance.receiptSignerName as string) || '';
     const signerTitle =
       (finance.receiptSignerTitle as string) || 'Penanggungjawab Operasional';
-    const signatureUrl = (finance.receiptSignatureUrl as string) || '';
+    const signatureUrl = absUrl((finance.receiptSignatureUrl as string) || '');
 
     const st = report.student;
     const parentLabel =
@@ -1788,7 +1844,8 @@ td,th{padding:2px 4px;font-size:10px}`,
     })();
 
     const dateStr = fmtDateId(new Date());
-    return `<!doctype html><html><head><meta charset="utf-8"><title>Laporan Hasil Belajar — ${esc(st.name)}</title><style>
+    const baseTag = appUrl ? `<base href="${esc(`${appUrl}/`)}">` : '';
+    return `<!doctype html><html><head><meta charset="utf-8">${baseTag}<title>Laporan Hasil Belajar — ${esc(st.name)}</title><style>
 *{box-sizing:border-box}body{font-family:'Segoe UI',Arial,sans-serif;color:#111;margin:0;padding:28px;font-size:12.5px}
 .lh{display:flex;justify-content:space-between;align-items:center;border-bottom:3px double #1e3a5f;padding-bottom:10px}
 .lh img{height:56px;width:56px;object-fit:contain}
@@ -1878,7 +1935,7 @@ ${report.main && report.main.rows.length ? sectionTable(report.main) : '<p><i>Be
   }
 
   /** HTML cetak analisis soal: chart akurasi + tabel termudah/tersulit. */
-  renderQuestionAnalysisHtml(analysis: Awaited<ReturnType<typeof this.getQuestionAnalysisItems>>) {
+  async renderQuestionAnalysisHtml(analysis: Awaited<ReturnType<typeof this.getQuestionAnalysisItems>>) {
     const byAcc = [...analysis.items].sort((a, b) => a.accuracy - b.accuracy);
     const hardest = byAcc.slice(0, Math.min(10, byAcc.length));
     const easiest = [...analysis.items].sort((a, b) => b.accuracy - a.accuracy).slice(0, Math.min(10, byAcc.length));
@@ -1897,7 +1954,7 @@ ${report.main && report.main.rows.length ? sectionTable(report.main) : '<p><i>Be
       `</tbody></table>`;
     return this.printDoc(
       `Analisis Soal — ${analysis.examTitle}`,
-      `<div class="hdr"><div><h1>ANALISIS SOAL — ${esc(analysis.examTitle)}</h1><div class="sub">Akurasi = persen jawaban benar dari seluruh jawaban soal itu. "Paling bisa" = akurasi tertinggi, "paling sulit" = terendah.</div></div><div class="sub">Bimbel GFS</div></div>` +
+      `<div class="hdr"><div><h1>ANALISIS SOAL — ${esc(analysis.examTitle)}</h1><div class="sub">Akurasi = persen jawaban benar dari seluruh jawaban soal itu. "Paling bisa" = akurasi tertinggi, "paling sulit" = terendah.</div></div></div>` +
         `<h3>Grafik % Benar per Soal</h3>${chart}` +
         tbl('Soal paling sulit (akurasi terendah)', hardest) +
         tbl('Soal paling bisa (akurasi tertinggi)', easiest) +

@@ -211,6 +211,7 @@ export function ParentDetailPage({ parentId, basePath, canManage = false }: { pa
         onSubmit={() => editM.mutate()}
         isSubmitting={editM.isPending}
         submitLabel="Simpan Perubahan"
+        excludeUserId={p?.user.id}
       />
       <ConfirmDialog
         open={deleteOpen}

@@ -22,6 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { ChangePasswordCard } from "./change-password-card";
+import { TakenHint, useAvailability } from "@/components/shared/availability";
 
 interface ProfileData {
 	id: string;
@@ -98,6 +99,11 @@ export function ProfilePage() {
 	} | null>(null);
 	const [logoutOpen, setLogoutOpen] = useState(false);
 	const fileRef = useRef<HTMLInputElement>(null);
+	const phoneAvail = useAvailability(
+		"",
+		form?.phone ?? profileQ.data?.phone ?? "",
+		{ excludeUserId: profileQ.data?.id },
+	);
 
 	const uploadPhotoM = useMutation({
 		mutationFn: (file: File) => {
@@ -277,6 +283,9 @@ export function ProfilePage() {
 										}
 										placeholder="cth: 081234567890"
 									/>
+									<TakenHint show={phoneAvail.phoneTaken}>
+										Nomor HP ini sudah dipakai akun lain.
+									</TakenHint>
 								</div>
 								<div className="grid gap-1.5">
 									<Label>Email</Label>

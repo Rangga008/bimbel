@@ -114,6 +114,14 @@ export interface ReportDoc {
   charts?: ReportChart[];
   summaryLines: string[];
   fileBase: string;
+  /** Kop surat (logo + kontak) — diisi otomatis oleh build(), dipakai renderPdfHtml. */
+  letterhead?: {
+    name: string;
+    tagline: string;
+    logoUrl: string;
+    contact: string;
+    appUrl: string;
+  };
 }
 
 /** Alias mundur-compatible dengan tipe Fase 2d. */

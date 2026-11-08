@@ -30,6 +30,7 @@ import { SubmitButton } from "@/components/shared/form-field";
 import { AuthShell } from "@/components/shared/auth-shell";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
+import { TakenHint, useAvailability } from "@/components/shared/availability";
 
 interface RegisterResponse {
 	accessToken: string;
@@ -62,6 +63,7 @@ export default function DaftarSiswaPage() {
 	const [confirmPassword, setConfirmPassword] = useState("");
 	const [showPassword, setShowPassword] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const availability = useAvailability(email, phone);
 
 	async function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
@@ -159,6 +161,9 @@ export default function DaftarSiswaPage() {
 										onChange={(e) => setPhone(e.target.value)}
 									/>
 								</div>
+								<TakenHint show={availability.phoneTaken}>
+									Nomor HP ini sudah terdaftar — gunakan nomor lain atau masuk.
+								</TakenHint>
 							</div>
 							<div className="flex flex-col gap-1.5">
 								<Label htmlFor="email">Email</Label>
@@ -174,6 +179,9 @@ export default function DaftarSiswaPage() {
 										onChange={(e) => setEmail(e.target.value)}
 									/>
 								</div>
+								<TakenHint show={availability.emailTaken}>
+									Email ini sudah dipakai akun lain — gunakan email lain atau masuk.
+								</TakenHint>
 							</div>
 						</div>
 						<p className="-mt-2 text-xs text-muted-foreground">

@@ -735,6 +735,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
         onSubmit={() => editM.mutate()}
         isSubmitting={editM.isPending}
         submitLabel="Simpan Perubahan"
+        excludeUserId={s?.user.id}
         extra={
           <Phase1aSelectField
             id="detail-student-edit-gender"

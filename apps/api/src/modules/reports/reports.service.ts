@@ -114,42 +114,64 @@ export class ReportsService {
         `Jenis laporan "${kind}" tidak dikenal. Pilihan: ${[...REPORT_KINDS].join(', ')}.`,
       );
     }
+    let doc: ReportDoc;
     switch (kind as ReportKind) {
       case 'invoice':
-        return this.buildInvoice(filters);
+        doc = await this.buildInvoice(filters); break;
       case 'payment':
-        return this.buildPayment(filters);
+        doc = await this.buildPayment(filters); break;
       case 'payment-recap':
-        return this.buildPaymentRecap(filters);
+        doc = await this.buildPaymentRecap(filters); break;
       case 'program-recap':
-        return this.buildProgramRecap(filters);
+        doc = await this.buildProgramRecap(filters); break;
       case 'neraca':
-        return this.buildNeraca(filters);
+        doc = await this.buildNeraca(filters); break;
       case 'rab':
-        return this.buildRab(filters);
+        doc = await this.buildRab(filters); break;
       case 'revenue':
-        return this.buildRevenue(filters);
+        doc = await this.buildRevenue(filters); break;
       case 'ar':
-        return this.buildAr(filters);
+        doc = await this.buildAr(filters); break;
       case 'payroll':
-        return this.buildPayroll(filters);
+        doc = await this.buildPayroll(filters); break;
       case 'attendance':
-        return this.buildAttendance(filters);
+        doc = await this.buildAttendance(filters); break;
       case 'groups':
-        return this.buildGroups(filters);
+        doc = await this.buildGroups(filters); break;
       case 'tutor':
-        return this.buildTutor(filters);
+        doc = await this.buildTutor(filters); break;
       case 'students':
-        return this.buildStudents(filters);
+        doc = await this.buildStudents(filters); break;
       case 'academic':
-        return this.buildAcademic(filters);
+        doc = await this.buildAcademic(filters); break;
       case 'ranking':
-        return this.buildRanking(filters);
+        doc = await this.buildRanking(filters); break;
       case 'progress':
-        return this.buildProgress(filters);
+        doc = await this.buildProgress(filters); break;
       default:
         throw new BadRequestException(`Jenis laporan "${kind}" tidak dikenal.`);
     }
+    doc.letterhead = await this.docLetterhead();
+    return doc;
+  }
+
+  /** Kop surat dari pengaturan company/branding — dipakai renderPdfHtml. */
+  private async docLetterhead(): Promise<NonNullable<ReportDoc['letterhead']>> {
+    const [companyRow, brandingRow] = await Promise.all([
+      this.prisma.appSetting.findUnique({ where: { key: 'company' } }),
+      this.prisma.appSetting.findUnique({ where: { key: 'branding' } }),
+    ]);
+    const company = (companyRow?.value ?? {}) as Record<string, unknown>;
+    const branding = (brandingRow?.value ?? {}) as Record<string, unknown>;
+    const appUrl = ((branding.appUrl as string) || '').replace(/\/+$/, '');
+    const name =
+      (company.name as string) || (branding.appName as string) || 'Bimbel GFS';
+    const logoUrl = (branding.logoUrl as string) || '';
+    const tagline = (branding.tagline as string) || '';
+    const contact = [company.address, company.phone, company.email]
+      .filter((v): v is string => typeof v === 'string' && !!v)
+      .join('  ·  ');
+    return { name, tagline, logoUrl, contact, appUrl };
   }
 
   /**
@@ -379,7 +401,16 @@ export class ReportsService {
         : `<h3>Ringkasan</h3><ul>${doc.summaryLines
             .map((s) => `<li>${escHtml(s)}</li>`)
             .join('')}</ul>`;
-    return `<!doctype html><html><head><meta charset="utf-8"><title>${escHtml(
+    // Kop surat: logo + nama + kontak dari pengaturan; fallback brand teks.
+    const lh = doc.letterhead;
+    const lhLogo = lh?.logoUrl
+      ? `<img src="${escHtml(lh.logoUrl.startsWith('/api/') && lh.appUrl ? `${lh.appUrl}${lh.logoUrl}` : lh.logoUrl)}" alt="" onerror="this.style.display='none'">`
+      : '';
+    const letterheadHtml = lh
+      ? `<div class="lh"><div class="lh-brand">${lhLogo}<div><div class="lh-name">${escHtml(lh.name)}</div>${lh.tagline ? `<div class="lh-tag">${escHtml(lh.tagline)}</div>` : ''}${lh.contact ? `<div class="lh-addr">${escHtml(lh.contact)}</div>` : ''}</div></div></div>`
+      : `<h1>${escHtml(doc.brand)}</h1>`;
+    const baseTag = lh?.appUrl ? `<base href="${escHtml(`${lh.appUrl}/`)}">` : '';
+    return `<!doctype html><html><head><meta charset="utf-8">${baseTag}<title>${escHtml(
       doc.title,
     )}</title><style>
 body{font-family:Arial,sans-serif;margin:24px;color:#111}
@@ -396,6 +427,9 @@ th{background:#eee}
 h3.sec{margin:18px 0 4px;color:#0f4c81;page-break-after:avoid}
 .chart{margin:14px 0;page-break-inside:avoid}
 .chartwrap{display:flex;gap:20px;align-items:flex-start}
+.lh{display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:3px double #1e3a5f;padding-bottom:8px;margin-bottom:12px}
+.lh-brand{display:flex;align-items:center;gap:10px}.lh-brand img{height:44px;width:44px;object-fit:contain}
+.lh-name{font-size:16px;font-weight:800;color:#1e3a5f}.lh-tag{font-size:10px;color:#777}.lh-addr{font-size:10.5px;color:#555}
 @media print{.toolbar{display:none}}
 </style></head><body>
 <div class="toolbar">
@@ -403,7 +437,7 @@ h3.sec{margin:18px 0 4px;color:#0f4c81;page-break-after:avoid}
 <button onclick="window.close()">Tutup</button>
 <span class="hint">Pilih "Save as PDF" / "Simpan sebagai PDF" di dialog cetak untuk mengunduh PDF.</span>
 </div>
-<h1>${escHtml(doc.brand)}</h1>
+${letterheadHtml}
 <h2>${escHtml(doc.title)}</h2>
 <p class="meta">Periode: ${escHtml(doc.periodLabel)} · Digenerate: ${escHtml(
       doc.generatedAt,

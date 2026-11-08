@@ -103,6 +103,19 @@ export interface HomeData {
   sessionWeek?: Record<string, number>;
   /** Total siswa di kelompok yang diampu — tutor. */
   studentsTotal?: number;
+  /** Top 5 siswa per rata-rata nilai — tutor. */
+  topStudents?: Array<{ studentId: string; name: string; avgPct: number; examCount: number }>;
+  /** Rata-rata nilai per kelompok diampu — tutor. */
+  groupAvgs?: Array<{ groupId: string; name: string; avgPct: number; students: number }>;
+  /** 8 attempt ujian terakhir siswa kelompok — tutor. */
+  recentAttempts?: Array<{
+    id: string;
+    studentName: string;
+    examId: string;
+    examTitle: string;
+    pct: number;
+    submittedAt: string | null;
+  }>;
   /** % kehadiran per minggu, 6 minggu — admin academic/owner. */
   attendanceTrend?: Array<TrendPoint & { count: number }>;
   /** Funnel enrollment per status — admin academic/owner. */

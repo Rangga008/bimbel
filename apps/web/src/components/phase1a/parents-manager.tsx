@@ -262,6 +262,7 @@ export function ParentsManager({ canManage, basePath }: { canManage: boolean; ba
         onSubmit={() => editMutation.mutate()}
         isSubmitting={editMutation.isPending}
         submitLabel="Simpan Perubahan"
+        excludeUserId={editTarget?.user.id}
       />
 
       <ImportDialog

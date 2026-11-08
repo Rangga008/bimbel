@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   UploadedFile,
@@ -226,6 +227,23 @@ export class AuthController {
       dto.identifier ?? dto.email ?? '',
       origin,
     );
+  }
+
+  /**
+   * Cek ketersediaan email / nomor HP — dipakai form pendaftaran & admin untuk
+   * menampilkan peringatan "sudah dipakai" sebelum submit. Tetap hanya
+   * boolean per field, dan di-throttle ketat supaya tidak praktis dipakai
+   * enumerasi massal.
+   */
+  @Get('check-availability')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 15, ttl: 60_000 } })
+  async checkAvailability(
+    @Query('email') email?: string,
+    @Query('phone') phone?: string,
+    @Query('excludeUserId') excludeUserId?: string,
+  ) {
+    return this.authService.checkAvailability(email, phone, excludeUserId);
   }
 
   @Post('reset-password')

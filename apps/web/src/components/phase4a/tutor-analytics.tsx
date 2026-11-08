@@ -1,12 +1,15 @@
 'use client';
 
 import { Fragment, useState } from 'react';
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { ChartLine, ChevronDown, Users } from 'lucide-react';
+import { ChartLine, ChevronDown, ChevronRight, ClipboardList, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/shared/empty-state';
+import { ComboboxField } from '@/components/shared/combobox-field';
 import { score100 } from '@/lib/score';
 import { apiFetch } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
@@ -65,6 +68,7 @@ const LEVEL_LABEL: Record<TopicItem['weaknessLevel'], string> = {
 export function TutorAnalytics() {
   const [groupId, setGroupId] = useState('');
   const [openStudent, setOpenStudent] = useState<string | null>(null);
+  const [view, setView] = useState<'students' | 'exams'>('students');
 
   const groupsQ = useQuery({
     queryKey: ['groups', 'tutor-analytics'],
@@ -85,6 +89,24 @@ export function TutorAnalytics() {
     (p) => p.overallStats.totalExams > 0 && p.overallStats.avgPercentage < 60,
   ).length;
 
+  // Daftar ujian unik yang pernah dikerjakan siswa kelompok ini — untuk mode
+  // "per ujian" (klik → detail rekap nilai/jawaban/analisis soal).
+  const exams = new Map<string, { title: string; latestDate: string; takers: number }>();
+  for (const p of perfs) {
+    for (const h of p.examHistory) {
+      const cur = exams.get(h.examId);
+      if (cur) {
+        cur.takers += 1;
+        if (h.examDate > cur.latestDate) cur.latestDate = h.examDate;
+      } else {
+        exams.set(h.examId, { title: h.examTitle, latestDate: h.examDate, takers: 1 });
+      }
+    }
+  }
+  const examList = [...exams.entries()]
+    .map(([id, e]) => ({ id, ...e }))
+    .sort((a, b) => (a.latestDate < b.latestDate ? 1 : -1));
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -94,19 +116,35 @@ export function TutorAnalytics() {
             Performa siswa per kelompok yang Anda ampu.
           </p>
         </div>
-        <select
-          className="h-9 max-w-64 rounded-md border px-2 text-sm"
-          value={groupId}
-          onChange={(e) => setGroupId(e.target.value)}
-        >
-          <option value="">— Pilih kelompok —</option>
-          {(groupsQ.data ?? []).map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.name}
-            </option>
-          ))}
-        </select>
+        <div className="w-full sm:w-72">
+          <ComboboxField
+            id="tutor-analytics-group"
+            value={groupId}
+            onChange={setGroupId}
+            options={(groupsQ.data ?? []).map((g) => ({ value: g.id, label: g.name }))}
+            placeholder="— Pilih kelompok —"
+          />
+        </div>
       </div>
+
+      {groupId ? (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant={view === 'students' ? 'default' : 'outline'}
+            onClick={() => setView('students')}
+          >
+            <Users className="size-4" /> Per Siswa
+          </Button>
+          <Button
+            size="sm"
+            variant={view === 'exams' ? 'default' : 'outline'}
+            onClick={() => setView('exams')}
+          >
+            <ClipboardList className="size-4" /> Per Ujian
+          </Button>
+        </div>
+      ) : null}
 
       {!groupId ? (
         <Card>
@@ -128,6 +166,47 @@ export function TutorAnalytics() {
         </Card>
       ) : data ? (
         <>
+          {view === 'exams' ? (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ClipboardList className="size-4" /> Ujian yang Dikerjakan
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {examList.length === 0 ? (
+                  <EmptyState
+                    icon={ClipboardList}
+                    title="Belum ada ujian"
+                    description="Belum ada siswa kelompok ini yang mengerjakan ujian."
+                  />
+                ) : (
+                  <div className="flex flex-col divide-y rounded-md border">
+                    {examList.map((e) => (
+                      <Link
+                        key={e.id}
+                        href={`/tutor/analisis/${e.id}?groupId=${groupId}`}
+                        className="group flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-muted/50"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium group-hover:text-primary">
+                            {e.title}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {e.takers} siswa mengerjakan · terakhir {fmtDate(e.latestDate)}
+                          </p>
+                        </div>
+                        <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {view === 'students' ? (
+          <>
           {/* KPI ringkas kelompok */}
           <div className="grid gap-3 sm:grid-cols-3">
             <Card>
@@ -263,12 +342,15 @@ export function TutorAnalytics() {
                                               key={h.examId}
                                               className="flex items-center justify-between gap-3 text-xs"
                                             >
-                                              <span className="truncate">
+                                              <Link
+                                                href={`/tutor/analisis/${h.examId}?groupId=${groupId}`}
+                                                className="truncate hover:text-primary hover:underline"
+                                              >
                                                 {h.examTitle}
-                                                <span className="ml-1 text-muted-foreground">
+                                                <span className="ml-1 text-muted-foreground no-underline">
                                                   {fmtDate(h.examDate)}
                                                 </span>
-                                              </span>
+                                              </Link>
                                               <span className="shrink-0 font-medium tabular-nums">
                                                 {score100(h.score, h.maxScore)}/100
                                               </span>
@@ -312,6 +394,8 @@ export function TutorAnalytics() {
               )}
             </CardContent>
           </Card>
+          </>
+          ) : null}
         </>
       ) : null}
     </div>

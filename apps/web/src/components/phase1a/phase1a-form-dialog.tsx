@@ -9,6 +9,7 @@ import {
 } from '@/components/shared/form-field';
 import { ComboboxField } from '@/components/shared/combobox-field';
 import { CurrencyInput } from '@/components/shared/currency-input';
+import { TakenHint, useAvailability } from '@/components/shared/availability';
 import {
   Dialog,
   DialogContent,
@@ -52,6 +53,7 @@ export function Phase1aFormDialog({
   isSubmitting,
   submitLabel = 'Simpan',
   extra,
+  excludeUserId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -65,8 +67,16 @@ export function Phase1aFormDialog({
   submitLabel?: string;
   /** Slot tambahan di bawah fields (mis. dropdown custom) — tetap dalam <form>. */
   extra?: ReactNode;
+  /** Form edit: id user yang sedang diedit agar email/HP miliknya tidak diwarn. */
+  excludeUserId?: string;
 }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // Cek duplikat otomatis bila dialog punya field email/phone.
+  const availability = useAvailability(
+    values.email ?? '',
+    values.phone ?? '',
+    { excludeUserId },
+  );
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -161,6 +171,16 @@ export function Phase1aFormDialog({
                     <FieldValidIcon show={valid} />
                   </div>
                 </div>
+                {field.name === 'email' ? (
+                  <TakenHint show={availability.emailTaken}>
+                    Email ini sudah dipakai akun aktif lain.
+                  </TakenHint>
+                ) : null}
+                {field.name === 'phone' ? (
+                  <TakenHint show={availability.phoneTaken}>
+                    Nomor HP ini sudah dipakai akun aktif lain.
+                  </TakenHint>
+                ) : null}
               </FormField>
             );
           })}

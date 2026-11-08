@@ -448,6 +448,7 @@ export function AccountsManager({ basePath }: { basePath: string }) {
         onSubmit={() => updateMutation.mutate()}
         isSubmitting={updateMutation.isPending}
         submitLabel="Simpan"
+        excludeUserId={editUser?.id}
       />
 
       <Phase1aFormDialog
