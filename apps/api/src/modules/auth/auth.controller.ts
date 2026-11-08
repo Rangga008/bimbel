@@ -118,7 +118,10 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  // Limit 20/menit per IP (bukan 5): sesi ujian serentak di satu jaringan
+  // (mis. 50 siswa di WiFi bimbel = 1 IP publik) tetap bisa masuk, sementara
+  // brute-force tetap dibatasi ketat.
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async login(
     @Body() dto: LoginDto,
     @Req() req: Request,

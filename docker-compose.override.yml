@@ -7,11 +7,35 @@
 #   container membesar bisa memicu OOM-killer membunuh Postgres/API.
 # - Rotasi log json-file: tanpa ini log tumbuh tak terbatas di disk 19GB.
 services:
+  # Pintu depan publik: HTTP :80 + HTTPS :443 dengan TLS otomatis
+  # (Let's Encrypt) untuk bimbelgfs.com. Diaktifkan lewat profile "tls"
+  # (COMPOSE_PROFILES=tls di .env server). Tanpa profile, web langsung
+  # ekspos WEB_PORT seperti sebelumnya — untuk dev lokal.
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["tls"]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
   web:
     ports: !override
-      # Default 80 untuk host publik; set WEB_PORT di .env lokal bila mau port
-      # lain (mis. WEB_PORT=3001 → http://localhost:3001).
-      - "${WEB_PORT:-80}:3000"
+      # Default bind localhost di balik Caddy; untuk dev langsung tanpa
+      # profile tls, set WEB_BIND= (kosong) + WEB_PORT=80/3001 di .env.
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8080}:3000"
     mem_limit: 640m
     environment:
       NODE_OPTIONS: "--max-old-space-size=448"
@@ -81,3 +105,7 @@ services:
       options:
         max-size: "5m"
         max-file: "2"
+
+volumes:
+  caddy-data:
+  caddy-config:

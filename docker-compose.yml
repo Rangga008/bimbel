@@ -115,8 +115,14 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me}
       JWT_ACCESS_TTL_SECONDS: "900"
       JWT_REFRESH_TTL_DAYS: "7"
-      THROTTLE_TTL_MS: "60000"
-      THROTTLE_LIMIT: "100"
+      THROTTLE_TTL_MS: ${THROTTLE_TTL_MS:-60000}
+      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-100}
+      # Seed: full = akun + konten demo (dev); minimal = hanya owner/admin +
+      # master data (produksi). Password akun minimal dari SEED_*_PASSWORD.
+      SEED_MODE: ${SEED_MODE:-full}
+      SEED_OWNER_PASSWORD: ${SEED_OWNER_PASSWORD:-}
+      SEED_ADMIN_ACADEMIC_PASSWORD: ${SEED_ADMIN_ACADEMIC_PASSWORD:-}
+      SEED_ADMIN_FINANCE_PASSWORD: ${SEED_ADMIN_FINANCE_PASSWORD:-}
       # Fase 5b — WhatsApp outbox. "log" = dummy console; "fonnte" = gateway
       # HTTP asli (butuh WHATSAPP_API_TOKEN + opsional WHATSAPP_API_URL).
       WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-log}

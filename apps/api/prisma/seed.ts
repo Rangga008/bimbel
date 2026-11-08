@@ -469,15 +469,38 @@ async function main() {
     }
   }
 
-  for (const seedUser of SEED_USERS) {
+  // SEED_MODE=minimal (produksi): hanya akun owner/admin — tanpa siswa,
+  // ortu, tutor, maupun konten demo. Master data (mapel, level, katalog
+  // program, akun kas, settings) tetap di-seed karena dipakai UI produksi.
+  const minimalSeed =
+    (process.env.SEED_MODE ?? 'full').toLowerCase() === 'minimal';
+  const adminRoles: string[] = [
+    ROLE_NAMES.OWNER,
+    ROLE_NAMES.ADMIN_ACADEMIC,
+    ROLE_NAMES.ADMIN_FINANCE,
+  ];
+  const seedUsers = minimalSeed
+    ? SEED_USERS.filter((u) => adminRoles.includes(u.role))
+    : SEED_USERS;
+  const envSeedPassword: Record<string, string | undefined> = {
+    [ROLE_NAMES.OWNER]: process.env.SEED_OWNER_PASSWORD,
+    [ROLE_NAMES.ADMIN_ACADEMIC]: process.env.SEED_ADMIN_ACADEMIC_PASSWORD,
+    [ROLE_NAMES.ADMIN_FINANCE]: process.env.SEED_ADMIN_FINANCE_PASSWORD,
+  };
+
+  for (const seedUser of seedUsers) {
     const passwordHash = await bcrypt.hash(
-      seedUser.password,
+      (minimalSeed && envSeedPassword[seedUser.role]) || seedUser.password,
       SEED_PASSWORD_SALT_ROUNDS,
     );
     const user = await prisma.user.upsert({
       where: { email: seedUser.email },
       create: { email: seedUser.email, name: seedUser.name, passwordHash },
-      update: { name: seedUser.name, passwordHash },
+      // Minimal mode tidak menimpa password akun yang sudah ada — password
+      // hanya dipasang saat akun pertama dibuat (atau di-set admin via UI).
+      update: minimalSeed
+        ? { name: seedUser.name }
+        : { name: seedUser.name, passwordHash },
     });
 
     const role = rolesByName.get(seedUser.role)!;
@@ -807,6 +830,13 @@ async function main() {
       create: { key: s.key, value: s.value },
       update: {},
     });
+  }
+
+  if (minimalSeed) {
+    console.log(
+      'SEED_MODE=minimal — konten demo dilewati (hanya akun admin/owner + master data).',
+    );
+    return;
   }
 
   // Fase 1b: contoh kelompok + 2 tutor + 5 siswa supaya DoD bisa diverifikasi

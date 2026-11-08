@@ -1,0 +1,22 @@
+# HTTPS otomatis (Let's Encrypt) untuk Bimbel GFS.
+# Aktif via profile "tls": COMPOSE_PROFILES=tls docker compose up -d
+# Syarat: DNS A record bimbelgfs.com & www.bimbelgfs.com -> IP server ini.
+# Sampai DNS aktif, sertifikat otomatis diretry oleh Caddy — http://<IP>
+# tetap dilayani blok ":80" di bawah.
+{
+	email admin@bimbelgfs.com
+}
+
+bimbelgfs.com {
+	reverse_proxy web:3000
+}
+
+www.bimbelgfs.com {
+	redir https://bimbelgfs.com{uri} permanent
+}
+
+# Catch-all HTTP: akses via http://<IP> tetap berfungsi (masa transisi
+# sebelum DNS aktif, atau akses darurat).
+:80 {
+	reverse_proxy web:3000
+}

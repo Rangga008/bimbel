@@ -64,7 +64,7 @@ export class ExamsController {
    *  Throttle ketat: kode 6 karakter tidak boleh bisa ditebak dengan
    *  brute-force lewat endpoint ini. */
   @Post('exams/redeem')
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @RequirePermissions(PERMISSION_CODES.EXAM_ATTEMPT)
   redeem(
     @Body() dto: RedeemExamCodeDto,
