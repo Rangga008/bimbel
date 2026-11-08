@@ -289,23 +289,6 @@ export function AppShellDesktop({
 								</p>
 							</div>
 						)}
-						<Tooltip>
-							<TooltipTrigger
-								render={
-									<Button
-										variant="ghost"
-										size="icon"
-										onClick={() => setLogoutOpen(true)}
-										aria-label="Logout"
-									/>
-								}
-							>
-								<LogOut className="size-4.5" />
-							</TooltipTrigger>
-							<TooltipContent side={collapsed ? "right" : "top"}>
-								Logout
-							</TooltipContent>
-						</Tooltip>
 					</div>
 				</aside>
 				<div className="flex min-w-0 flex-1 flex-col">
@@ -348,6 +331,21 @@ export function AppShellDesktop({
 									{userInitials(user?.name)}
 								</AvatarFallback>
 							</Avatar>
+							<Tooltip>
+								<TooltipTrigger
+									render={
+										<Button
+											variant="destructive"
+											size="icon-sm"
+											onClick={() => setLogoutOpen(true)}
+											aria-label="Logout"
+										/>
+									}
+								>
+									<LogOut className="size-4" />
+								</TooltipTrigger>
+								<TooltipContent side="bottom">Logout</TooltipContent>
+							</Tooltip>
 						</div>
 					</header>
 					<main className="min-w-0 flex-1 overflow-y-auto p-6">
