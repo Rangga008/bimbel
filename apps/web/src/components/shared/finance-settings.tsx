@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Pencil, Send, Trash2, ChevronRight, ArrowLeft } from "lucide-react";
+import { Plus, Pencil, Send, Trash2, ChevronRight, ArrowLeft, UserRound, ImagePlus } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { BackupPanel } from "@/components/shared/backup-panel";
@@ -96,6 +96,8 @@ interface TestimonialEntry {
 	name: string;
 	school: string;
 	quote: string;
+	/** Foto profil narasumber — opsional; kosong = inisial nama. */
+	photo?: string;
 }
 
 interface LocationEntry {
@@ -231,6 +233,60 @@ function LandingPreview({ children }: { children: ReactNode }) {
 				Pratinjau
 			</p>
 			<div className="overflow-hidden rounded-lg border">{children}</div>
+		</div>
+	);
+}
+
+/** Avatar narasumber testimoni — lingkaran + pemilih pustaka branding. */
+function TestimonialPhoto({
+	value,
+	onPick,
+}: {
+	value: string;
+	onPick: (url: string) => void;
+}) {
+	const [open, setOpen] = useState(false);
+	return (
+		<div className="flex w-24 shrink-0 flex-col items-center gap-1.5">
+			{value ? (
+				<img
+					src={resolveAssetUrl(value)}
+					alt="Foto narasumber"
+					className="size-20 rounded-full border-2 border-border object-cover"
+				/>
+			) : (
+				<div className="flex size-20 items-center justify-center rounded-full border-2 border-dashed border-muted-foreground/30 bg-muted/40 text-muted-foreground">
+					<UserRound className="size-8" />
+				</div>
+			)}
+			<Button
+				type="button"
+				variant="outline"
+				size="sm"
+				className="h-7 w-full px-2 text-[11px]"
+				onClick={() => setOpen(true)}
+			>
+				<ImagePlus className="size-3" /> {value ? "Ganti" : "Foto"}
+			</Button>
+			{value ? (
+				<button
+					type="button"
+					className="text-[11px] text-destructive hover:underline"
+					onClick={() => onPick("")}
+				>
+					Hapus foto
+				</button>
+			) : null}
+			<MediaLibraryDialog
+				open={open}
+				onOpenChange={setOpen}
+				onPick={(url) => {
+					onPick(url);
+					setOpen(false);
+				}}
+				kind="image"
+				category="BRANDING"
+			/>
 		</div>
 	);
 }
@@ -1030,73 +1086,89 @@ export function FinanceSettings() {
 									{display.testimonials.map((t, i) => (
 										<div
 											key={i}
-											className="grid gap-2 rounded-md border p-3"
+											className="flex gap-3 rounded-md border p-3"
 										>
-											<div className="grid gap-2 sm:grid-cols-2">
-												<Input
-													placeholder="Nama"
-													value={t.name}
-													onChange={(e) =>
-														setDisplay({
-															...display,
-															testimonials: display.testimonials.map(
-																(x, j) =>
-																	j === i
-																		? { ...x, name: e.target.value }
-																		: x,
-															),
-														})
-													}
-												/>
-												<Input
-													placeholder="Asal / kampus — mis. UNPAD — Fisika"
-													value={t.school}
-													onChange={(e) =>
-														setDisplay({
-															...display,
-															testimonials: display.testimonials.map(
-																(x, j) =>
-																	j === i
-																		? { ...x, school: e.target.value }
-																		: x,
-															),
-														})
-													}
-												/>
-											</div>
-											<Textarea
-												rows={2}
-												placeholder="Kutipan testimoni"
-												value={t.quote}
-												onChange={(e) =>
+											<TestimonialPhoto
+												value={t.photo ?? ""}
+												onPick={(url) =>
 													setDisplay({
 														...display,
 														testimonials: display.testimonials.map(
 															(x, j) =>
 																j === i
-																	? { ...x, quote: e.target.value }
+																	? { ...x, photo: url }
 																	: x,
 														),
 													})
 												}
 											/>
-											<div className="flex justify-end">
-												<Button
-													type="button"
-													variant="ghost"
-													size="sm"
-													className="text-destructive hover:text-destructive"
-													onClick={() =>
+											<div className="grid flex-1 gap-2">
+												<div className="grid gap-2 sm:grid-cols-2">
+													<Input
+														placeholder="Nama"
+														value={t.name}
+														onChange={(e) =>
+															setDisplay({
+																...display,
+																testimonials: display.testimonials.map(
+																	(x, j) =>
+																		j === i
+																			? { ...x, name: e.target.value }
+																			: x,
+																),
+															})
+														}
+													/>
+													<Input
+														placeholder="Asal / kampus — mis. UNPAD — Fisika"
+														value={t.school}
+														onChange={(e) =>
+															setDisplay({
+																...display,
+																testimonials: display.testimonials.map(
+																	(x, j) =>
+																		j === i
+																			? { ...x, school: e.target.value }
+																			: x,
+																),
+															})
+														}
+													/>
+												</div>
+												<Textarea
+													rows={2}
+													placeholder="Kutipan testimoni"
+													value={t.quote}
+													onChange={(e) =>
 														setDisplay({
 															...display,
-															testimonials: display.testimonials.filter(
-																(_, j) => j !== i,
+															testimonials: display.testimonials.map(
+																(x, j) =>
+																	j === i
+																		? { ...x, quote: e.target.value }
+																		: x,
 															),
 														})
 													}
-												>
-													<Trash2 className="size-3.5" /> Hapus
-												</Button>
+												/>
+												<div className="flex justify-end">
+													<Button
+														type="button"
+														variant="ghost"
+														size="sm"
+														className="text-destructive hover:text-destructive"
+														onClick={() =>
+															setDisplay({
+																...display,
+																testimonials: display.testimonials.filter(
+																	(_, j) => j !== i,
+																),
+															})
+														}
+													>
+														<Trash2 className="size-3.5" /> Hapus
+													</Button>
+												</div>
 											</div>
 										</div>
 									))}
@@ -1112,7 +1184,7 @@ export function FinanceSettings() {
 												...display,
 												testimonials: [
 													...display.testimonials,
-													{ name: "", school: "", quote: "" },
+													{ name: "", school: "", quote: "", photo: "" },
 												],
 											})
 										}
@@ -1128,12 +1200,33 @@ export function FinanceSettings() {
 													key={i}
 													className="rounded-lg border bg-card p-3"
 												>
-													<p className="text-sm font-semibold">
-														{t.name || "Nama"}
-													</p>
-													<p className="text-xs text-muted-foreground">
-														{t.school || "Asal / kampus"}
-													</p>
+													<div className="flex items-center gap-2.5">
+														{t.photo ? (
+															<img
+																src={resolveAssetUrl(t.photo)}
+																alt=""
+																className="size-9 shrink-0 rounded-full border object-cover"
+															/>
+														) : (
+															<div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-blue-50 text-xs font-bold text-brand-blue-600">
+																{(t.name || "?")
+																	.trim()
+																	.split(/\s+/)
+																	.slice(0, 2)
+																	.map((w) => w[0])
+																	.join("")
+																	.toUpperCase()}
+															</div>
+														)}
+														<div className="min-w-0">
+															<p className="truncate text-sm font-semibold">
+																{t.name || "Nama"}
+															</p>
+															<p className="truncate text-xs text-muted-foreground">
+																{t.school || "Asal / kampus"}
+															</p>
+														</div>
+													</div>
 													<p className="mt-2 text-xs leading-relaxed text-muted-foreground italic">
 														&ldquo;{t.quote || "Kutipan…"}&rdquo;
 													</p>

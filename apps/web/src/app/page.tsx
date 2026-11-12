@@ -62,6 +62,7 @@ import {
 	useLanding,
 	type LandingHeroImage,
 	type LandingPackage,
+	type LandingTestimonial,
 } from "@/lib/landing";
 
 interface PackageSlide {
@@ -242,7 +243,7 @@ const REGISTER_STEPS = [
 	},
 ];
 
-const TESTIMONIALS = [
+const TESTIMONIALS: LandingTestimonial[] = [
 	{
 		name: "Octaviani Putri",
 		school: "UPI — Jurusan Pend. Kimia",
@@ -918,9 +919,32 @@ export default function LandingPage() {
 									aria-hidden
 									className="absolute -top-2 -right-2 size-20 text-brand-blue-50"
 								/>
-								<CardHeader>
-									<CardTitle className="text-base">{t.name}</CardTitle>
-									<CardDescription>{t.school}</CardDescription>
+								<CardHeader className="flex flex-row items-center gap-3 space-y-0">
+									{t.photo ? (
+										<img
+											src={resolveAssetUrl(t.photo)}
+											alt={`Foto ${t.name}`}
+											className="size-12 shrink-0 rounded-full border-2 border-brand-blue-100 object-cover"
+										/>
+									) : (
+										<div className="flex size-12 shrink-0 items-center justify-center rounded-full border-2 border-brand-blue-100 bg-brand-blue-50 text-sm font-bold text-brand-blue-600">
+											{t.name
+												.trim()
+												.split(/\s+/)
+												.slice(0, 2)
+												.map((w) => w[0])
+												.join("")
+												.toUpperCase() || "?"}
+										</div>
+									)}
+									<div className="min-w-0">
+										<CardTitle className="truncate text-base">
+											{t.name}
+										</CardTitle>
+										<CardDescription className="truncate">
+											{t.school}
+										</CardDescription>
+									</div>
 								</CardHeader>
 								<CardContent>
 									<p className="text-sm leading-relaxed text-muted-foreground italic">

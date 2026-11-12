@@ -70,6 +70,8 @@ export interface LandingTestimonial {
   name: string;
   school: string;
   quote: string;
+  /** Foto profil narasumber — opsional; kosong = inisial nama. */
+  photo?: string;
 }
 
 /** Lokasi footer/fasilitas yang diatur admin — kosong = pakai data gedung. */
