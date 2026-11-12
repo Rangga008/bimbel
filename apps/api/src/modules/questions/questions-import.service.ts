@@ -552,19 +552,58 @@ export class QuestionsImportService {
         if (tex) out += part.block ? ` $$${tex}$$ ` : ` $${tex}$ `;
         continue;
       }
+      // Iterasi per <w:r> agar run berformat superscript/subscript
+      // (<w:vertAlign>) ikut dikonversi jadi $^{..}$/$_{..}$ — Word sering
+      // menyimpan pangkat/kuadrat sebagai format run, bukan rumus OMML.
       const re =
-        /<w:t[^>]*>([\s\S]*?)<\/w:t>|<a:blip[^>]*r:(?:embed|link)="(rId\d+)"[^>]*\/?>|<v:imagedata[^>]*r:id="(rId\d+)"[^>]*\/?>/g;
+        /<w:r\b[^>]*>[\s\S]*?<\/w:r>|<a:blip[^>]*r:(?:embed|link)="(rId\d+)"[^>]*\/?>|<v:imagedata[^>]*r:id="(rId\d+)"[^>]*\/?>/g;
       let m: RegExpExecArray | null;
+      let inMath = false;
+      const closeMath = () => {
+        if (inMath) {
+          out += '$';
+          inMath = false;
+        }
+      };
       while ((m = re.exec(part.xml))) {
-        if (m[1] !== undefined) out += unescapeXml(m[1]);
-        else {
-          const relId = m[2] ?? m[3];
+        const tok = m[0];
+        if (tok.startsWith('<a:') || tok.startsWith('<v:')) {
+          const relId = m[1] ?? m[2];
+          closeMath();
+          if (relId) {
+            out += ` [IMG:${relId}] `;
+            usedRelIds.add(relId);
+          }
+          continue;
+        }
+        // <w:r> — gabung semua <w:t> di dalamnya.
+        let text = '';
+        const tRe = /<w:t[^>]*>([\s\S]*?)<\/w:t>/g;
+        let tm: RegExpExecArray | null;
+        while ((tm = tRe.exec(tok))) text += unescapeXml(tm[1]);
+        const imgM = tok.match(/r:(?:embed|link)="(rId\d+)"|r:id="(rId\d+)"/);
+        if (imgM) {
+          closeMath();
+          const relId = imgM[1] ?? imgM[2];
           if (relId) {
             out += ` [IMG:${relId}] `;
             usedRelIds.add(relId);
           }
         }
+        if (!text) continue;
+        const va = tok.match(/<w:vertAlign[^>]*w:val="(superscript|subscript)"/);
+        if (va) {
+          if (!inMath) {
+            out += '$';
+            inMath = true;
+          }
+          out += va[1] === 'superscript' ? `^{${text}}` : `_{${text}}`;
+        } else {
+          closeMath();
+          out += text;
+        }
       }
+      closeMath();
     }
     return out.replace(/\s{2,}/g, ' ').trim();
   }

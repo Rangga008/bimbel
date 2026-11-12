@@ -11,10 +11,55 @@ out/
 *.tsbuildinfo
 
 # === Env & secrets ===
+# Semua varian .env terlarang — hanya .env.example (placeholder) yang boleh masuk repo.
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+.envrc
+
+# Kunci, sertifikat, kredensial SSH/VPN — JANGAN PERNAH di-commit.
 *.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.kdbx
+*.ppk
+*.ovpn
+*.pub
+id_rsa*
+id_ed25519*
+id_ecdsa*
+*.secret
+*.secrets
+secrets/
+
+# === Backup & dump database (berisi data produksi — wajib di luar repo) ===
+backups/
+backup/
+dump/
+db-dumps/
+*.dump
+*.backup
+*.bak
+*.sql.gz
+*.sql.bz2
+*.sql.xz
+pgdata/
+
+# === Deploy/cloud state (berisi token & metadata infra) ===
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+.vercel/
+.railway/
+.fly/
+firebase-debug.log
+firebase.json.local
 
 # === Logs ===
 *.log
