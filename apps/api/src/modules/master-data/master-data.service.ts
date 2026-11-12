@@ -13,6 +13,11 @@ export interface MasterRowInput {
   name?: string;
   sortOrder?: number;
   isActive?: boolean;
+  /**
+   * Lampiran jenjang untuk mapel — mapel baru langsung bisa dipilih di
+   * jenjang-jenjang ini (drilldown Materi/Ujian memfilter per levelSubjects).
+   */
+  levelIds?: string[];
 }
 
 @Injectable()
@@ -23,6 +28,11 @@ export class MasterDataService {
     return this.prisma.subject.findMany({
       where: includeInactive ? {} : { isActive: true },
       orderBy: { name: 'asc' },
+      // levelIds ikut dikembalikan agar UI master data bisa menandai jenjang
+      // yang sudah terlampir tanpa request tambahan.
+      include: {
+        levelSubjects: { select: { levelId: true } },
+      },
     });
   }
 
@@ -33,20 +43,43 @@ export class MasterDataService {
     });
   }
 
+  /**
+   * Sinkronkan lampiran jenjang sebuah mapel: bila levelIds dikirim, set
+   * lampiran mapel persis daftar itu (tambah yang kurang, hapus yang tak
+   * dipilih). Validasi levelId dulu supaya lampiran hantu tidak terbentuk.
+   */
+  private async syncSubjectLevels(subjectId: string, levelIds: string[]) {
+    const uniq = [...new Set(levelIds)];
+    if (uniq.length) {
+      const n = await this.prisma.level.count({ where: { id: { in: uniq } } });
+      if (n !== uniq.length) {
+        throw new BadRequestException('Jenjang lampiran tidak valid.');
+      }
+    }
+    await this.prisma.$transaction([
+      this.prisma.levelSubject.deleteMany({ where: { subjectId } }),
+      this.prisma.levelSubject.createMany({
+        data: uniq.map((levelId) => ({ levelId, subjectId })),
+      }),
+    ]);
+  }
+
   async createSubject(dto: MasterRowInput) {
     this.assertCodeName(dto);
-    return this.prisma.subject.create({
+    const subject = await this.prisma.subject.create({
       data: {
         code: dto.code!.trim().toUpperCase(),
         name: dto.name!.trim(),
         isActive: dto.isActive ?? true,
       },
     });
+    if (dto.levelIds?.length) await this.syncSubjectLevels(subject.id, dto.levelIds);
+    return subject;
   }
 
   async updateSubject(id: string, dto: MasterRowInput) {
     await this.assertExists('subject', id);
-    return this.prisma.subject.update({
+    const updated = await this.prisma.subject.update({
       where: { id },
       data: {
         ...(dto.code !== undefined
@@ -56,6 +89,8 @@ export class MasterDataService {
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },
     });
+    if (dto.levelIds !== undefined) await this.syncSubjectLevels(id, dto.levelIds);
+    return updated;
   }
 
   async createGradeLevel(dto: MasterRowInput) {

@@ -199,12 +199,21 @@ export function DrillQuickFilter({
   // Mapel: dari levelSubjects jenjang terpilih, fallback mapel pada item
   // dalam lingkup tingkat+jenjang saat ini.
   const selLevel = levels?.find((l) => l.id === value.levelId);
+  // Semua mapel aktif dari master data — fallback bila jenjang belum
+  // dilampirkan mapel apa pun (selaras dengan perilaku form materi/ujian).
+  const allSubjectsQ = useQuery({
+    queryKey: ['subjects'],
+    queryFn: () => apiFetch<{ id: string; name: string }[]>('/master/subjects'),
+    enabled: !!selLevel && !selLevel.levelSubjects?.length,
+  });
   const mapelOpts =
     selLevel?.levelSubjects?.length
       ? selLevel.levelSubjects
           .map((ls) => ls.subject)
           .filter((s): s is { id: string; name: string } => !!s)
           .map((s) => ({ id: s.id, name: s.name }))
+      : selLevel && allSubjectsQ.data?.length
+      ? allSubjectsQ.data
       : (() => {
           const pool = applyDrill(
             items,
@@ -440,6 +449,13 @@ export function ContentDrilldown({
     return [...map.values()].sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name));
   };
   const selectedLevel = levels?.find((l) => l.id === value.levelId);
+  // Fallback mapel: jenjang tanpa levelSubjects menawarkan semua mapel aktif
+  // dari master data (selaras dengan form materi/ujian).
+  const allSubjectsQ = useQuery({
+    queryKey: ['subjects'],
+    queryFn: () => apiFetch<{ id: string; name: string }[]>('/master/subjects'),
+    enabled: !!selectedLevel && !selectedLevel.levelSubjects?.length,
+  });
   const catList = categories ?? [];
   const buckets =
     step === 'grade'
@@ -458,10 +474,12 @@ export function ContentDrilldown({
         ]
       : step === 'subject' && selectedLevel
         ? [
-            ...(selectedLevel.levelSubjects ?? [])
-              .map((ls) => ls.subject)
-              .filter((s): s is { id: string; name: string } => !!s)
-              .map((s) => ({ id: s.id, name: s.name, sub: undefined, count: countOf((i) => i.subject?.id === s.id) })),
+            ...((selectedLevel.levelSubjects?.length
+              ? selectedLevel.levelSubjects
+                  .map((ls) => ls.subject)
+                  .filter((s): s is { id: string; name: string } => !!s)
+              : (allSubjectsQ.data ?? []))
+              .map((s) => ({ id: s.id, name: s.name, sub: undefined, count: countOf((i) => i.subject?.id === s.id) }))),
             // Mapel terpakai tapi tak terdaftar di master jenjang ini.
             ...drillBuckets(pool, 'subject').filter(
               (b) => b.id !== DRILL_NONE && !(selectedLevel.levelSubjects ?? []).some((ls) => ls.subject?.id === b.id),
