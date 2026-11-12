@@ -543,20 +543,267 @@ export class QuestionsImportService {
   /** Ekstrak teks + token [IMG:rId] dari fragmen XML (paragraf/sel). */
   private extractText(frag: string, usedRelIds: Set<string>): string {
     let out = '';
-    const re =
-      /<w:t[^>]*>([\s\S]*?)<\/w:t>|<a:blip[^>]*r:(?:embed|link)="(rId\d+)"[^>]*\/?>|<v:imagedata[^>]*r:id="(rId\d+)"[^>]*\/?>/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(frag))) {
-      if (m[1] !== undefined) out += unescapeXml(m[1]);
-      else {
-        const relId = m[2] ?? m[3];
-        if (relId) {
-          out += ` [IMG:${relId}] `;
-          usedRelIds.add(relId);
+    // Pecah blok rumus Word (OMML) dari teks biasa — <m:oMath>/<m:oMathPara>
+    // dikonversi jadi LaTeX ($...$ inline / $$...$$ block) agar dirender
+    // MathContent di web. Sisanya diproses sebagai <w:t>/gambar seperti biasa.
+    for (const part of this.splitMathBlocks(frag)) {
+      if (part.math) {
+        const tex = this.ommlToLatex(part.xml);
+        if (tex) out += part.block ? ` $$${tex}$$ ` : ` $${tex}$ `;
+        continue;
+      }
+      const re =
+        /<w:t[^>]*>([\s\S]*?)<\/w:t>|<a:blip[^>]*r:(?:embed|link)="(rId\d+)"[^>]*\/?>|<v:imagedata[^>]*r:id="(rId\d+)"[^>]*\/?>/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(part.xml))) {
+        if (m[1] !== undefined) out += unescapeXml(m[1]);
+        else {
+          const relId = m[2] ?? m[3];
+          if (relId) {
+            out += ` [IMG:${relId}] `;
+            usedRelIds.add(relId);
+          }
         }
       }
     }
     return out.replace(/\s{2,}/g, ' ').trim();
+  }
+
+  /** Pecah fragmen jadi segmen teks-biasa vs blok <m:oMath>/<m:oMathPara>
+   *  (depth-aware — oMathPara bisa membungkus banyak oMath). */
+  private splitMathBlocks(
+    frag: string,
+  ): { xml: string; math: boolean; block: boolean }[] {
+    const parts: { xml: string; math: boolean; block: boolean }[] = [];
+    const re = /<m:(oMathPara|oMath)\b[^>]*>/g;
+    let m: RegExpExecArray | null;
+    let last = 0;
+    while ((m = re.exec(frag))) {
+      const tag = m[1];
+      const close = `</m:${tag}>`;
+      let depth = 1;
+      let j = re.lastIndex;
+      while (depth > 0 && j < frag.length) {
+        const nc = frag.indexOf(close, j);
+        if (nc < 0) {
+          j = frag.length;
+          break;
+        }
+        const no = this.findMathOpen(frag, tag, j);
+        if (no >= 0 && no < nc) {
+          depth++;
+          j = no + `<m:${tag}`.length;
+        } else {
+          depth--;
+          j = nc + close.length;
+        }
+      }
+      if (m.index > last)
+        parts.push({ xml: frag.slice(last, m.index), math: false, block: false });
+      parts.push({
+        xml: frag.slice(m.index, j),
+        math: true,
+        block: tag === 'oMathPara',
+      });
+      last = j;
+      re.lastIndex = j;
+    }
+    if (last < frag.length)
+      parts.push({ xml: frag.slice(last), math: false, block: false });
+    return parts;
+  }
+
+  /** Elemen <m:...> top-level di dalam fragmen OMML (depth-aware). */
+  private topNodes(
+    xml: string,
+  ): { tag: string; attrs: string; inner: string | null }[] {
+    const nodes: { tag: string; attrs: string; inner: string | null }[] = [];
+    let i = 0;
+    const n = xml.length;
+    while (i < n) {
+      const lt = xml.indexOf('<m:', i);
+      if (lt < 0) break;
+      const gt = xml.indexOf('>', lt);
+      if (gt < 0) break;
+      const head = xml.slice(lt, gt + 1);
+      const mm = head.match(/^<m:([A-Za-z0-9]+)\b([^>]*?)(\/)?>$/);
+      if (!mm) {
+        i = gt + 1;
+        continue;
+      }
+      const tag = mm[1];
+      const attrs = mm[2] ?? '';
+      if (mm[3] === '/') {
+        nodes.push({ tag, attrs, inner: null });
+        i = gt + 1;
+        continue;
+      }
+      let depth = 1;
+      let j = gt + 1;
+      const closeStr = `</m:${tag}>`;
+      while (depth > 0 && j < n) {
+        const nc = xml.indexOf(closeStr, j);
+        if (nc < 0) {
+          j = n;
+          break;
+        }
+        const no = this.findMathOpen(xml, tag, j);
+        if (no >= 0 && no < nc) {
+          const og = xml.indexOf('>', no);
+          if (og >= 0 && xml.slice(no, og + 1).endsWith('/>')) {
+            j = og + 1;
+            continue;
+          }
+          depth++;
+          j = og >= 0 ? og + 1 : no + `<m:${tag}`.length;
+        } else {
+          depth--;
+          j = nc + closeStr.length;
+        }
+      }
+      const innerEnd = xml.lastIndexOf(closeStr, Math.max(gt, j - 1));
+      nodes.push({
+        tag,
+        attrs,
+        inner: innerEnd > gt ? xml.slice(gt + 1, innerEnd) : '',
+      });
+      i = j;
+    }
+    return nodes;
+  }
+
+  /** Posisi tag buka `<m:tag>` berikutnya dengan batas nama yang ketat —
+   *  `<m:d` tidak boleh mencocokkan `<m:den`/`<m:deg`/`<m:dPr`. */
+  private findMathOpen(xml: string, tag: string, from: number): number {
+    const needle = `<m:${tag}`;
+    let p = xml.indexOf(needle, from);
+    while (p >= 0) {
+      const c = xml.charAt(p + needle.length);
+      if (c === '>' || c === '/' || c === ' ' || c === '\t' || c === '\n' || c === '\r')
+        return p;
+      p = xml.indexOf(needle, p + needle.length);
+    }
+    return -1;
+  }
+
+  /** Inner XML elemen <m:name> pertama di dalam fragmen. */
+  private childInner(xml: string, name: string): string {
+    return this.topNodes(xml).find((x) => x.tag === name)?.inner ?? '';
+  }
+
+  /** OMML → LaTeX (subset struktur yang umum dipakai soal sekolah). */
+  private ommlToLatex(xml: string): string {
+    return this.topNodes(xml)
+      .map((n) => this.ommlNode(n.tag, n.attrs, n.inner ?? ''))
+      .join('')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
+  private ommlNode(tag: string, attrs: string, inner: string): string {
+    switch (tag) {
+      case 'oMath':
+      case 'oMathPara':
+      case 'e':
+      case 'num':
+      case 'den':
+      case 'sub':
+      case 'sup':
+      case 'deg':
+      case 'lim':
+      case 'fName':
+        return this.ommlToLatex(inner);
+      case 't':
+        return unescapeXml(inner.replace(/<[^>]*>/g, ''));
+      case 'r': {
+        const parts: string[] = [];
+        for (const n of this.topNodes(inner)) {
+          if (n.tag === 't') parts.push(unescapeXml((n.inner ?? '').replace(/<[^>]*>/g, '')));
+          else if (!n.tag.endsWith('Pr')) parts.push(this.ommlNode(n.tag, n.attrs, n.inner ?? ''));
+        }
+        return parts.join('');
+      }
+      case 'f':
+        return `\\frac{${this.ommlToLatex(this.childInner(inner, 'num'))}}{${this.ommlToLatex(this.childInner(inner, 'den'))}}`;
+      case 'sSup': {
+        const e = this.ommlToLatex(this.childInner(inner, 'e'));
+        const s = this.ommlToLatex(this.childInner(inner, 'sup'));
+        return `${e}^{${s}}`;
+      }
+      case 'sSub': {
+        const e = this.ommlToLatex(this.childInner(inner, 'e'));
+        const s = this.ommlToLatex(this.childInner(inner, 'sub'));
+        return `${e}_{${s}}`;
+      }
+      case 'sSubSup': {
+        const e = this.ommlToLatex(this.childInner(inner, 'e'));
+        const sb = this.ommlToLatex(this.childInner(inner, 'sub'));
+        const sp = this.ommlToLatex(this.childInner(inner, 'sup'));
+        return `${e}_{${sb}}^{${sp}}`;
+      }
+      case 'rad': {
+        const deg = this.ommlToLatex(this.childInner(inner, 'deg'));
+        const e = this.ommlToLatex(this.childInner(inner, 'e'));
+        return deg ? `\\sqrt[${deg}]{${e}}` : `\\sqrt{${e}}`;
+      }
+      case 'd': {
+        const beg = inner.match(/m:begChr[^>]*?m:val="([^"]*)"/)?.[1] ?? '(';
+        const end = inner.match(/m:endChr[^>]*?m:val="([^"]*)"/)?.[1] ?? ')';
+        const parts = this.topNodes(inner)
+          .filter((n) => n.tag === 'e')
+          .map((n) => this.ommlToLatex(n.inner ?? ''))
+          .join(',');
+        return `\\left${texDelim(beg)}${parts}\\right${texDelim(end)}`;
+      }
+      case 'nary': {
+        const chr = inner.match(/m:chr[^>]*?m:val="([^"]*)"/)?.[1] ?? '∑';
+        const op =
+          chr === '∑' ? '\\sum' : chr === '∏' ? '\\prod' : chr === '∫' ? '\\int' : chr;
+        const sb = this.ommlToLatex(this.childInner(inner, 'sub'));
+        const sp = this.ommlToLatex(this.childInner(inner, 'sup'));
+        const e = this.ommlToLatex(this.childInner(inner, 'e'));
+        return `${op}${sb ? `_{${sb}}` : ''}${sp ? `^{${sp}}` : ''} ${e}`;
+      }
+      case 'func': {
+        const f = this.ommlToLatex(this.childInner(inner, 'fName'));
+        const e = this.ommlToLatex(this.childInner(inner, 'e'));
+        return `\\${f.replace(/[^a-zA-Z]/g, '') || 'mathrm'}\\left(${e}\\right)`;
+      }
+      case 'limLow': {
+        const e = this.ommlToLatex(this.childInner(inner, 'e'));
+        const l = this.ommlToLatex(this.childInner(inner, 'lim'));
+        return `${e}_{${l}}`;
+      }
+      case 'limUpp': {
+        const e = this.ommlToLatex(this.childInner(inner, 'e'));
+        const l = this.ommlToLatex(this.childInner(inner, 'lim'));
+        return `${e}^{${l}}`;
+      }
+      case 'bar':
+        return `\\overline{${this.ommlToLatex(this.childInner(inner, 'e'))}}`;
+      case 'acc':
+      case 'groupChr':
+        return this.ommlToLatex(this.childInner(inner, 'e'));
+      case 'eqArr':
+        return this.topNodes(inner)
+          .filter((n) => n.tag === 'e')
+          .map((n) => this.ommlToLatex(n.inner ?? ''))
+          .join(' \\\\ ');
+      case 'm':
+        return `\\begin{matrix}${this.topNodes(inner)
+          .filter((n) => n.tag === 'mr')
+          .map((n) => this.ommlToLatex(n.inner ?? ''))
+          .join(' \\\\ ')}\\end{matrix}`;
+      case 'mr':
+        return this.topNodes(inner)
+          .filter((n) => n.tag === 'e')
+          .map((n) => this.ommlToLatex(n.inner ?? ''))
+          .join(' & ');
+      case 'phant':
+        return '';
+      default:
+        return tag.endsWith('Pr') ? '' : this.ommlToLatex(inner);
+    }
   }
 
   /** Parser isi <w:tbl>: mode grid (header No|Tipe|Soal|Opsi…|Kunci|…) atau
@@ -1290,4 +1537,18 @@ function unescapeXml(s: string) {
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, '&');
+}
+
+/** Delimiter OMML → delimiter LaTeX untuk \\left/\\right. */
+function texDelim(chr: string): string {
+  switch (chr) {
+    case '{': return '\\{';
+    case '}': return '\\}';
+    case '[': return '[';
+    case ']': return ']';
+    case '|': return '|';
+    case '': case '(': return '(';
+    case ')': return ')';
+    default: return '.';
+  }
 }
