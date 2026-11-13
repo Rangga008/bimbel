@@ -100,6 +100,12 @@ export class SessionGenerateService {
           },
         });
       } else {
+        const memberIds = (
+          await this.prisma.groupMember.findMany({
+            where: { groupId: schedule.groupId },
+            select: { studentId: true },
+          })
+        ).map((m) => m.studentId);
         await this.prisma.session.create({
           data: {
             groupId: schedule.groupId,
@@ -108,6 +114,11 @@ export class SessionGenerateService {
             roomId: schedule.roomId,
             startsAt,
             endsAt,
+            // Roster awal = semua anggota kelompok — per-siswa bisa diubah
+            // lewat editor roster sesudahnya.
+            students: {
+              create: memberIds.map((studentId) => ({ studentId })),
+            },
           },
         });
       }

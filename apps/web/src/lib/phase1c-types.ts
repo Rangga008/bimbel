@@ -70,6 +70,7 @@ export interface DayNoteItem {
 }
 
 export interface SessionDetail extends SessionItem {
+  students: Array<{ studentId: string }>;
   group: {
     id: string;
     name: string;

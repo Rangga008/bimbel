@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import {
 	ArrowDownToLine,
@@ -9,8 +10,11 @@ import {
 	CalendarClock,
 	ChartColumn,
 	ClipboardCheck,
+	FileCheck2,
 	GraduationCap,
 	Landmark,
+	Lock,
+	MessageSquareText,
 	Package,
 	Presentation,
 	Receipt,
@@ -19,6 +23,7 @@ import {
 	TriangleAlert,
 	Users,
 	Wallet,
+	Zap,
 	type LucideIcon,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
@@ -26,12 +31,14 @@ import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { KpiCard } from "@/components/shared/kpi-card";
 import { MiniBars } from "@/components/shared/mini-bars";
 import { EmptyState } from "@/components/shared/empty-state";
 import type { RoleKey } from "@/config/role-nav";
+import { useAuthStore } from "@/stores/auth-store";
 import { fmtDateTime } from "@/lib/phase1c-types";
-import type { HomeData } from "@/lib/home-types";
+import type { ExamBriefHome, HomeData } from "@/lib/home-types";
 import { rupiah } from "@/components/phase2a/invoices-manager";
 import { SiswaPodium } from "@/components/phase4b/siswa-podium";
 
@@ -87,12 +94,87 @@ function sessionVariant(status: string) {
 	return "outline" as const;
 }
 
+function examVariant(status: string) {
+	if (status === "PUBLISHED") return "success" as const;
+	if (status === "ENDED") return "secondary" as const;
+	if (status === "LOCKED") return "warning" as const;
+	return "outline" as const;
+}
+
+/** Aksi cepat per role — pintasan ke halaman kerja paling sering dipakai. */
+const QUICK_ACTIONS: Record<RoleKey, { href: string; label: string }[]> = {
+	siswa: [
+		{ href: "/siswa/ujian", label: "Kerjakan Ujian" },
+		{ href: "/siswa/latsol", label: "Latsol" },
+		{ href: "/siswa/jadwal", label: "Jadwal" },
+		{ href: "/siswa/materi", label: "Materi" },
+	],
+	"orang-tua": [
+		{ href: "/orang-tua/pendaftaran", label: "Anak & Daftar" },
+		{ href: "/orang-tua/pembayaran", label: "Pembayaran" },
+		{ href: "/orang-tua/jadwal", label: "Jadwal Anak" },
+		{ href: "/orang-tua/performa-anak", label: "Performa Anak" },
+	],
+	tutor: [
+		{ href: "/tutor/absensi", label: "Absensi" },
+		{ href: "/tutor/jadwal-sesi", label: "Jadwal/Sesi" },
+		{ href: "/tutor/ujian/baru", label: "Buat Ujian" },
+		{ href: "/tutor/materi/baru", label: "Buat Materi" },
+		{ href: "/tutor/soal/baru", label: "Buat Soal" },
+		{ href: "/tutor/latsol/baru", label: "Buat Latsol" },
+	],
+	"admin-finance": [],
+	"admin-academic": [
+		{ href: "/admin-academic/jadwal", label: "Jadwal & Sesi" },
+		{ href: "/admin-academic/kelompok/baru", label: "Kelompok Baru" },
+		{ href: "/admin-academic/ujian/baru", label: "Buat Ujian" },
+		{ href: "/admin-academic/materi/baru", label: "Buat Materi" },
+		{ href: "/admin-academic/pendaftaran", label: "Pendaftaran" },
+		{ href: "/admin-academic/absensi", label: "Absensi" },
+	],
+	owner: [
+		{ href: "/owner/laporan", label: "Laporan" },
+		{ href: "/owner/piutang", label: "Piutang" },
+		{ href: "/owner/rab-vs-actual", label: "RAB vs Actual" },
+		{ href: "/owner/audit", label: "Audit Log" },
+	],
+};
+
+/** Baris daftar ujian untuk kartu dashboard — dipakai academic/owner/tutor. */
+function ExamRows({ items }: { items: ExamBriefHome[] }) {
+	return (
+		<div className="flex flex-col gap-2 text-sm">
+			{items.map((e) => (
+				<div key={e.id} className="flex items-center justify-between gap-2">
+					<span className="min-w-0 truncate">
+						{e.title}
+						<span className="text-muted-foreground">
+							{" "}
+							— {fmtDateTime(e.scheduledStartAt)}
+						</span>
+					</span>
+					<span className="flex shrink-0 items-center gap-1.5">
+						{e.live ? <Badge variant="warning">LIVE</Badge> : null}
+						<Badge variant="outline">
+							<span className="tabular-nums">
+								{e.submitted}/{e.attempts} terkumpul
+							</span>
+						</Badge>
+						<Badge variant={examVariant(e.status)}>{e.status}</Badge>
+					</span>
+				</div>
+			))}
+		</div>
+	);
+}
+
 /**
  * Beranda tiap role — Fase 2: finance nyata (invoice, outstanding, kas/bank, RAB)
  * tampil di dashboard Admin Finance & Owner; Fase 1 tetap dipertahankan.
  * Fase 7c: tampilan KPI card berikon — data & logika tidak berubah.
  */
 export function RoleHome({
+	role,
 	apiPath,
 	title,
 }: {
@@ -104,9 +186,21 @@ export function RoleHome({
 		queryKey: ["dashboard", apiPath],
 		queryFn: () => apiFetch<HomeData>(apiPath),
 	});
+	const authUser = useAuthStore((s) => s.user);
 
-	const sessions = data?.upcomingSessions ?? data?.todaySessions ?? [];
+	const todaySessions = data?.todaySessions ?? [];
+	const upcomingSessions = data?.upcomingSessions ?? [];
+	// Siswa/orang tua: backend hanya mengirim upcomingSessions — judul generik.
+	const upcomingTitle =
+		data?.role === "SISWA" || data?.role === "ORANG_TUA"
+			? "Jadwal Terdekat"
+			: "Sesi 7 Hari ke Depan";
 	const week = data?.weekAttendance;
+	// Siswa luar (tanpa kelompok): hanya ujian yang relevan sebagai aksi cepat.
+	const quickActions =
+		role === "siswa" && authUser?.studentGroupless
+			? QUICK_ACTIONS.siswa.filter((a) => a.href === "/siswa/ujian")
+			: QUICK_ACTIONS[role];
 	const counts = data?.counts ? Object.entries(data.counts) : [];
 	const finance = data?.finance;
 	const rabUsedPct =
@@ -138,6 +232,25 @@ export function RoleHome({
 					) : null}
 				</div>
 			</div>
+
+			{/* Aksi cepat — pintasan pekerjaan paling sering per role. */}
+			{quickActions.length > 0 ? (
+				<div className="flex flex-wrap items-center gap-2">
+					<span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+						<Zap className="size-3.5" />
+						Aksi cepat:
+					</span>
+					{quickActions.map((a) => (
+						<Link
+							key={a.href}
+							href={a.href}
+							className={buttonVariants({ variant: "outline", size: "sm" })}
+						>
+							{a.label}
+						</Link>
+					))}
+				</div>
+			) : null}
 
 			{/* Podium ranking — siswa langsung lihat top skor kelompok & GFS di atas. */}
 			{data?.role === "SISWA" ? <SiswaPodium /> : null}
@@ -171,6 +284,40 @@ export function RoleHome({
 							})}
 						</div>
 					) : null}
+
+					{/* Notifikasi penting butuh tindakan — ujian live, attempt
+					    terkunci, antrean WA bermasalah. */}
+					{((data.liveAttempts ?? 0) > 0 ||
+						(data.lockedAttempts ?? 0) > 0 ||
+						(data.waOutbox?.failed ?? 0) > 0 ||
+						(data.waOutbox?.pending ?? 0) > 0) && (
+						<div className="flex flex-wrap gap-2">
+							{(data.liveAttempts ?? 0) > 0 ? (
+								<Badge variant="warning" className="gap-1.5 py-1">
+									<FileCheck2 className="size-3.5" />
+									{data.liveAttempts} siswa sedang mengerjakan ujian
+								</Badge>
+							) : null}
+							{(data.lockedAttempts ?? 0) > 0 ? (
+								<Badge variant="destructive" className="gap-1.5 py-1">
+									<Lock className="size-3.5" />
+									{data.lockedAttempts} attempt terkunci — perlu unlock
+								</Badge>
+							) : null}
+							{(data.waOutbox?.pending ?? 0) > 0 ? (
+								<Badge variant="secondary" className="gap-1.5 py-1">
+									<MessageSquareText className="size-3.5" />
+									{data.waOutbox?.pending} pesan WA dalam antrean
+								</Badge>
+							) : null}
+							{(data.waOutbox?.failed ?? 0) > 0 ? (
+								<Badge variant="destructive" className="gap-1.5 py-1">
+									<MessageSquareText className="size-3.5" />
+									{data.waOutbox?.failed} pesan WA gagal — cek Antrean WA
+								</Badge>
+							) : null}
+						</div>
+					)}
 
 					{/* KPI aktivitas belajar — siswa. */}
 					{data.role === "SISWA" &&
@@ -626,13 +773,15 @@ export function RoleHome({
 							</Card>
 						) : null}
 
-						{/* Ranking siswa — tutor. */}
-						{data.role === "TUTOR" && (data.topStudents ?? []).length > 0 ? (
+						{/* Ranking siswa — tutor (semua waktu) / admin-academic &
+						    owner (bulan ini). */}
+						{["TUTOR", "ADMIN_ACADEMIC", "OWNER"].includes(data.role) &&
+						(data.topStudents ?? []).length > 0 ? (
 							<Card>
 								<CardHeader>
 									<CardTitle className="flex items-center gap-2 text-base">
 										<Star className="size-4.5 text-brand-blue-600" />
-										Ranking Siswa
+										{data.role === "TUTOR" ? "Ranking Siswa" : "Top Siswa — Bulan Ini"}
 									</CardTitle>
 								</CardHeader>
 								<CardContent className="flex flex-col gap-2 text-sm">
@@ -666,13 +815,17 @@ export function RoleHome({
 							</Card>
 						) : null}
 
-						{/* Rata-rata nilai per kelompok — tutor. */}
-						{data.role === "TUTOR" && (data.groupAvgs ?? []).length > 0 ? (
+						{/* Rata-rata nilai per kelompok — tutor (diampu) / admin
+						    academic & owner (semua kelompok, bulan ini). */}
+						{["TUTOR", "ADMIN_ACADEMIC", "OWNER"].includes(data.role) &&
+						(data.groupAvgs ?? []).length > 0 ? (
 							<Card>
 								<CardHeader>
 									<CardTitle className="flex items-center gap-2 text-base">
 										<ChartColumn className="size-4.5 text-brand-blue-600" />
-										Rata-rata per Kelompok
+										{data.role === "TUTOR"
+											? "Rata-rata per Kelompok"
+											: "Nilai per Kelompok — Bulan Ini"}
 									</CardTitle>
 								</CardHeader>
 								<CardContent className="flex flex-col gap-2 text-sm">
@@ -799,22 +952,181 @@ export function RoleHome({
 							</Card>
 						) : null}
 
-						{sessions.length > 0 ? (
+						{/* Ujian terbuka untuk dikerjakan — siswa. */}
+						{data.role === "SISWA" && (data.availableExams ?? []).length > 0 ? (
+							<Card className="border-brand-blue-200">
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2 text-base">
+										<FileCheck2 className="size-4.5 text-brand-blue-600" />
+										Ujian Terbuka
+									</CardTitle>
+								</CardHeader>
+								<CardContent className="flex flex-col gap-2 text-sm">
+									{data.availableExams!.map((e) => (
+										<div
+											key={e.id}
+											className="flex items-center justify-between gap-2"
+										>
+											<span className="min-w-0 truncate">
+												{e.title}
+												<span className="text-muted-foreground">
+													{" "}
+													— tutup {fmtDateTime(e.scheduledEndAt)}
+												</span>
+											</span>
+											{e.myStatus === "IN_PROGRESS" ? (
+												<Badge variant="warning">Sedang dikerjakan</Badge>
+											) : e.myStatus === "LOCKED" ? (
+												<Badge variant="destructive">Terkunci</Badge>
+											) : e.myStatus === "SUBMITTED" ? (
+												<Badge variant="success">Selesai</Badge>
+											) : (
+												<Badge variant="secondary">Belum dikerjakan</Badge>
+											)}
+										</div>
+									))}
+									<Link
+										href="/siswa/ujian"
+										className={cn(
+											buttonVariants({ variant: "outline", size: "sm" }),
+											"mt-1 w-fit",
+										)}
+									>
+										Buka halaman Ujian
+									</Link>
+								</CardContent>
+							</Card>
+						) : null}
+
+						{/* Attempt ujian anak sedang berjalan/terkunci — ortu. */}
+						{(data.childExamAlerts ?? []).length > 0 ? (
+							<Card className="border-warning-300">
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2 text-base">
+										<FileCheck2 className="size-4.5 text-warning-600" />
+										Ujian Anak
+									</CardTitle>
+								</CardHeader>
+								<CardContent className="flex flex-col gap-2 text-sm">
+									{data.childExamAlerts!.map((a, i) => (
+										<div
+											key={i}
+											className="flex items-center justify-between gap-2"
+										>
+											<span className="min-w-0 truncate">
+												{a.studentName}
+												<span className="text-muted-foreground">
+													{" "}
+													— {a.examTitle}
+												</span>
+											</span>
+											<Badge
+												variant={
+													a.status === "LOCKED" ? "destructive" : "warning"
+												}
+											>
+												{a.status === "LOCKED"
+													? "Terkunci"
+													: "Sedang dikerjakan"}
+											</Badge>
+										</div>
+									))}
+								</CardContent>
+							</Card>
+						) : null}
+
+						{/* Ujian bulan ini — admin academic/owner. */}
+						{(data.examsMonthList ?? []).length > 0 ? (
+							<Card>
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2 text-base">
+										<FileCheck2 className="size-4.5 text-brand-blue-600" />
+										Ujian Bulan Ini
+										{(data.liveAttempts ?? 0) > 0 ? (
+											<Badge variant="warning" className="ml-auto">
+												{data.liveAttempts} sedang mengerjakan
+											</Badge>
+										) : null}
+									</CardTitle>
+								</CardHeader>
+								<CardContent>
+									<ExamRows items={data.examsMonthList!} />
+								</CardContent>
+							</Card>
+						) : null}
+
+						{/* Ujian yang dibuat tutor — tutor. */}
+						{data.role === "TUTOR" && (data.myExams ?? []).length > 0 ? (
+							<Card>
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2 text-base">
+										<FileCheck2 className="size-4.5 text-brand-blue-600" />
+										Ujian Saya
+									</CardTitle>
+								</CardHeader>
+								<CardContent>
+									<ExamRows items={data.myExams!} />
+								</CardContent>
+							</Card>
+						) : null}
+
+						{todaySessions.length > 0 ? (
 							<Card>
 								<CardHeader>
 									<CardTitle className="flex items-center gap-2 text-base">
 										<CalendarClock className="size-4.5 text-brand-blue-600" />
-										{data.todaySessions ? "Sesi Hari Ini" : "Jadwal Terdekat"}
+										Sesi Hari Ini
+										<span className="text-xs font-normal text-muted-foreground">
+											· {todaySessions.length} sesi
+										</span>
 									</CardTitle>
 								</CardHeader>
 								<CardContent className="flex flex-col gap-2">
-									{sessions.map((s) => (
+									{todaySessions.map((s) => (
 										<div
 											key={s.id}
 											className="flex items-center justify-between gap-2 text-sm"
 										>
 											<span className="min-w-0 truncate">
 												{s.group.name} — {fmtDateTime(s.startsAt)}
+												{s._count ? (
+													<span className="text-muted-foreground">
+														{" "}
+														· {s._count.students} siswa
+													</span>
+												) : null}
+											</span>
+											<Badge variant={sessionVariant(s.status)}>
+												{s.status}
+											</Badge>
+										</div>
+									))}
+								</CardContent>
+							</Card>
+						) : null}
+
+						{upcomingSessions.length > 0 ? (
+							<Card>
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2 text-base">
+										<CalendarClock className="size-4.5 text-brand-blue-600" />
+										{upcomingTitle}
+									</CardTitle>
+								</CardHeader>
+								<CardContent className="flex flex-col gap-2">
+									{upcomingSessions.map((s) => (
+										<div
+											key={s.id}
+											className="flex items-center justify-between gap-2 text-sm"
+										>
+											<span className="min-w-0 truncate">
+												{s.group.name} — {fmtDateTime(s.startsAt)}
+												{(s.childNames ?? []).length > 0 ? (
+													<span className="text-muted-foreground">
+														{" "}
+														· {s.childNames!.join(", ")}
+													</span>
+												) : null}
 											</span>
 											<Badge variant={sessionVariant(s.status)}>
 												{s.status}
@@ -864,7 +1176,8 @@ export function RoleHome({
 
 					{counts.length === 0 &&
 					!finance &&
-					sessions.length === 0 &&
+					todaySessions.length === 0 &&
+					upcomingSessions.length === 0 &&
 					!data.attendanceSummary &&
 					!week &&
 					!data.sessionMonth &&
@@ -879,6 +1192,11 @@ export function RoleHome({
 					!data.enrollmentStatus &&
 					!data.invoiceStatus &&
 					!data.sessionWeek &&
+					!(data.examsMonthList ?? []).length &&
+					!(data.myExams ?? []).length &&
+					!(data.availableExams ?? []).length &&
+					!(data.childExamAlerts ?? []).length &&
+					!data.waOutbox &&
 					data.points === undefined &&
 					data.studentsTotal === undefined ? (
 						<Card>

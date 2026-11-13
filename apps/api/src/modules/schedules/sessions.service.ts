@@ -20,6 +20,7 @@ import {
   SessionsQueryDto,
   UpdateSessionDto,
 } from './dto/schedule-session.dto';
+import { MoveSessionStudentDto } from './dto/schedule-session.dto';
 
 @Injectable()
 export class SessionsService {
@@ -37,26 +38,36 @@ export class SessionsService {
    * kelompok yang (anak-anaknya) ikuti. `null` = tidak dibatasi (staff/tutor
    * ditangani terpisah), `[]` = tak punya kelompok → tak lihat sesi apa pun.
    */
-  private async familyGroupIds(
+  private async familyScope(
     actor: AuthenticatedUser,
-  ): Promise<string[] | null> {
+  ): Promise<{ groupIds: string[]; studentIds: string[] } | null> {
     if (actor.roles.includes('ORANG_TUA')) {
       const parent = await this.prisma.parent.findUnique({
         where: { userId: actor.id },
         select: { parentStudents: { select: { studentId: true } } },
       });
-      if (!parent) return [];
+      if (!parent) return { groupIds: [], studentIds: [] };
       const studentIds = parent.parentStudents.map((p) => p.studentId);
-      if (!studentIds.length) return [];
+      if (!studentIds.length) return { groupIds: [], studentIds: [] };
       const members = await this.prisma.groupMember.findMany({
         where: { studentId: { in: studentIds } },
         select: { groupId: true },
       });
-      return [...new Set(members.map((m) => m.groupId))];
+      return {
+        groupIds: [...new Set(members.map((m) => m.groupId))],
+        studentIds,
+      };
     }
     if (actor.roles.includes('SISWA')) {
+      const student = await this.prisma.student.findUnique({
+        where: { userId: actor.id },
+        select: { id: true },
+      });
       const scope = await this.tutorScope.forStudent(actor);
-      return scope ? scope.groupIds : null;
+      return {
+        groupIds: scope ? scope.groupIds : [],
+        studentIds: student ? [student.id] : [],
+      };
     }
     return null;
   }
@@ -66,23 +77,28 @@ export class SessionsService {
     const scope = await this.tutorScope.for(actor);
     // Siswa/ortu hanya melihat sesi kelompoknya sendiri — jangan bocorkan
     // roster & nomor HP tutor kelompok lain ke semua akun self-register.
-    const familyGroups = await this.familyGroupIds(actor);
+    const family = await this.familyScope(actor);
     if (
-      familyGroups !== null &&
+      family !== null &&
       q.groupId &&
-      !familyGroups.includes(q.groupId)
+      !family.groupIds.includes(q.groupId)
     ) {
       return [];
     }
     return this.prisma.session.findMany({
       where: {
         ...(q.groupId ? { groupId: q.groupId } : {}),
-        ...(familyGroups !== null ? { groupId: { in: familyGroups } } : {}),
+        ...(family !== null ? { groupId: { in: family.groupIds } } : {}),
         ...(q.tutorId ? { tutorId: q.tutorId } : {}),
         ...(q.roomId ? { roomId: q.roomId } : {}),
-        // Detail siswa: semua sesi kelompok tempat siswa ini jadi anggota.
+        // Siswa/ortu hanya melihat sesi yang memang menjadwalkan anaknya
+        // (roster per-sesi — bukan sekadar anggota kelompok).
+        ...(family !== null
+          ? { students: { some: { studentId: { in: family.studentIds } } } }
+          : {}),
+        // Detail siswa: sesi yang memasukkan siswa ini ke roster.
         ...(q.studentId
-          ? { group: { members: { some: { studentId: q.studentId } } } }
+          ? { students: { some: { studentId: q.studentId } } }
           : {}),
         ...(scope
           ? {
@@ -121,8 +137,14 @@ export class SessionsService {
         if (!inGroup && !isTeacher)
           throw new NotFoundException('Sesi tidak ditemukan.');
       }
-      const familyGroups = await this.familyGroupIds(actor);
-      if (familyGroups !== null && !familyGroups.includes(s.groupId)) {
+      const family = await this.familyScope(actor);
+      if (
+        family !== null &&
+        (!family.groupIds.includes(s.groupId) ||
+          !(s as { students?: { studentId: string }[] }).students?.some((st) =>
+            family.studentIds.includes(st.studentId),
+          ))
+      ) {
         throw new NotFoundException('Sesi tidak ditemukan.');
       }
     }
@@ -148,7 +170,13 @@ export class SessionsService {
       roomId: dto.roomId ?? null,
       startsAt,
       endsAt,
+      studentIds: dto.studentIds,
     });
+    const memberIds = await this.groupMemberIds(dto.groupId);
+    const rosterIds =
+      dto.studentIds !== undefined
+        ? this.assertRosterSubset(dto.studentIds, memberIds)
+        : memberIds;
     return this.prisma.session.create({
       data: {
         groupId: dto.groupId,
@@ -159,6 +187,9 @@ export class SessionsService {
         startsAt,
         endsAt,
         notes: dto.notes,
+        students: {
+          create: rosterIds.map((studentId) => ({ studentId })),
+        },
       },
       include: sessionListInclude,
     });
@@ -180,6 +211,17 @@ export class SessionsService {
     await this.assertSubject(subjectId);
     const cancelling = dto.status === 'CANCELLED';
     if (!cancelling) {
+      // Roster efektif untuk cek bentrok = roster baru bila dikirim, kalau
+      // tidak roster sesi saat ini (fallback anggota kelompok utk data lama).
+      const rosterIds =
+        dto.studentIds !== undefined
+          ? dto.studentIds
+          : (
+              await this.prisma.sessionStudent.findMany({
+                where: { sessionId: id },
+                select: { studentId: true },
+              })
+            ).map((r) => r.studentId);
       await this.conflicts.assertNoSessionConflict({
         excludeSessionId: id,
         groupId: existing.groupId,
@@ -187,6 +229,7 @@ export class SessionsService {
         roomId,
         startsAt,
         endsAt,
+        studentIds: rosterIds.length ? rosterIds : undefined,
       });
     }
     const updated = await this.prisma.session.update({
@@ -212,7 +255,210 @@ export class SessionsService {
       updated.tutorId !== existing.tutorId;
     if (changed)
       await this.events.sessionChanged(id, { cancelled: cancelling });
+    if (dto.studentIds !== undefined) {
+      await this.applyRoster(id, existing.groupId, dto.studentIds, null);
+    }
     return updated;
+  }
+
+  // ===== Roster per-sesi =====
+
+  private async groupMemberIds(groupId: string) {
+    const rows = await this.prisma.groupMember.findMany({
+      where: { groupId },
+      select: { studentId: true },
+    });
+    return rows.map((r) => r.studentId);
+  }
+
+  /** Pastikan semua studentId anggota kelompok; dedupe; tolak duplikat/asing. */
+  private assertRosterSubset(studentIds: string[], memberIds: string[]) {
+    const allowed = new Set(memberIds);
+    const out: string[] = [];
+    for (const id of new Set(studentIds)) {
+      if (!allowed.has(id)) {
+        throw new BadRequestException(
+          'Ada siswa yang bukan anggota kelompok sesi ini.',
+        );
+      }
+      out.push(id);
+    }
+    return out;
+  }
+
+  /**
+   * Ganti roster sesi. Siswa yang sudah punya baris absensi di sesi ini tidak
+   * boleh dicoret — koreksi absensinya dulu supaya histori tidak menggantung.
+   */
+  private async applyRoster(
+    sessionId: string,
+    groupId: string,
+    studentIds: string[],
+    createdBy: string | null,
+  ) {
+    const memberIds = await this.groupMemberIds(groupId);
+    const next = new Set(this.assertRosterSubset(studentIds, memberIds));
+    const [current, attended] = await Promise.all([
+      this.prisma.sessionStudent.findMany({
+        where: { sessionId },
+        select: { studentId: true },
+      }),
+      this.prisma.attendance.findMany({
+        where: { sessionId },
+        select: { studentId: true },
+      }),
+    ]);
+    const cur = new Set(current.map((r) => r.studentId));
+    const marked = new Set(attended.map((a) => a.studentId));
+    const removingMarked = [...marked].filter((id) => !next.has(id));
+    if (removingMarked.length) {
+      throw new BadRequestException(
+        'Ada siswa yang sudah diabsen di sesi ini — koreksi absensinya dulu atau pindahkan lewat fitur "Pindah sesi".',
+      );
+    }
+    const toAdd = [...next].filter((id) => !cur.has(id));
+    const toRemove = [...cur].filter((id) => !next.has(id));
+    await this.prisma.$transaction([
+      ...(toRemove.length
+        ? [
+            this.prisma.sessionStudent.deleteMany({
+              where: { sessionId, studentId: { in: toRemove } },
+            }),
+          ]
+        : []),
+      ...(toAdd.length
+        ? [
+            this.prisma.sessionStudent.createMany({
+              data: toAdd.map((studentId) => ({
+                sessionId,
+                studentId,
+                createdBy,
+              })),
+            }),
+          ]
+        : []),
+    ]);
+    return { added: toAdd.length, removed: toRemove.length, total: next.size };
+  }
+
+  /**
+   * Aktor boleh mengelola roster/pindah sesi: punya `session.manage`, atau
+   * tutor yang mengampu sesi ini (dijadwalkan sebagai pengajar ATAU terdaftar
+   * di kelompoknya).
+   */
+  async assertSessionManager(sessionId: string, actor: AuthenticatedUser) {
+    const session = await this.prisma.session.findUnique({
+      where: { id: sessionId },
+      select: { id: true, groupId: true, tutorId: true, status: true },
+    });
+    if (!session) throw new NotFoundException('Sesi tidak ditemukan.');
+    if (actor.permissions.includes('session.manage')) return session;
+    const tutor = await this.prisma.tutor.findUnique({
+      where: { userId: actor.id },
+      select: { id: true },
+    });
+    if (tutor) {
+      if (session.tutorId === tutor.id) return session;
+      const assigned = await this.prisma.groupTutor.findUnique({
+        where: {
+          groupId_tutorId: { groupId: session.groupId, tutorId: tutor.id },
+        },
+      });
+      if (assigned) return session;
+    }
+    throw new ForbiddenException(
+      'Anda tidak berwenang mengatur peserta sesi ini.',
+    );
+  }
+
+  async setRoster(
+    sessionId: string,
+    studentIds: string[],
+    actor: AuthenticatedUser,
+  ) {
+    const session = await this.assertSessionManager(sessionId, actor);
+    if (session.status === 'CANCELLED') {
+      throw new BadRequestException('Sesi dibatalkan — roster tidak diubah.');
+    }
+    const res = await this.applyRoster(
+      sessionId,
+      session.groupId,
+      studentIds,
+      actor.id,
+    );
+    if (res.added > 0 || res.removed > 0) {
+      await this.events.sessionChanged(sessionId, { cancelled: false });
+    }
+    return { sessionId, ...res };
+  }
+
+  /**
+   * Pindahkan 1 siswa ke sesi lain dalam kelompok yang sama — untuk siswa yang
+   * berhalangan di sesi awal. Absensi (bila sudah ada) ikut dipindahkan
+   * supaya histori mengikuti siswa, bukan sesi lama.
+   */
+  async moveStudent(
+    fromSessionId: string,
+    studentId: string,
+    dto: MoveSessionStudentDto,
+    actor: AuthenticatedUser,
+  ) {
+    const from = await this.assertSessionManager(fromSessionId, actor);
+    if (fromSessionId === dto.toSessionId) {
+      throw new BadRequestException('Sesi tujuan sama dengan sesi asal.');
+    }
+    const to = await this.prisma.session.findUnique({
+      where: { id: dto.toSessionId },
+      select: { id: true, groupId: true, status: true },
+    });
+    if (!to || to.groupId !== from.groupId) {
+      throw new BadRequestException(
+        'Sesi tujuan harus dalam kelompok yang sama.',
+      );
+    }
+    if (to.status === 'CANCELLED') {
+      throw new BadRequestException('Sesi tujuan sudah dibatalkan.');
+    }
+    await this.assertSessionManager(dto.toSessionId, actor);
+    const memberIds = await this.groupMemberIds(from.groupId);
+    if (!memberIds.includes(studentId)) {
+      throw new BadRequestException('Siswa bukan anggota kelompok ini.');
+    }
+    const rosterRow = await this.prisma.sessionStudent.findUnique({
+      where: {
+        sessionId_studentId: { sessionId: fromSessionId, studentId },
+      },
+    });
+    if (!rosterRow) {
+      throw new BadRequestException(
+        'Siswa tidak terdaftar di roster sesi asal.',
+      );
+    }
+    await this.prisma.$transaction([
+      this.prisma.sessionStudent.delete({ where: { id: rosterRow.id } }),
+      this.prisma.sessionStudent.upsert({
+        where: {
+          sessionId_studentId: {
+            sessionId: dto.toSessionId,
+            studentId,
+          },
+        },
+        create: {
+          sessionId: dto.toSessionId,
+          studentId,
+          createdBy: actor.id,
+        },
+        update: {},
+      }),
+      // Absensi yang sudah tercatat ikut pindah (histori melekat ke siswa).
+      this.prisma.attendance.updateMany({
+        where: { sessionId: fromSessionId, studentId },
+        data: { sessionId: dto.toSessionId },
+      }),
+    ]);
+    await this.events.sessionChanged(fromSessionId, { cancelled: false });
+    await this.events.sessionChanged(dto.toSessionId, { cancelled: false });
+    return { moved: true, fromSessionId, toSessionId: dto.toSessionId, studentId };
   }
 
   /**
@@ -353,9 +599,19 @@ export class SessionsService {
       include: sessionListInclude,
     });
 
-    // WA ke ortu anggota kelompok — satu pesan per ortu (anak digabung).
+    // WA ke ortu siswa yang dijadwalkan di sesi ini (roster) — fallback ke
+    // anggota kelompok untuk sesi lama tanpa baris roster.
+    const roster = await this.prisma.sessionStudent.findMany({
+      where: { sessionId: id },
+      select: { studentId: true },
+    });
     const members = await this.prisma.groupMember.findMany({
-      where: { groupId: session.groupId },
+      where: {
+        groupId: session.groupId,
+        ...(roster.length
+          ? { studentId: { in: roster.map((r) => r.studentId) } }
+          : {}),
+      },
       select: {
         student: {
           select: {

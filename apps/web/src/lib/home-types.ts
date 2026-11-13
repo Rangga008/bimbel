@@ -8,6 +8,44 @@ export interface SessionBrief {
   room: { id: string; name: string } | null;
   /** Nama anak ortu di kelompok sesi — hanya untuk dashboard ortu. */
   childNames?: string[];
+  /** Jumlah siswa terjadwal di roster sesi — dashboard admin. */
+  _count?: { students: number };
+}
+
+/** Baris ujian untuk kartu dashboard — admin academic (bulan ini) / tutor. */
+export interface ExamBriefHome {
+  id: string;
+  title: string;
+  status: string;
+  scheduledStartAt: string;
+  scheduledEndAt: string;
+  attempts: number;
+  submitted: number;
+  live: boolean;
+}
+
+/** Ujian terbuka untuk siswa + status attempt miliknya. */
+export interface AvailableExamBrief {
+  id: string;
+  title: string;
+  scheduledStartAt: string;
+  scheduledEndAt: string;
+  durationMinutes: number | null;
+  myStatus: "NONE" | "IN_PROGRESS" | "SUBMITTED" | "LOCKED";
+}
+
+/** Attempt ujian anak yang sedang berjalan/terkunci — dashboard ortu. */
+export interface ChildExamAlert {
+  studentName: string;
+  examTitle: string;
+  status: string;
+  endsAt: string;
+}
+
+/** Kesehatan antrean WhatsApp — pending masih antre, failed perlu retry. */
+export interface WaOutboxHealth {
+  pending: number;
+  failed: number;
 }
 
 /** Tagihan outstanding anak untuk beranda ortu. */
@@ -126,4 +164,18 @@ export interface HomeData {
   cashTrend?: CashPoint[];
   /** Invoice per status — admin finance/owner. */
   invoiceStatus?: Record<string, number>;
+  /** Daftar ujian bulan ini + jumlah attempt — admin academic/owner. */
+  examsMonthList?: ExamBriefHome[];
+  /** Attempt sedang berjalan sekarang — admin academic/owner. */
+  liveAttempts?: number;
+  /** Attempt terkunci menunggu unlock — admin academic/owner/tutor. */
+  lockedAttempts?: number;
+  /** Ujian yang dibuat tutor ini — tutor. */
+  myExams?: ExamBriefHome[];
+  /** Ujian terbuka untuk dikerjakan — siswa. */
+  availableExams?: AvailableExamBrief[];
+  /** Attempt ujian anak sedang jalan/terkunci — orang tua. */
+  childExamAlerts?: ChildExamAlert[];
+  /** Kesehatan antrean WA — admin academic/finance/owner. */
+  waOutbox?: WaOutboxHealth;
 }

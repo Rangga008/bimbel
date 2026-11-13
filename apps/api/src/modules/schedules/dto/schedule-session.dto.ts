@@ -7,6 +7,7 @@
 
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsDateString,
   IsInt,
@@ -160,6 +161,12 @@ export class CreateSessionDto {
   @IsDateString({}, { message: 'endsAt harus ISO datetime.' })
   endsAt: string;
 
+  /** Siswa yang hadir di sesi ini — kosong/tidak diisi = semua anggota kelompok. */
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true, message: 'studentIds harus UUID.' })
+  studentIds?: string[];
+
   @IsOptional()
   @IsString()
   @MaxLength(500)
@@ -197,6 +204,23 @@ export class UpdateSessionDto {
   @IsOptional()
   @IsString()
   status?: 'SCHEDULED' | 'CANCELLED';
+
+  /** Roster penuh sesi — bila diisi, menggantikan daftar siswa hadir saat ini. */
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true, message: 'studentIds harus UUID.' })
+  studentIds?: string[];
+}
+
+export class SetSessionRosterDto {
+  @IsArray()
+  @IsUUID('4', { each: true, message: 'studentIds harus UUID.' })
+  studentIds: string[];
+}
+
+export class MoveSessionStudentDto {
+  @IsUUID('4', { message: 'toSessionId tidak valid.' })
+  toSessionId: string;
 }
 
 export class UpsertSessionOverrideDto {

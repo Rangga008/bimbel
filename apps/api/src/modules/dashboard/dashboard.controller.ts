@@ -19,7 +19,7 @@ export class DashboardController {
   @Get('siswa')
   @RequirePermissions(PERMISSION_CODES.DASHBOARD_SISWA_VIEW)
   siswa(@CurrentUser() user: AuthenticatedUser) {
-    return this.dashboard.siswaHome(user.id);
+    return this.dashboard.siswaHome(user);
   }
 
   @Get('orang-tua')

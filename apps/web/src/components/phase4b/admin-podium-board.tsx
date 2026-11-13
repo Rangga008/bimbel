@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api-client";
 import { ComboboxField } from "@/components/shared/combobox-field";
@@ -43,19 +43,24 @@ export function AdminPodiumBoard() {
 		queryFn: () => apiFetch<NamedOption[]>("/buildings"),
 	});
 
-	// Otomatis pilih kelompok/gedung pertama supaya podium langsung terisi.
+	// Otomatis pilih kelompok/gedung pertama SEKALI saat data pertama masuk —
+	// setelah itu user bebas mengosongkan filter (tombol × di combobox).
+	const groupAutoPicked = useRef(false);
+	const buildingAutoPicked = useRef(false);
 	useEffect(() => {
-		if (!groupId && groupsQ.data?.length) {
+		if (!groupAutoPicked.current && groupsQ.data?.length) {
+			groupAutoPicked.current = true;
 			const first = groupsQ.data.find((g) => g.isActive !== false) ?? groupsQ.data[0];
 			setGroupId(first.id);
 		}
-	}, [groupId, groupsQ.data]);
+	}, [groupsQ.data]);
 	useEffect(() => {
-		if (!buildingId && buildingsQ.data?.length) {
+		if (!buildingAutoPicked.current && buildingsQ.data?.length) {
+			buildingAutoPicked.current = true;
 			const first = buildingsQ.data.find((b) => b.isActive !== false) ?? buildingsQ.data[0];
 			setBuildingId(first.id);
 		}
-	}, [buildingId, buildingsQ.data]);
+	}, [buildingsQ.data]);
 
 	const base = allTime ? "" : `period=${period}&`;
 	const groupQ = useQuery({
@@ -123,7 +128,7 @@ export function AdminPodiumBoard() {
 						title: "Kelompok",
 						subtitle: groupName,
 						entries: groupQ.data?.leaderboard,
-						loading: groupQ.isLoading || !groupId,
+						loading: groupQ.isLoading,
 					},
 					...(buildingsQ.isError
 						? []
@@ -132,7 +137,7 @@ export function AdminPodiumBoard() {
 								title: "Gedung",
 								subtitle: buildingName,
 								entries: buildingQ.data?.leaderboard,
-								loading: buildingQ.isLoading || !buildingId,
+								loading: buildingQ.isLoading,
 							},
 						]),
 					{

@@ -514,7 +514,13 @@ export class FeedbackService {
     // Gabungkan anak-anak per ortu — satu ortu cukup 1 pesan.
     const parents = new Map<
       string,
-      { userId: string; name: string; phone: string | null; children: string[] }
+      {
+        userId: string;
+        name: string;
+        phone: string | null;
+        children: string[];
+        childIds: string[];
+      }
     >();
     const memberIds = new Set(group.members.map((m) => m.studentId));
     for (const m of group.members) {
@@ -526,8 +532,10 @@ export class FeedbackService {
           name: u.name,
           phone: u.phone,
           children: [],
+          childIds: [],
         };
         cur.children.push(m.student.user.name);
+        cur.childIds.push(m.studentId);
         parents.set(u.id, cur);
       }
     }
@@ -546,7 +554,7 @@ export class FeedbackService {
     let skippedNothing = 0;
     for (const p of parents.values()) {
       const message = body.perParent
-        ? body.render(p.children)
+        ? body.render(p.children, p.childIds)
         : body.render();
       // Render boleh mengembalikan null (mis. reminder bayar saat ortu tsb
       // tidak punya tagihan) — jangan kirim pesan kosong/"sudah lunas".
@@ -660,10 +668,22 @@ export class FeedbackService {
     const u = parent.user;
     const parents = new Map<
       string,
-      { userId: string; name: string; phone: string | null; children: string[] }
+      {
+        userId: string;
+        name: string;
+        phone: string | null;
+        children: string[];
+        childIds: string[];
+      }
     >();
     if (parent.isActive && u.isActive)
-      parents.set(u.id, { userId: u.id, name: u.name, phone: u.phone, children });
+      parents.set(u.id, {
+        userId: u.id,
+        name: u.name,
+        phone: u.phone,
+        children,
+        childIds: [...memberIds],
+      });
     const eventType = `PARENT_REMINDER_${type.toUpperCase().replace(/-/g, '_')}`;
     const stats = await this.enqueueToParents(
       parents,
@@ -697,7 +717,13 @@ export class FeedbackService {
     const groupIds = [...new Set(students.flatMap((s) => s.groupIds))];
     const parents = new Map<
       string,
-      { userId: string; name: string; phone: string | null; children: string[] }
+      {
+        userId: string;
+        name: string;
+        phone: string | null;
+        children: string[];
+        childIds: string[];
+      }
     >();
     for (const s of students) {
       for (const ps of s.parentStudents) {
@@ -708,8 +734,10 @@ export class FeedbackService {
           name: u.name,
           phone: u.phone,
           children: [],
+          childIds: [],
         };
         cur.children.push(s.name);
+        cur.childIds.push(s.id);
         parents.set(u.id, cur);
       }
     }
@@ -729,12 +757,18 @@ export class FeedbackService {
   private async enqueueToParents(
     parents: Map<
       string,
-      { userId: string; name: string; phone: string | null; children: string[] }
+      {
+        userId: string;
+        name: string;
+        phone: string | null;
+        children: string[];
+        childIds: string[];
+      }
     >,
     body: {
       periodKey: string;
       perParent: boolean;
-      render: (children?: string[]) => string | null;
+      render: (children?: string[], childIds?: string[]) => string | null;
     },
     eventType: string,
     referenceType: string,
@@ -745,7 +779,9 @@ export class FeedbackService {
     let skippedPref = 0;
     let skippedNothing = 0;
     for (const p of parents.values()) {
-      const message = body.perParent ? body.render(p.children) : body.render();
+      const message = body.perParent
+        ? body.render(p.children, p.childIds)
+        : body.render();
       if (!message) {
         skippedNothing += 1;
         continue;
@@ -916,6 +952,10 @@ export class FeedbackService {
           schedule: { select: { subject: { select: { name: true } } } },
           tutor: { select: { user: { select: { name: true, phone: true } } } },
           room: { select: { name: true } },
+          // Roster sesi — pesan per ortu hanya memuat sesi yang menjadwalkan
+          // anaknya (kelompok boleh dipecah per siswa). Baris kosong = sesi
+          // lama sebelum roster → anggap menjadwalkan semua anggota.
+          students: { select: { studentId: true } },
         },
       });
       // Catatan tanggal (libur/rapat/darurat) ikut tampil di jadwal mingguan.
@@ -940,40 +980,47 @@ export class FeedbackService {
         notesByDay.set(key, [...(notesByDay.get(key) ?? []), n]);
       }
       // Format per-hari Senin s.d. Minggu — jelas dibaca di WA.
-      const dayBlocks: string[] = [];
-      for (let i = 0; i < 7; i++) {
-        const d = new Date(weekStart.getTime() + i * DAY_MS);
-        const daySessions = sessionsByDay.get(i) ?? [];
-        const dayNotes = notesByDay.get(i) ?? [];
-        const lines: string[] = [];
-        for (const s of daySessions) {
-          const mapel = s.subject?.name ?? s.schedule?.subject?.name;
-          lines.push(
-            `  • ${fmtTime(s.startsAt)}–${fmtTime(s.endsAt)}` +
-              `${mapel ? ` ${mapel}` : ''}` +
-              `${s.tutor ? ` — ${s.tutor.user.name}${s.tutor.user.phone ? ` (${s.tutor.user.phone})` : ''}` : ' — tutor menyusul'}` +
-              `${s.room ? ` · ${s.room.name}` : ''}` +
-              `${s.status === 'CANCELLED' ? ' [DIBATALKAN]' : ''}`,
-          );
-        }
-        for (const n of dayNotes) {
-          lines.push(`  ⚑ ${n.type}: ${n.title}${n.note ? ` — ${n.note}` : ''}`);
-        }
-        if (!lines.length) lines.push('  — tidak ada sesi');
-        dayBlocks.push(`*${fmtDate(d)}*\n${lines.join('\n')}`);
-      }
-      const days = dayBlocks.join('\n\n');
       const week = `${fmtDate(weekStart)} s.d. ${fmtDate(new Date(weekEnd.getTime() - DAY_MS))}`;
       return {
         periodKey: `week:${weekStart.toISOString().slice(0, 10)}`,
         perParent: true,
-        render: (children: string[] = []) =>
-          renderReminderTemplate(tpl.weeklySchedule, {
+        render: (children: string[] = [], childIds: string[] = []) => {
+          // Sesi yang relevan untuk ortu ini = sesi tanpa baris roster (lama)
+          // atau yang memasukkan salah satu anaknya.
+          const mine = childIds.length
+            ? (s: (typeof sessions)[number]) =>
+                !s.students.length ||
+                s.students.some((r) => childIds.includes(r.studentId))
+            : () => true;
+          const dayBlocks: string[] = [];
+          for (let i = 0; i < 7; i++) {
+            const d = new Date(weekStart.getTime() + i * DAY_MS);
+            const daySessions = (sessionsByDay.get(i) ?? []).filter(mine);
+            const dayNotes = notesByDay.get(i) ?? [];
+            const lines: string[] = [];
+            for (const s of daySessions) {
+              const mapel = s.subject?.name ?? s.schedule?.subject?.name;
+              lines.push(
+                `  • ${fmtTime(s.startsAt)}–${fmtTime(s.endsAt)}` +
+                  `${mapel ? ` ${mapel}` : ''}` +
+                  `${s.tutor ? ` — ${s.tutor.user.name}${s.tutor.user.phone ? ` (${s.tutor.user.phone})` : ''}` : ' — tutor menyusul'}` +
+                  `${s.room ? ` · ${s.room.name}` : ''}` +
+                  `${s.status === 'CANCELLED' ? ' [DIBATALKAN]' : ''}`,
+              );
+            }
+            for (const n of dayNotes) {
+              lines.push(`  ⚑ ${n.type}: ${n.title}${n.note ? ` — ${n.note}` : ''}`);
+            }
+            if (!lines.length) lines.push('  — tidak ada sesi');
+            dayBlocks.push(`*${fmtDate(d)}*\n${lines.join('\n')}`);
+          }
+          return renderReminderTemplate(tpl.weeklySchedule, {
             children: children.join(' & '),
             group: groupLabel,
             week,
-            days,
-          }),
+            days: dayBlocks.join('\n\n'),
+          });
+        },
       };
     }
 

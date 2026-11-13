@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { ComboboxField } from '@/components/shared/combobox-field';
 import type { SessionDetail } from '@/lib/phase1c-types';
+import { SessionRosterEditor } from '@/components/shared/session-roster-editor';
 import { fmtDateTime } from '@/lib/phase1c-types';
 import type { AttendanceRoster, AttendanceStatus } from '@/lib/phase1d-types';
 import { ATTENDANCE_LABELS, ATTENDANCE_STATUSES } from '@/lib/phase1d-types';
@@ -132,6 +133,10 @@ export function SessionOverrideBox({ sessionId, onDeleted }: { sessionId: string
             {tutorM.isPending ? 'Menyimpan...' : 'Simpan'}
           </Button>
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2 border-t pt-3">
+        <SessionRosterEditor sessionId={sessionId} />
       </div>
 
       <div className="flex flex-col gap-2 border-t pt-3">

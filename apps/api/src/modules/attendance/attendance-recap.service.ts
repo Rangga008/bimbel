@@ -50,49 +50,44 @@ export class AttendanceRecapService {
       : undefined;
     const where: Record<string, unknown> = { studentId: { in: targets.length ? targets : ['__none__'] } };
     if (sessionRange) where.session = sessionRange;
-    const [rows, students, memberships] = await Promise.all([
+    const [rows, students, rosterRows] = await Promise.all([
       this.prisma.attendance.findMany({ where, include: ATTENDANCE_INCLUDE, orderBy: { session: { startsAt: 'desc' } }, take: 1000 }),
       // Anak yang belum punya absensi pun tetap tampil (kalender kosong).
       this.prisma.student.findMany({
         where: { id: { in: targets } },
         select: { id: true, user: { select: { name: true } } },
       }),
-      // Kelompok tiap anak — untuk menghitung sesi yang SEHARUSNYA dihadiri
-      // (sesi kelompok yang sudah berlangsung, tidak dibatalkan).
-      this.prisma.groupMember.findMany({
-        where: { studentId: { in: targets.length ? targets : ['__none__'] } },
-        select: { studentId: true, groupId: true },
-      }),
-    ]);
-    const groupIds = [...new Set(memberships.map((m) => m.groupId))];
-    const sessions = groupIds.length
-      ? await this.prisma.session.findMany({
-          where: {
-            groupId: { in: groupIds },
+      // Sesi yang SEHARUSNYA dihadiri tiap anak = sesi yang memasukkan anak
+      // ke roster (sudah berlangsung, tidak dibatalkan).
+      this.prisma.sessionStudent.findMany({
+        where: {
+          studentId: { in: targets.length ? targets : ['__none__'] },
+          session: {
             status: { not: 'CANCELLED' },
             startsAt: { lte: new Date(), ...(sessionRange?.startsAt as object ?? {}) },
           },
-          select: { groupId: true, startsAt: true },
-        })
-      : [];
-    const sessionsByGroup = new Map<string, { startsAt: Date }[]>();
-    for (const s of sessions) {
-      sessionsByGroup.set(s.groupId, [...(sessionsByGroup.get(s.groupId) ?? []), s]);
+        },
+        select: {
+          studentId: true,
+          session: { select: { id: true, startsAt: true } },
+        },
+      }),
+    ]);
+    const expectedByStudent = new Map<string, { startsAt: Date }[]>();
+    for (const r of rosterRows) {
+      expectedByStudent.set(r.studentId, [
+        ...(expectedByStudent.get(r.studentId) ?? []),
+        r.session,
+      ]);
     }
     // Sesi seharusnya per anak per bulan (YYYY-MM dari startsAt ISO).
     const expectedOf = (studentId: string) => {
       const byMonth: Record<string, number> = {};
       let total = 0;
-      const seen = new Set<string>();
-      for (const m of memberships.filter((mm) => mm.studentId === studentId)) {
-        for (const s of sessionsByGroup.get(m.groupId) ?? []) {
-          const key = `${m.groupId}:${s.startsAt.toISOString()}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          total += 1;
-          const ym = s.startsAt.toISOString().slice(0, 7);
-          byMonth[ym] = (byMonth[ym] ?? 0) + 1;
-        }
+      for (const s of expectedByStudent.get(studentId) ?? []) {
+        total += 1;
+        const ym = s.startsAt.toISOString().slice(0, 7);
+        byMonth[ym] = (byMonth[ym] ?? 0) + 1;
       }
       return { total, byMonth };
     };

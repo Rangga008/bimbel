@@ -58,6 +58,8 @@ export function DaySessionEditor({
 }) {
 	const qc = useQueryClient();
 	const [form, setForm] = useState<CreateForm>({ ...EMPTY, tutorId: defaultTutorId });
+	// Centang siswa untuk sesi baru — null = semua anggota (default).
+	const [pickedStudents, setPickedStudents] = useState<Set<string> | null>(null);
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [deleteTarget, setDeleteTarget] = useState<SessionItem | null>(null);
 	const [editForm, setEditForm] = useState({ start: "", end: "", subjectId: "", roomId: "", status: "" });
@@ -155,6 +157,7 @@ export function DaySessionEditor({
 		onSuccess: () => {
 			toast.success("Sesi baru dibuat dan tutor ditugaskan.");
 			setForm({ ...EMPTY, tutorId: defaultTutorId });
+			setPickedStudents(null);
 			invalidate();
 		},
 		onError: (e) => toast.error(e instanceof ApiError ? e.message : "Gagal membuat sesi."),
@@ -193,6 +196,10 @@ export function DaySessionEditor({
 			toast.error("Lengkapi tutor, kelompok, dan jam sesi dulu.");
 			return;
 		}
+		if (pickedStudents !== null && pickedStudents.size === 0) {
+			toast.error("Centang minimal 1 siswa untuk sesi ini.");
+			return;
+		}
 		createM.mutate({
 			groupId: form.groupId,
 			tutorId: form.tutorId,
@@ -200,6 +207,8 @@ export function DaySessionEditor({
 			subjectId: form.subjectId || null,
 			startsAt: new Date(`${dateKey}T${form.start}`).toISOString(),
 			endsAt: new Date(`${dateKey}T${form.end}`).toISOString(),
+			// undefined = semua anggota (default backend).
+			studentIds: pickedStudents !== null ? [...pickedStudents] : undefined,
 		});
 	}
 
@@ -440,7 +449,7 @@ export function DaySessionEditor({
 							className="h-9 rounded-md border px-2 text-sm"
 							value={form.groupId}
 							disabled={!form.tutorId}
-							onChange={(e) => setForm((f) => ({ ...f, groupId: e.target.value, subjectId: "" }))}
+							onChange={(e) => { setForm((f) => ({ ...f, groupId: e.target.value, subjectId: "" })); setPickedStudents(null); }}
 						>
 							<option value="">
 								{!form.tutorId
@@ -497,6 +506,51 @@ export function DaySessionEditor({
 						<Input type="time" value={form.end} onChange={(e) => setForm((f) => ({ ...f, end: e.target.value }))} />
 					</div>
 				</div>
+				{form.groupId && (groupDetailQ.data?.members?.length ?? 0) > 0 ? (
+					<div className="flex flex-col gap-2 rounded-md border bg-background p-2.5">
+						<div className="flex items-center justify-between gap-2">
+							<p className="text-xs font-medium">
+								Siswa yang hadir di sesi ini{" "}
+								<span className="font-normal text-muted-foreground">
+									({pickedStudents?.size ?? groupDetailQ.data!.members.length}/{groupDetailQ.data!.members.length} dicentang)
+								</span>
+							</p>
+							<div className="flex gap-1.5">
+								<Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[11px]"
+									onClick={() => setPickedStudents(new Set(groupDetailQ.data!.members.map((m) => m.studentId)))}>
+									Semua
+								</Button>
+								<Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[11px]"
+									onClick={() => setPickedStudents(new Set())}>
+									Bersihkan
+								</Button>
+							</div>
+						</div>
+						<div className="grid max-h-40 grid-cols-1 gap-1 overflow-y-auto sm:grid-cols-2">
+							{groupDetailQ.data!.members.map((m) => {
+								const on = pickedStudents === null || pickedStudents.has(m.studentId);
+								return (
+									<label key={m.studentId} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-muted/60">
+										<input
+											type="checkbox"
+											className="size-3.5"
+											checked={on}
+											onChange={() =>
+												setPickedStudents((prev) => {
+													const base = new Set(prev ?? groupDetailQ.data!.members.map((mm) => mm.studentId));
+													if (base.has(m.studentId)) base.delete(m.studentId);
+													else base.add(m.studentId);
+													return base;
+												})
+											}
+										/>
+										<span className="truncate">{m.student.user.name}</span>
+									</label>
+								);
+							})}
+						</div>
+					</div>
+				) : null}
 				<div>
 					<Button size="sm" disabled={createM.isPending} onClick={submitCreate}>
 						{createM.isPending ? "Menyimpan..." : "Buat Sesi & Tugaskan"}

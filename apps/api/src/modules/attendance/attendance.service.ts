@@ -55,6 +55,15 @@ export class AttendanceService {
             },
           },
         },
+        students: {
+          select: {
+            studentId: true,
+            student: {
+              select: { id: true, user: { select: { name: true, avatarUrl: true } } },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
         attendances: true,
         tutorAttendances: true,
         tutor: {
@@ -78,11 +87,22 @@ export class AttendanceService {
         ? { id: session.tutor.id, name: session.tutor.user.name, avatarUrl: session.tutor.user.avatarUrl }
         : null,
       tutorAttendance: session.tutorAttendances[0] ?? null,
-      members: session.group.members.map((m) => ({
-        studentId: m.student.id,
-        name: m.student.user.name,
-        avatarUrl: m.student.user.avatarUrl,
-        attendance: byStudent.get(m.student.id) ?? null,
+      // Roster per-sesi: hanya siswa yang dijadwalkan hadir di sesi ini.
+      // Fallback ke anggota kelompok untuk data lama tanpa baris roster.
+      members: (session.students.length
+        ? session.students.map((st) => ({
+            studentId: st.student.id,
+            name: st.student.user.name,
+            avatarUrl: st.student.user.avatarUrl,
+          }))
+        : session.group.members.map((m) => ({
+            studentId: m.student.id,
+            name: m.student.user.name,
+            avatarUrl: m.student.user.avatarUrl,
+          }))
+      ).map((m) => ({
+        ...m,
+        attendance: byStudent.get(m.studentId) ?? null,
       })),
     };
   }
@@ -148,22 +168,33 @@ export class AttendanceService {
       throw new BadRequestException(
         'Sesi dibatalkan — absensi tidak bisa diisi.',
       );
-    const memberIds = new Set(
+    const rosterIds = new Set(
       (
-        await this.prisma.groupMember.findMany({
-          where: { groupId: session.groupId },
+        await this.prisma.sessionStudent.findMany({
+          where: { sessionId },
           select: { studentId: true },
         })
-      ).map((m) => m.studentId),
+      ).map((r) => r.studentId),
     );
+    // Sesi lama tanpa baris roster diperlakukan seperti dulu (semua anggota).
+    const allowedIds = rosterIds.size
+      ? rosterIds
+      : new Set(
+          (
+            await this.prisma.groupMember.findMany({
+              where: { groupId: session.groupId },
+              select: { studentId: true },
+            })
+          ).map((m) => m.studentId),
+        );
     const seen = new Set<string>();
     for (const item of dto.items) {
       if (seen.has(item.studentId))
         throw new BadRequestException('Ada studentId ganda di daftar absensi.');
       seen.add(item.studentId);
-      if (!memberIds.has(item.studentId)) {
+      if (!allowedIds.has(item.studentId)) {
         throw new BadRequestException(
-          'Ada siswa yang bukan anggota kelompok sesi ini.',
+          'Ada siswa yang tidak dijadwalkan hadir di sesi ini.',
         );
       }
     }

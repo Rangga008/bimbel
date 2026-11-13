@@ -14,6 +14,8 @@ export interface SessionCandidate extends TimeRange {
   tutorId?: string | null;
   roomId?: string | null;
   groupId: string;
+  /** Roster yang direncanakan — kosong/undefined = semua anggota kelompok. */
+  studentIds?: string[];
 }
 
 export interface OverrideCandidate extends TimeRange {
@@ -55,6 +57,7 @@ export class ConflictService {
         startsAt: true,
         endsAt: true,
         group: { select: { name: true, members: { select: { studentId: true } } } },
+        students: { select: { studentId: true } },
         tutor: { select: { user: { select: { name: true } } } },
         room: { select: { name: true } },
       },
@@ -68,17 +71,29 @@ export class ConflictService {
         throw new ConflictException(`${name} sudah mengajar "${hit.group.name}" pada ${fmtRange(hit.startsAt, hit.endsAt)}.`);
       }
     }
-    const memberIds = await this.memberIdsOf(c.groupId);
-    if (memberIds.length > 0) {
+    // Roster efektif sesi yang sudah ada = baris roster; sesi lama tanpa
+    // baris diperlakukan seperti dulu (seluruh anggota kelompok).
+    const rosterOf = (s: (typeof clashes)[number]) =>
+      s.students.length
+        ? s.students.map((r) => r.studentId)
+        : s.group.members.map((m) => m.studentId);
+    const candidateIds =
+      c.studentIds !== undefined ? c.studentIds : await this.memberIdsOf(c.groupId);
+    if (candidateIds.length > 0) {
+      const candidateSet = new Set(candidateIds);
       const other = clashes.find(
-        (s) => s.groupId !== c.groupId && s.group.members.some((m) => memberIds.includes(m.studentId)),
+        (s) => s.groupId !== c.groupId && rosterOf(s).some((id) => candidateSet.has(id)),
       );
       if (other) {
         throw new ConflictException(`Ada siswa kelompok ini yang terjadwal di "${other.group.name}" pada ${fmtRange(other.startsAt, other.endsAt)}.`);
       }
-      const same = clashes.find((s) => s.groupId === c.groupId);
+      // Kelompok yang sama boleh punya sesi paralel selama roster-nya
+      // terpisah (mis. 5 anak sesi pagi, 5 anak sesi siang berdampingan).
+      const same = clashes.find(
+        (s) => s.groupId === c.groupId && rosterOf(s).some((id) => candidateSet.has(id)),
+      );
       if (same && !c.excludeSessionId) {
-        throw new ConflictException(`Kelompok ini sudah punya sesi pada ${fmtRange(same.startsAt, same.endsAt)}.`);
+        throw new ConflictException(`Ada siswa kelompok ini yang sudah terjadwal pada ${fmtRange(same.startsAt, same.endsAt)}.`);
       }
     }
     if (c.roomId) {
@@ -104,12 +119,17 @@ export class ConflictService {
         startsAt: true,
         endsAt: true,
         group: { select: { name: true, members: { select: { studentId: true } } } },
+        students: { select: { studentId: true } },
         room: { select: { name: true } },
       },
       take: 200,
     });
     const clashes = overlapping.filter((s) => rangesOverlap(s, c));
-    const studentClash = clashes.find((s) => s.group.members.some((m) => m.studentId === c.studentId));
+    const studentClash = clashes.find((s) =>
+      (s.students.length
+        ? s.students.some((r) => r.studentId === c.studentId)
+        : s.group.members.some((m) => m.studentId === c.studentId)),
+    );
     if (studentClash) {
       throw new ConflictException(`Siswa ini sudah terjadwal di "${studentClash.group.name}" pada ${fmtRange(studentClash.startsAt, studentClash.endsAt)}.`);
     }

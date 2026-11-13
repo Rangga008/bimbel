@@ -173,6 +173,7 @@ model Student {
   parentStudents ParentStudent[]
   groupMembers   GroupMember[]
   sessionOverrides SessionStudentOverride[]
+  sessionStudents SessionStudent[]
   attendances    Attendance[]
   invoices       Invoice[]
   latsolAttempts LatsolAttempt[]
@@ -749,6 +750,7 @@ model Session {
   tutor     Tutor?                     @relation(fields: [tutorId], references: [id], onDelete: SetNull)
   room      Room?                      @relation(fields: [roomId], references: [id], onDelete: SetNull)
   subject   Subject?                   @relation("SessionSubject", fields: [subjectId], references: [id], onDelete: SetNull)
+  students  SessionStudent[]
   overrides SessionStudentOverride[]
   attendances Attendance[]
   tutorAttendances TutorAttendance[]
@@ -780,6 +782,25 @@ model DayNote {
 
   @@index([date])
   @@map("day_notes")
+}
+
+/// Roster per-sesi: siswa kelompok yang dijadwalkan hadir di sesi ini.
+/// Satu baris per (sessionId, studentId). Default saat sesi dibuat = semua
+/// anggota kelompok; admin/tutor bisa mencoret/mencentang per sesi atau
+/// memindahkan siswa ke sesi lain dalam kelompok yang sama.
+model SessionStudent {
+  id        String   @id @default(uuid())
+  sessionId String
+  studentId String
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, studentId])
+  @@index([studentId])
+  @@map("session_students")
 }
 
 /// Override jadwal per-siswa: Admin mengubah waktu/ruang untuk 1 siswa tanpa

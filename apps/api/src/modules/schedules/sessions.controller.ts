@@ -13,7 +13,7 @@ import { SessionOverridesService } from './session-overrides.service';
 import { FacilitiesService } from './facilities.service';
 import { CreateBuildingDto } from './dto/create-building.dto';
 import { CreateRoomDto, UpdateRoomDto } from './dto/create-room.dto';
-import { CreateSessionDto, UpdateSessionDto, UpsertSessionOverrideDto } from './dto/schedule-session.dto';
+import { CreateSessionDto, MoveSessionStudentDto, SetSessionRosterDto, UpdateSessionDto, UpsertSessionOverrideDto } from './dto/schedule-session.dto';
 import { CreateDayNoteDto } from './dto/day-note.dto';
 import { TutorAbsenceDto } from './dto/tutor-absence.dto';
 
@@ -104,6 +104,57 @@ export class SessionsController {
       ...this.ctx(req),
     });
     return updated;
+  }
+
+  /**
+   * Roster per-sesi — ganti seluruh daftar siswa yang dijadwalkan hadir.
+   * Guard hanya session.view: otorisasi (admin session.manage ATAU tutor
+   * pengampu sesi/kelompoknya) ditegakkan di service.
+   */
+  @Patch('sessions/:id/roster')
+  @RequirePermissions(PERMISSION_CODES.SESSION_VIEW)
+  async setRoster(
+    @Param('id') id: string,
+    @Body() dto: SetSessionRosterDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const result = await this.sessions.setRoster(id, dto.studentIds, actor);
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'SESSION_ROSTER_UPDATED',
+      entity: 'Session',
+      entityId: id,
+      newData: { added: result.added, removed: result.removed, total: result.total },
+      ...this.ctx(req),
+    });
+    return result;
+  }
+
+  /**
+   * Pindahkan 1 siswa ke sesi lain dalam kelompok yang sama (berhalangan di
+   * sesi awal). Absensi yang sudah ada ikut berpindah. Admin atau tutor
+   * pengampu kedua sesi.
+   */
+  @Post('sessions/:id/students/:studentId/move')
+  @RequirePermissions(PERMISSION_CODES.SESSION_VIEW)
+  async moveStudent(
+    @Param('id') id: string,
+    @Param('studentId') studentId: string,
+    @Body() dto: MoveSessionStudentDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const result = await this.sessions.moveStudent(id, studentId, dto, actor);
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'SESSION_STUDENT_MOVED',
+      entity: 'Session',
+      entityId: id,
+      newData: result,
+      ...this.ctx(req),
+    });
+    return result;
   }
 
   @Delete('sessions/:id')

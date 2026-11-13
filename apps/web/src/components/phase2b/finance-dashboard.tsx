@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -12,12 +13,14 @@ import {
 	ClipboardList,
 	GraduationCap,
 	Landmark,
+	MessageSquareText,
 	Presentation,
 	Printer,
 	Receipt,
 	TriangleAlert,
 	Users,
 	Wallet,
+	Zap,
 	type LucideIcon,
 } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api-client";
@@ -25,7 +28,7 @@ import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { KpiCard } from "@/components/shared/kpi-card";
 import { fmtDateTime } from "@/lib/phase1c-types";
 import type { HomeData } from "@/lib/home-types";
@@ -261,6 +264,47 @@ export function FinanceDashboard() {
 					</Button>
 				</div>
 			</div>
+
+			{/* Aksi cepat — pekerjaan harian finance paling sering. */}
+			<div className="flex flex-wrap items-center gap-2">
+				<span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+					<Zap className="size-3.5" />
+					Aksi cepat:
+				</span>
+				{[
+					{ href: "/admin-finance/bukti", label: "Verifikasi Bukti" },
+					{ href: "/admin-finance/invoice", label: "Buat Invoice" },
+					{ href: "/admin-finance/transaksi-harian", label: "Transaksi Harian" },
+					{ href: "/admin-finance/pendaftaran", label: "Pendaftaran" },
+					{ href: "/admin-finance/piutang", label: "Penagihan" },
+				].map((a) => (
+					<Link
+						key={a.href}
+						href={a.href}
+						className={buttonVariants({ variant: "outline", size: "sm" })}
+					>
+						{a.label}
+					</Link>
+				))}
+			</div>
+
+			{/* Kesehatan antrean WA — kegagalan butuh tindakan. */}
+			{((data?.waOutbox?.pending ?? 0) > 0 || (data?.waOutbox?.failed ?? 0) > 0) && (
+				<div className="flex flex-wrap gap-2">
+					{(data?.waOutbox?.pending ?? 0) > 0 ? (
+						<Badge variant="secondary" className="gap-1.5 py-1">
+							<MessageSquareText className="size-3.5" />
+							{data?.waOutbox?.pending} pesan WA dalam antrean
+						</Badge>
+					) : null}
+					{(data?.waOutbox?.failed ?? 0) > 0 ? (
+						<Badge variant="destructive" className="gap-1.5 py-1">
+							<MessageSquareText className="size-3.5" />
+							{data?.waOutbox?.failed} pesan WA gagal — cek Antrean WA
+						</Badge>
+					) : null}
+				</div>
+			)}
 
 			{isLoading ? <Skeleton className="h-24 w-full" /> : null}
 			{isError ? (

@@ -12,6 +12,7 @@ import { UserAvatar } from '@/components/shared/user-avatar';
 import { useAuthStore } from '@/stores/auth-store';
 import { SessionCalendar } from '@/components/shared/session-calendar';
 import { fmtDateTime } from '@/lib/phase1c-types';
+import { SessionRosterEditor } from '@/components/shared/session-roster-editor';
 import type { AttendanceRoster, AttendanceStatus } from '@/lib/phase1d-types';
 import { ATTENDANCE_LABELS, ATTENDANCE_STATUSES } from '@/lib/phase1d-types';
 
@@ -191,8 +192,21 @@ export function AttendanceMarker({ sessionsEndpoint }: { sessionsEndpoint: strin
                 ) : null}
               </div>
             ) : null}
+            {rosterQ.data.session.status === 'SCHEDULED' ? (
+              <details className="rounded-md border">
+                <summary className="cursor-pointer px-3 py-2 text-sm font-medium hover:bg-muted/40">
+                  Atur peserta sesi — centang siswa yang hadir di sesi ini, atau pindahkan ke sesi lain
+                </summary>
+                <div className="border-t p-3">
+                  <SessionRosterEditor
+                    sessionId={sessionId}
+                    onChanged={() => setDraft({})}
+                  />
+                </div>
+              </details>
+            ) : null}
             {rosterQ.data.members.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Kelompok ini belum punya siswa.</p>
+              <p className="text-sm text-muted-foreground">Belum ada siswa yang dijadwalkan di sesi ini.</p>
             ) : null}
             {rosterQ.data.members.length > 0 && !locked ? (
               <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">

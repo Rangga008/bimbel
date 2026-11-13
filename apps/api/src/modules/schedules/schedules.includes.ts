@@ -62,6 +62,9 @@ export const sessionDetailInclude = {
   subject: { select: { id: true, code: true, name: true } },
   tutor: { select: { id: true, user: { select: { name: true, phone: true } } } },
   room: { select: { id: true, name: true } },
+  students: {
+    select: { studentId: true },
+  },
   overrides: {
     include: {
       student: { select: { id: true, user: { select: { name: true } } } },

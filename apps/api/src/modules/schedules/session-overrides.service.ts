@@ -106,6 +106,8 @@ export class SessionOverridesService {
     return this.prisma.session.findMany({
       where: {
         groupId: { in: groupIds.length ? groupIds : ['__none__'] },
+        // Roster per-sesi — siswa hanya melihat sesi yang menjadwalkannya.
+        students: { some: { studentId: student.id } },
         ...dateRange(q),
       },
       include: {
@@ -149,25 +151,30 @@ export class SessionOverridesService {
       },
     });
     const groupIds = [...new Set(memberships.map((m) => m.groupId))];
-    // Anak ortu per kelompok — ortu multi-anak bisa bedakan sesi milik siapa.
-    const namesByGroup = new Map<string, string[]>();
-    for (const m of memberships) {
-      const arr = namesByGroup.get(m.groupId) ?? [];
-      if (!arr.includes(m.student.user.name)) arr.push(m.student.user.name);
-      namesByGroup.set(m.groupId, arr);
-    }
     const sessions = await this.prisma.session.findMany({
       where: {
         groupId: { in: groupIds.length ? groupIds : ['__none__'] },
+        // Roster per-sesi — ortu hanya melihat sesi yang menjadwalkan anaknya.
+        students: { some: { studentId: { in: studentIds } } },
         ...dateRange(q),
       },
-      include: sessionListInclude,
+      include: {
+        ...sessionListInclude,
+        students: {
+          where: { studentId: { in: studentIds } },
+          select: {
+            student: { select: { id: true, user: { select: { name: true } } } },
+          },
+        },
+      },
       orderBy: { startsAt: 'asc' },
       take: q.take ?? 200,
     });
     return sessions.map((s) => ({
       ...s,
-      childNames: namesByGroup.get(s.groupId) ?? [],
+      // Nama anak yang dijadwalkan di sesi ini (roster), bukan semua anak
+      // di kelompok — supaya ortu multi-anak tahu sesi ini milik siapa.
+      childNames: s.students.map((st) => st.student.user.name),
     }));
   }
 }

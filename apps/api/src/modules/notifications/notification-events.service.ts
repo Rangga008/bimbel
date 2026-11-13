@@ -522,19 +522,25 @@ export class NotificationEventsService {
     }
   }
 
-  /** userId siswa + ortu anggota kelompok sebuah sesi (dipisah per audiens). */
+  /** userId siswa + ortu yang dijadwalkan di sesi (roster per-sesi). */
   private async sessionAudience(
     sessionId: string,
   ): Promise<{ studentIds: string[]; parentIds: string[] }> {
     const session = await this.prisma.session.findUnique({
       where: { id: sessionId },
-      select: { groupId: true },
+      select: {
+        groupId: true,
+        students: { select: { studentId: true } },
+      },
     });
     if (!session) return { studentIds: [], parentIds: [] };
-    const members = await this.prisma.groupMember.findMany({
-      where: { groupId: session.groupId },
-      select: { studentId: true },
-    });
+    // Fallback ke anggota kelompok untuk sesi lama tanpa baris roster.
+    const members = session.students.length
+      ? session.students
+      : await this.prisma.groupMember.findMany({
+          where: { groupId: session.groupId },
+          select: { studentId: true },
+        });
     const studentIds: string[] = [];
     const parentIds: string[] = [];
     for (const m of members) {
