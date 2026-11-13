@@ -1,7 +1,10 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Search } from "lucide-react";
 import { score100 } from '@/lib/score';
 
 export interface QuestionAnalytics {
@@ -147,15 +150,172 @@ export function QuestionAnalysisPanel({ items }: { items: QuestionAnalytics[] })
 	);
 }
 
+const RECAP_SCORE_BUCKETS = [
+	{ value: "", label: "Semua nilai" },
+	{ value: "high", label: "Tinggi (≥70%)" },
+	{ value: "mid", label: "Sedang (50–69%)" },
+	{ value: "low", label: "Rendah (<50%)" },
+	{ value: "unsubmitted", label: "Belum mengumpulkan" },
+];
+
+const RECAP_SORTS = [
+	{ value: "default", label: "Urutan awal" },
+	{ value: "desc", label: "Nilai tertinggi" },
+	{ value: "asc", label: "Nilai terendah" },
+	{ value: "name", label: "Nama A–Z" },
+];
+
+const PAGE_SIZES = [10, 20, 50, 100, 0]; // 0 = semua
+
+const selectCls =
+	"h-9 rounded-md border border-input bg-background px-2 text-xs shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+/** Toolbar filter + paginasi — dipakai rekap nilai & rekap jawaban. */
+function usePagedRows<T>(rows: T[], deps: unknown[]) {
+	const [pageSize, setPageSize] = useState(20);
+	const [page, setPage] = useState(0);
+	const pageCount = pageSize > 0 ? Math.max(1, Math.ceil(rows.length / pageSize)) : 1;
+	const safePage = Math.min(page, pageCount - 1);
+	const paged = pageSize > 0 ? rows.slice(safePage * pageSize, (safePage + 1) * pageSize) : rows;
+	// Filter/urutan berubah → kembali ke halaman pertama.
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	useEffect(() => setPage(0), deps);
+	const pager = rows.length > 0 ? (
+		<div className="flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2 text-xs text-muted-foreground">
+			<span className="tabular-nums">
+				{pageSize > 0
+					? `${safePage * pageSize + 1}–${Math.min(rows.length, (safePage + 1) * pageSize)} dari ${rows.length} peserta`
+					: `${rows.length} peserta`}
+			</span>
+			<div className="flex items-center gap-2">
+				<select
+					className={selectCls}
+					value={pageSize}
+					onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}
+					aria-label="Baris per halaman"
+				>
+					{PAGE_SIZES.map((n) => (
+						<option key={n} value={n}>{n === 0 ? "Semua" : `${n} / hal`}</option>
+					))}
+				</select>
+				{pageSize > 0 && pageCount > 1 ? (
+					<div className="flex items-center gap-1">
+						<button
+							type="button"
+							className="rounded border px-2 py-1 disabled:opacity-40"
+							disabled={safePage === 0}
+							onClick={() => setPage(safePage - 1)}
+						>
+							‹
+						</button>
+						<span className="px-1 tabular-nums">{safePage + 1}/{pageCount}</span>
+						<button
+							type="button"
+							className="rounded border px-2 py-1 disabled:opacity-40"
+							disabled={safePage >= pageCount - 1}
+							onClick={() => setPage(safePage + 1)}
+						>
+							›
+						</button>
+					</div>
+				) : null}
+			</div>
+		</div>
+	) : null;
+	return { paged, pager };
+}
+
 export function ScoreRecapTable({ data }: { data: ScoreRecapData }) {
+	const [q, setQ] = useState("");
+	const [bucket, setBucket] = useState("");
+	const [sort, setSort] = useState("default");
+
+	const rows = useMemo(() => {
+		const needle = q.trim().toLowerCase();
+		const filtered = data.rows.filter((r) => {
+			if (
+				needle &&
+				!`${r.name} ${r.school} ${r.groups.join(" ")}`.toLowerCase().includes(needle)
+			)
+				return false;
+			if (bucket === "high" && r.percentage < 70) return false;
+			if (bucket === "mid" && (r.percentage < 50 || r.percentage >= 70)) return false;
+			if (bucket === "low" && (r.percentage >= 50 || !r.submittedAt)) return false;
+			if (bucket === "unsubmitted" && r.submittedAt) return false;
+			return true;
+		});
+		if (sort === "desc") return [...filtered].sort((a, b) => b.percentage - a.percentage);
+		if (sort === "asc") return [...filtered].sort((a, b) => a.percentage - b.percentage);
+		if (sort === "name") return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+		return filtered;
+	}, [data.rows, q, bucket, sort]);
+
+	const { paged, pager } = usePagedRows(rows, [q, bucket, sort]);
+
+	// Statistik dari semua baris (bukan hasil filter) supaya konteks tetap utuh.
+	const stats = useMemo(() => {
+		const submitted = data.rows.filter((r) => r.submittedAt);
+		const pct = submitted.map((r) => r.percentage);
+		return {
+			avg: pct.length ? Math.round(pct.reduce((a, b) => a + b, 0) / pct.length) : null,
+			max: pct.length ? Math.max(...pct) : null,
+			min: pct.length ? Math.min(...pct) : null,
+			submitted: submitted.length,
+			total: data.rows.length,
+		};
+	}, [data.rows]);
+
 	return (
 		<Card className="overflow-hidden">
-			<CardHeader>
-				<CardTitle className="text-base">Rekap Nilai — {data.exam.title}</CardTitle>
-				<CardDescription>
-					{data.exam.programName ?? '-'} · {data.exam.levelName ?? '-'} · {data.exam.subjectName ?? '-'} · {data.participantCount} peserta
-				</CardDescription>
+			<CardHeader className="gap-2">
+				<div className="flex flex-wrap items-start justify-between gap-2">
+					<div>
+						<CardTitle className="text-base">Rekap Nilai — {data.exam.title}</CardTitle>
+						<CardDescription>
+							{data.exam.programName ?? '-'} · {data.exam.levelName ?? '-'} · {data.exam.subjectName ?? '-'} · {data.participantCount} peserta
+						</CardDescription>
+					</div>
+					{stats.avg !== null ? (
+						<div className="flex flex-wrap gap-1.5 text-xs">
+							<Badge variant="secondary">Rata-rata {stats.avg}%</Badge>
+							<Badge variant="default">Tertinggi {stats.max}%</Badge>
+							<Badge variant="destructive">Terendah {stats.min}%</Badge>
+							<Badge variant="outline">Terkumpul {stats.submitted}/{stats.total}</Badge>
+						</div>
+					) : null}
+				</div>
 			</CardHeader>
+			<div className="flex flex-wrap items-center gap-2 border-t px-3 py-2.5">
+				<div className="relative min-w-52 flex-1">
+					<Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+					<Input
+						value={q}
+						onChange={(e) => setQ(e.target.value)}
+						placeholder="Cari nama / sekolah / kelompok…"
+						className="h-9 pl-8 text-xs"
+					/>
+				</div>
+				<select
+					className={selectCls}
+					value={bucket}
+					onChange={(e) => setBucket(e.target.value)}
+					aria-label="Filter nilai"
+				>
+					{RECAP_SCORE_BUCKETS.map((b) => (
+						<option key={b.value} value={b.value}>{b.label}</option>
+					))}
+				</select>
+				<select
+					className={selectCls}
+					value={sort}
+					onChange={(e) => setSort(e.target.value)}
+					aria-label="Urutkan"
+				>
+					{RECAP_SORTS.map((s) => (
+						<option key={s.value} value={s.value}>{s.label}</option>
+					))}
+				</select>
+			</div>
 			<CardContent className="overflow-x-auto p-0">
 				<table className="w-full text-left text-xs">
 					<thead>
@@ -172,9 +332,9 @@ export function ScoreRecapTable({ data }: { data: ScoreRecapData }) {
 						</tr>
 					</thead>
 					<tbody>
-						{data.rows.map((r, i) => (
+						{paged.map((r, i) => (
 							<tr key={r.studentId} className="border-b last:border-0 hover:bg-muted/50">
-								<td className="px-3 py-2">{i + 1}</td>
+								<td className="px-3 py-2">{data.rows.indexOf(r) + 1}</td>
 								<td className="px-3 py-2 font-medium">{r.name}</td>
 								<td className="px-3 py-2">{r.school}</td>
 								{r.cells.map((c, j) => (
@@ -182,26 +342,56 @@ export function ScoreRecapTable({ data }: { data: ScoreRecapData }) {
 								))}
 								<td className="px-3 py-2 tabular-nums">{r.totalCorrect}</td>
 								<td className="px-3 py-2 tabular-nums font-semibold">{r.totalScore}/{r.maxScore}</td>
-								<td className="px-3 py-2 tabular-nums">{r.percentage}%</td>
+								<td className="px-3 py-2 tabular-nums">
+									<Badge variant={accuracyVariant(r.percentage)}>{r.percentage}%</Badge>
+								</td>
 							</tr>
 						))}
-						{data.rows.length === 0 ? (
-							<tr><td colSpan={4 + data.columns.length} className="px-3 py-6 text-center text-muted-foreground">Belum ada attempt.</td></tr>
+						{rows.length === 0 ? (
+							<tr>
+								<td colSpan={4 + data.columns.length} className="px-3 py-6 text-center text-muted-foreground">
+									{data.rows.length === 0 ? 'Belum ada attempt.' : 'Tidak ada peserta yang cocok dengan filter.'}
+								</td>
+							</tr>
 						) : null}
 					</tbody>
 				</table>
+				{pager}
 			</CardContent>
 		</Card>
 	);
 }
 
 export function AnswerRecapTable({ data }: { data: AnswerRecapData }) {
+	const [q, setQ] = useState("");
+
+	const rows = useMemo(() => {
+		const needle = q.trim().toLowerCase();
+		if (!needle) return data.rows;
+		return data.rows.filter((r) =>
+			`${r.name} ${r.school}`.toLowerCase().includes(needle),
+		);
+	}, [data.rows, q]);
+
+	const { paged, pager } = usePagedRows(rows, [q]);
+
 	return (
 		<Card className="overflow-hidden">
 			<CardHeader>
 				<CardTitle className="text-base">Rekap Jawaban — {data.exam.title}</CardTitle>
 				<CardDescription>{data.exam.levelName ?? '-'} · {data.exam.subjectName ?? '-'} · {data.participantCount} peserta</CardDescription>
 			</CardHeader>
+			<div className="flex flex-wrap items-center gap-2 border-t px-3 py-2.5">
+				<div className="relative min-w-52 flex-1">
+					<Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+					<Input
+						value={q}
+						onChange={(e) => setQ(e.target.value)}
+						placeholder="Cari nama / sekolah…"
+						className="h-9 pl-8 text-xs"
+					/>
+				</div>
+			</div>
 			<CardContent className="overflow-x-auto p-0">
 				<table className="w-full text-left text-xs">
 					<thead>
@@ -214,9 +404,9 @@ export function AnswerRecapTable({ data }: { data: AnswerRecapData }) {
 						</tr>
 					</thead>
 					<tbody>
-						{data.rows.map((r, i) => (
+						{paged.map((r, i) => (
 							<tr key={r.studentId} className="border-b last:border-0 hover:bg-muted/50">
-								<td className="px-3 py-2 sticky left-0 bg-background">{i + 1}</td>
+								<td className="px-3 py-2 sticky left-0 bg-background">{data.rows.indexOf(r) + 1}</td>
 								<td className="px-3 py-2 sticky left-0 bg-background font-medium min-w-[140px]">{r.name}</td>
 								{r.answers.map((a, j) => (
 									<td
@@ -230,11 +420,16 @@ export function AnswerRecapTable({ data }: { data: AnswerRecapData }) {
 								))}
 							</tr>
 						))}
-						{data.rows.length === 0 ? (
-							<tr><td colSpan={2 + data.questions.length} className="px-3 py-6 text-center text-muted-foreground">Belum ada attempt.</td></tr>
+						{rows.length === 0 ? (
+							<tr>
+								<td colSpan={2 + data.questions.length} className="px-3 py-6 text-center text-muted-foreground">
+									{data.rows.length === 0 ? 'Belum ada attempt.' : 'Tidak ada peserta yang cocok dengan pencarian.'}
+								</td>
+							</tr>
 						) : null}
 					</tbody>
 				</table>
+				{pager}
 			</CardContent>
 		</Card>
 	);

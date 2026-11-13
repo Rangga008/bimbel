@@ -26,6 +26,7 @@ import { UserAvatar } from '@/components/shared/user-avatar';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { SessionCalendar } from '@/components/shared/session-calendar';
 import { LearningReportButton } from '@/components/shared/learning-report-button';
+import { PhoneVerifyBadge } from '@/components/shared/phone-verify-badge';
 import { CurrencyInput } from '@/components/shared/currency-input';
 import { scoreLabel100 } from '@/lib/score';
 import { apiFetch, ApiError } from '@/lib/api-client';
@@ -304,6 +305,15 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
             <div className="min-w-0 flex-1">
               <p className="text-lg font-semibold">{s.user.name}</p>
               <p className="truncate text-sm text-muted-foreground">{s.user.email}{s.user.phone ? ` · ${s.user.phone}` : ''}</p>
+              <div className="mt-1">
+                <PhoneVerifyBadge
+                  userId={s.user.id}
+                  phone={s.user.phone}
+                  phoneVerifiedAt={s.user.phoneVerifiedAt}
+                  invalidateKey={['students', studentId]}
+                  canManage={canManage}
+                />
+              </div>
               <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <School className="size-3.5 shrink-0" /> Asal sekolah: {s.schoolOrigin || '—'}
               </p>

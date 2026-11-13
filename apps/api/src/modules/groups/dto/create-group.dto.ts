@@ -1,4 +1,39 @@
-import { IsBoolean, IsDateString, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+
+/** Satu baris jadwal mingguan saat pembuatan kelompok (kelas multi-mapel:
+ *  tiap mapel bisa beda hari/jam/tutor/ruangan). */
+export class GroupScheduleItemDto {
+  @IsInt()
+  @Min(0, { message: 'dayOfWeek harus 0 (Minggu) sampai 6 (Sabtu).' })
+  @Max(6, { message: 'dayOfWeek harus 0 (Minggu) sampai 6 (Sabtu).' })
+  dayOfWeek: number;
+
+  /** Menit sejak 00:00, mis. 16:00 = 960. */
+  @IsInt()
+  @Min(0)
+  @Max(24 * 60 - 1)
+  startMin: number;
+
+  @IsInt()
+  @Min(1)
+  @Max(24 * 60)
+  endMin: number;
+
+  /** Mapel jadwal ini — untuk jenjang multi-mapel (kelas reguler). */
+  @IsOptional()
+  @IsUUID('4', { message: 'subjectId tidak valid.' })
+  subjectId?: string | null;
+
+  /** Tutor khusus jadwal ini; kosong -> pakai tutor lead kelompok. */
+  @IsOptional()
+  @IsUUID('4', { message: 'tutorId tidak valid.' })
+  tutorId?: string | null;
+
+  @IsOptional()
+  @IsUUID('4', { message: 'roomId tidak valid.' })
+  roomId?: string | null;
+}
 
 export class CreateGroupDto {
   @IsString()
@@ -68,6 +103,18 @@ export class CreateGroupDto {
   @IsOptional()
   @IsDateString({}, { message: 'validTo harus tanggal (YYYY-MM-DD).' })
   validTo?: string | null;
+
+  /**
+   * Daftar jadwal mingguan — bentuk baru (multi-mapel). Bila diisi, field
+   * jadwal tunggal di atas (dayOfWeek/startMin/endMin/subjectId/roomId)
+   * diabaikan. Semua item memakai validFrom/validTo di atas.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20, { message: 'Maksimal 20 jadwal awal.' })
+  @ValidateNested({ each: true })
+  @Type(() => GroupScheduleItemDto)
+  schedules?: GroupScheduleItemDto[];
 
   @IsOptional()
   @IsBoolean()

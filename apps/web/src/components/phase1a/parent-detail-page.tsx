@@ -14,6 +14,7 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { ReminderButtons } from '@/components/shared/reminder-buttons';
 import { UserAvatar } from '@/components/shared/user-avatar';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { PhoneVerifyBadge } from '@/components/shared/phone-verify-badge';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { ApiUserBrief } from '@/lib/phase1a-types';
 import { Phase1aFormDialog, type Phase1aField } from '@/components/phase1a/phase1a-form-dialog';
@@ -144,6 +145,15 @@ export function ParentDetailPage({ parentId, basePath, canManage = false }: { pa
             <div className="min-w-0 flex-1">
               <p className="text-lg font-semibold">{p.user.name}</p>
               <p className="truncate text-sm text-muted-foreground">{p.user.email}{p.user.phone ? ` · ${p.user.phone}` : ''}</p>
+              <div className="mt-1">
+                <PhoneVerifyBadge
+                  userId={p.user.id}
+                  phone={p.user.phone}
+                  phoneVerifiedAt={p.user.phoneVerifiedAt}
+                  invalidateKey={['parents', parentId]}
+                  canManage={canManage}
+                />
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={p.isActive ? 'secondary' : 'outline'}>{p.isActive ? 'Aktif' : 'Nonaktif'}</Badge>

@@ -30,6 +30,17 @@ export interface WhatsAppMessage {
 export interface WhatsAppSendResult {
   /** Referensi/id pesan di sisi provider — disimpan di outbox untuk rekonsiliasi. */
   providerRef?: string;
+  /** Respons mentah provider — disimpan untuk diagnostik (dibatasi ukurannya). */
+  raw?: unknown;
+}
+
+/** Hasil cek status pengiriman pesan di sisi provider. */
+export interface WhatsAppDeliveryResult {
+  /** Status dinormalisasi: sent|delivered|read|pending|processing|waiting|
+   *  invalid|failed|expired|unknown. */
+  status: string;
+  /** Detail mentah dari provider (opsional). */
+  raw?: unknown;
 }
 
 /** Kontrak yang WAJIB dipenuhi setiap provider WhatsApp. */
@@ -38,6 +49,11 @@ export interface WhatsAppProvider {
   readonly name: string;
   /** Kirim pesan. Lempar error bila gagal — outbox yang menandai FAILED. */
   send(message: WhatsAppMessage): Promise<WhatsAppSendResult>;
+  /**
+   * Opsional — cek status pengiriman pesan yang sudah dikirim (rekonsiliasi
+   * "API terima tapi pesan tidak sampai", mis. device Fonnte offline).
+   */
+  checkDelivery?(providerRef: string): Promise<WhatsAppDeliveryResult>;
 }
 
 /** Token DI — selalu injeksikan interface via token ini, JANGAN class konkret. */

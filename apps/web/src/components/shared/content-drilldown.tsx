@@ -196,8 +196,10 @@ export function DrillQuickFilter({
         .filter((b) => b.id !== DRILL_NONE)
         .map((b) => ({ id: b.id, name: b.name }));
 
-  // Mapel: dari levelSubjects jenjang terpilih, fallback mapel pada item
-  // dalam lingkup tingkat+jenjang saat ini.
+  // Mapel: dari levelSubjects jenjang terpilih; tanpa jenjang, union
+  // levelSubjects semua jenjang dalam tingkat terpilih (atau semua jenjang)
+  // supaya mapel yang belum punya konten tetap bisa difilter — konsisten
+  // dengan kartu "Pilih Mapel" yang menampilkan semua mapel terlampir.
   const selLevel = levels?.find((l) => l.id === value.levelId);
   // Semua mapel aktif dari master data — fallback bila jenjang belum
   // dilampirkan mapel apa pun (selaras dengan perilaku form materi/ujian).
@@ -206,6 +208,25 @@ export function DrillQuickFilter({
     queryFn: () => apiFetch<{ id: string; name: string }[]>('/master/subjects'),
     enabled: !!selLevel && !selLevel.levelSubjects?.length,
   });
+  const scopedSubjectOpts = (() => {
+    if (!levels?.length || selLevel) return [] as { id: string; name: string }[];
+    const map = new Map<string, string>();
+    for (const l of levels) {
+      const inScope =
+        !value.gradeLevelId || value.gradeLevelId === DRILL_ALL
+          ? true
+          : value.gradeLevelId === DRILL_NONE
+            ? !tingkatCode(l)
+            : tingkatCode(l) === value.gradeLevelId;
+      if (!inScope) continue;
+      for (const ls of l.levelSubjects ?? []) {
+        if (ls.subject) map.set(ls.subject.id, ls.subject.name);
+      }
+    }
+    return [...map.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  })();
   const mapelOpts =
     selLevel?.levelSubjects?.length
       ? selLevel.levelSubjects
@@ -214,6 +235,8 @@ export function DrillQuickFilter({
           .map((s) => ({ id: s.id, name: s.name }))
       : selLevel && allSubjectsQ.data?.length
       ? allSubjectsQ.data
+      : scopedSubjectOpts.length
+      ? scopedSubjectOpts
       : (() => {
           const pool = applyDrill(
             items,

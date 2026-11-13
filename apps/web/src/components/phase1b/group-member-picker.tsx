@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
+import { ComboboxField } from '@/components/shared/combobox-field';
 import type { MasterItem, StudentItem, TutorItem } from '@/lib/phase1a-types';
 import type { HierarchyLevel } from '@/lib/content-taxonomy';
 
@@ -41,9 +42,6 @@ function studentLevelNames(s: StudentRow): string[] {
   (s.groupMembers ?? []).forEach((m) => m.group.level?.name && names.add(m.group.level.name));
   return [...names];
 }
-
-const inputCls =
-  'h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring';
 
 /**
  * Popup tambah siswa ke kelompok — pilih jenjang dulu, lalu centang siswa.
@@ -153,20 +151,17 @@ export function AddGroupStudentsDialog({
         </DialogHeader>
         <div className="flex flex-col gap-3">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <select
-              className={inputCls}
+            <ComboboxField
+              id="grp-member-level"
               value={levelId}
-              onChange={(e) => setLevelId(e.target.value)}
-              aria-label="Filter jenjang"
-            >
-              <option value="">Semua jenjang</option>
-              <option value="none">— Tanpa jenjang —</option>
-              {levelOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              onChange={setLevelId}
+              placeholder="Semua jenjang"
+              options={[
+                { value: '', label: 'Semua jenjang' },
+                { value: 'none', label: '— Tanpa jenjang —' },
+                ...levelOptions,
+              ]}
+            />
             <div className="relative">
               <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -349,19 +344,16 @@ export function AddGroupTutorDialog({
         </DialogHeader>
         <div className="flex flex-col gap-3">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <select
-              className={inputCls}
+            <ComboboxField
+              id="grp-tutor-subject"
               value={subjectName}
-              onChange={(e) => setSubjectName(e.target.value)}
-              aria-label="Filter mapel"
-            >
-              <option value="">Semua mapel</option>
-              {(subjectsQ.data ?? []).map((s) => (
-                <option key={s.id} value={s.name}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+              onChange={setSubjectName}
+              placeholder="Semua mapel"
+              options={[
+                { value: '', label: 'Semua mapel' },
+                ...(subjectsQ.data ?? []).map((s) => ({ value: s.name, label: s.name })),
+              ]}
+            />
             <div className="relative">
               <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input

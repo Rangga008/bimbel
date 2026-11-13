@@ -56,6 +56,8 @@ export interface ExamFormState {
   durationMinutes?: number;
   /** Proteksi fullscreen+kunci saat siswa keluar (default aktif). */
   proctoringEnabled: boolean;
+  /** Acak urutan soal per attempt — bersubtes = acak dalam tiap subtes. */
+  shuffleQuestions: boolean;
   /** true = siswa langsung melihat nilai+kunci setelah submit. */
   showResultImmediately: boolean;
   /** true = ujian tampil di halaman publik /tryout (peserta luar). */
@@ -81,6 +83,7 @@ export function emptyExamForm(): ExamFormState {
     scheduledEndAt: '',
     durationMinutes: undefined,
     proctoringEnabled: true,
+    shuffleQuestions: false,
     showResultImmediately: false,
     isPublic: false,
     notes: '',
@@ -514,6 +517,28 @@ export function ExamForm({
               Aktif: ujian berjalan fullscreen — siswa yang keluar halaman/aplikasi langsung
               terkunci dan harus dibuka pengawas. Nonaktif: siswa bebas keluar-masuk,
               hanya auto-submit saat waktu habis.
+            </span>
+          </span>
+        </label>
+
+        <label
+          htmlFor="ex-shuffle"
+          className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3"
+        >
+          <input
+            id="ex-shuffle"
+            type="checkbox"
+            checked={form.shuffleQuestions}
+            onChange={(e) => onChange({ ...form, shuffleQuestions: e.target.checked })}
+            className="mt-0.5 h-4 w-4 accent-emerald-600"
+          />
+          <span className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium">Acak urutan soal</span>
+            <span className="text-xs text-muted-foreground">
+              Aktif: tiap siswa mendapat urutan soal berbeda — untuk ujian
+              bersubtes, soal diacak di dalam masing-masing subtes (urutan
+              subtes tetap). Urutan tersimpan per sesi pengerjaan: nomor soal
+              konsisten saat refresh, lanjut setelah unlock, dan hasil akhir.
             </span>
           </span>
         </label>

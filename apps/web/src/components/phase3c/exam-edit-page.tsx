@@ -43,6 +43,7 @@ export function toForm(exam: ExamRow): ExamFormState {
     scheduledEndAt: isoToLocalInput(exam.scheduledEndAt),
     durationMinutes: exam.durationMinutes || undefined,
     proctoringEnabled: exam.proctoringEnabled ?? true,
+    shuffleQuestions: exam.shuffleQuestions ?? false,
     showResultImmediately: exam.showResultImmediately ?? false,
     isPublic: exam.isPublic ?? false,
     notes: exam.notes || '',

@@ -207,6 +207,9 @@ export class WhatsAppOutboxService {
             status: 'SENT',
             provider: this.provider.name,
             providerRef: sendResult.providerRef ?? null,
+            providerResponse: sendResult.raw
+              ? JSON.stringify(sendResult.raw).slice(0, 2000)
+              : null,
             attempts: { increment: 1 },
             error: null,
             sentAt: new Date(),
@@ -239,7 +242,85 @@ export class WhatsAppOutboxService {
         await new Promise((r) => setTimeout(r, Math.round(jitter)));
       }
     }
+    await this.verifyDeliveries();
     return result;
+  }
+
+  /**
+   * Rekonsiliasi "SENT tapi tidak sampai": Fonnte mengembalikan status:true
+   * saat pesan diterima ke antreannya — padahal device bisa offline sehingga
+   * pesan tidak pernah terkirim. Worker mengecek ulang status lewat provider
+   * (POST /status Fonnte) dan menandai FAILED bila pesan invalid/expired/
+   * menggantung terlalu lama, sehingga admin melihat kegagalan nyata di
+   * Antrean WA, bukan "Terkirim" palsu.
+   */
+  async verifyDeliveries(limit = 20) {
+    if (typeof this.provider.checkDelivery !== 'function') return;
+    const now = Date.now();
+    const STUCK_AFTER_MS = 2 * 60 * 60_000; // pending >2 jam = hopeless (OTP dll)
+    const rows = await this.prisma.whatsAppOutbox.findMany({
+      where: {
+        status: 'SENT',
+        providerRef: { not: null },
+        sentAt: {
+          gte: new Date(now - 24 * 60 * 60_000),
+          lte: new Date(now - 60_000),
+        },
+        OR: [
+          { deliveryStatus: null },
+          { deliveryStatus: { in: ['pending', 'processing', 'waiting'] } },
+        ],
+        AND: [
+          {
+            OR: [
+              { deliveryCheckedAt: null },
+              { deliveryCheckedAt: { lt: new Date(now - 55_000) } },
+            ],
+          },
+        ],
+      },
+      orderBy: { sentAt: 'asc' },
+      take: limit,
+    });
+    for (const row of rows) {
+      try {
+        const res = await this.provider.checkDelivery(row.providerRef!);
+        const s = (res.status || 'unknown').toLowerCase();
+        const stuckTooLong =
+          row.sentAt && row.sentAt.getTime() < now - STUCK_AFTER_MS;
+        if (
+          ['invalid', 'failed', 'expired', 'url unreachable'].includes(s) ||
+          (stuckTooLong && ['pending', 'processing', 'waiting'].includes(s))
+        ) {
+          await this.prisma.whatsAppOutbox.update({
+            where: { id: row.id },
+            data: {
+              status: 'FAILED',
+              deliveryStatus: s,
+              deliveryCheckedAt: new Date(),
+              error: `Pesan WA tidak terkirim (status provider: ${s}). Kemungkinan device WhatsApp di gateway offline atau nomor tujuan tidak valid — periksa dashboard Fonnte lalu Retry.`,
+            },
+          });
+          this.logger.warn(
+            `Outbox ${row.id} SENT tapi provider melaporkan "${s}" — ditandai FAILED.`,
+          );
+          continue;
+        }
+        await this.prisma.whatsAppOutbox.update({
+          where: { id: row.id },
+          data: { deliveryStatus: s, deliveryCheckedAt: new Date() },
+        });
+      } catch (err) {
+        // Gagal cek → throttle via deliveryCheckedAt, coba lagi tick berikutnya.
+        await this.prisma.whatsAppOutbox.update({
+          where: { id: row.id },
+          data: { deliveryCheckedAt: new Date() },
+        });
+        this.logger.warn(
+          `Cek status outbox ${row.id} gagal: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
   }
 
   /** Baca lampiran dari media_assets — null bila aset hilang (kirim teks saja). */

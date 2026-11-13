@@ -443,6 +443,24 @@ export class UsersService {
     return { success: true as const };
   }
 
+  /** Verifikasi manual No. HP oleh admin — untuk kasus OTP WhatsApp tidak sampai. */
+  async verifyPhone(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, phone: true, phoneVerifiedAt: true },
+    });
+    if (!user) throw new NotFoundException('User tidak ditemukan.');
+    if (!user.phone)
+      throw new BadRequestException('User belum mengisi nomor HP — tidak bisa diverifikasi.');
+    if (!user.phoneVerifiedAt) {
+      await this.prisma.user.update({
+        where: { id },
+        data: { phoneVerifiedAt: new Date() },
+      });
+    }
+    return { verified: true as const, phone: user.phone };
+  }
+
   async resetPassword(id: string, newPassword: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User tidak ditemukan.');

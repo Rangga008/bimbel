@@ -80,20 +80,24 @@ export class HttpWhatsAppProvider implements WhatsAppProvider {
     }
 
     // Fonnte: {status: true, process: "success"|"pending", id: ["...", ...]}
+    // PENTING: process "pending" hanya berarti masuk antrean Fonnte — belum
+    // tentu sampai ke HP (device bisa offline). Rekonsiliasi lewat
+    // checkDelivery() yang dipanggil worker.
     try {
       const json = JSON.parse(text) as {
         status?: boolean;
+        process?: string;
         id?: string[] | string;
         detail?: string;
         reason?: string;
       };
-      if (json.status === false) {
+      if (json.status === false || json.process === 'failed') {
         throw new Error(
           `Gateway WA menolak pesan: ${json.reason ?? json.detail ?? text.slice(0, 200)}`,
         );
       }
       const ref = Array.isArray(json.id) ? json.id.join(',') : json.id;
-      return { providerRef: ref };
+      return { providerRef: ref, raw: json };
     } catch (err) {
       if (err instanceof SyntaxError) {
         this.logger.warn(`Respons gateway bukan JSON: ${text.slice(0, 120)}`);
@@ -101,5 +105,45 @@ export class HttpWhatsAppProvider implements WhatsAppProvider {
       }
       throw err;
     }
+  }
+
+  /**
+   * Cek status pesan via `POST <base>/status` (Fonnte) — dipakai worker untuk
+   * mendeteksi pesan yang diterima API tapi tidak pernah sampai (device
+   * WhatsApp offline, nomor invalid, dsb). Status Fonnte:
+   * sent|processing|pending|waiting|invalid|failed|expired|url unreachable.
+   */
+  async checkDelivery(providerRef: string) {
+    const id = providerRef.split(',')[0]?.trim();
+    if (!id) return { status: 'unknown' };
+    const form = new FormData();
+    form.set('id', id);
+    const res = await fetch(this.statusUrl(), {
+      method: 'POST',
+      headers: { Authorization: this.token },
+      body: form,
+      signal: AbortSignal.timeout(15_000),
+    });
+    const text = await res.text();
+    if (!res.ok) return { status: 'unknown', raw: text.slice(0, 200) };
+    try {
+      const json = JSON.parse(text) as {
+        status?: boolean;
+        message_status?: string;
+        reason?: string;
+      };
+      const status = (json.message_status ?? 'unknown').toLowerCase();
+      return { status, raw: json };
+    } catch {
+      return { status: 'unknown', raw: text.slice(0, 200) };
+    }
+  }
+
+  private statusUrl(): string {
+    // https://api.fonnte.com/send -> https://api.fonnte.com/status
+    if (/\/send\/?$/.test(this.url)) {
+      return this.url.replace(/\/send\/?$/, '/status');
+    }
+    return `${this.url.replace(/\/$/, '')}/status`;
   }
 }

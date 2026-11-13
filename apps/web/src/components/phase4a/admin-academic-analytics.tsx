@@ -272,29 +272,30 @@ export function AdminAcademicAnalytics() {
         </div>
 
         {/* Rekap — tampil langsung di halaman + unduh Excel/cetak PDF. */}
-        <div className="flex flex-col gap-3 rounded-xl border p-3">
+        <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant={activeTab === 'score' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setActiveTab('score')}
-            >
-              Rekap Nilai
-            </Button>
-            <Button
-              variant={activeTab === 'answer' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setActiveTab('answer')}
-            >
-              Rekap Jawaban
-            </Button>
-            <Button
-              variant={activeTab === 'analysis' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setActiveTab('analysis')}
-            >
-              Analisis
-            </Button>
+            <div className="inline-flex rounded-lg bg-muted p-1">
+              {(
+                [
+                  ['score', 'Rekap Nilai'],
+                  ['answer', 'Rekap Jawaban'],
+                  ['analysis', 'Analisis'],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setActiveTab(key)}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                    activeTab === key
+                      ? 'bg-background text-foreground shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <div className="w-56">
               <Phase1aSelectField
                 id="analytics-recap-group"

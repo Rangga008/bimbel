@@ -356,11 +356,33 @@ export class ExamProctoringService {
       throw new BadRequestException('Attempt tidak dalam status LOCKED.');
     }
 
+    const now = new Date();
+
+    // Jam subtes dibekukan selama attempt LOCKED — geser startedAt subtes
+    // yang masih terbuka sebesar lama penguncian. Tanpa ini, durasi subtes
+    // termakan masa kunci sehingga subtes langsung kedaluwarsa tepat saat
+    // unlock (siswa dilempar kembali ke subtes basi & jawaban ditolak).
+    if (attempt.lockedAt) {
+      const lockMs = now.getTime() - attempt.lockedAt.getTime();
+      if (lockMs > 0) {
+        const openStates = await this.prisma.examAttemptSubtes.findMany({
+          where: { attemptId, submittedAt: null },
+          select: { id: true, startedAt: true },
+        });
+        for (const st of openStates) {
+          await this.prisma.examAttemptSubtes.update({
+            where: { id: st.id },
+            data: { startedAt: new Date(st.startedAt.getTime() + lockMs) },
+          });
+        }
+      }
+    }
+
     const updated = await this.prisma.examAttempt.update({
       where: { id: attemptId },
       data: {
         status: 'IN_PROGRESS',
-        unlockedAt: new Date(),
+        unlockedAt: now,
         unlockedBy: userId,
       },
     });

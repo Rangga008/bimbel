@@ -70,12 +70,51 @@ export class ExamAttemptsService {
     // Calculate maxScore from exam items
     const items = await this.prisma.examItem.findMany({
       where: { examId },
+      orderBy: { sortOrder: 'asc' },
       include: { question: { select: { points: true } } },
     });
     const maxScore = items.reduce(
       (sum, item) => sum + (item.points || item.question.points || 1),
       0,
     );
+
+    // Acak urutan soal per attempt — disimpan di questionOrder supaya
+    // refresh, unlock/resume, dan hasil akhir konsisten. Ujian bersubtes:
+    // acak hanya di dalam tiap subtes (urutan subtes tidak ikut teracak).
+    const examFlags = await this.prisma.exam.findUnique({
+      where: { id: examId },
+      select: {
+        shuffleQuestions: true,
+        subtes: { orderBy: { sortOrder: 'asc' }, select: { id: true } },
+      },
+    });
+    let questionOrder: string[] | undefined;
+    if (examFlags?.shuffleQuestions) {
+      const shuffled = (arr: typeof items) => {
+        const a = [...arr];
+        for (let i = a.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+      };
+      questionOrder = [];
+      if (examFlags.subtes.length) {
+        for (const st of examFlags.subtes) {
+          questionOrder.push(
+            ...shuffled(items.filter((it) => it.subtesId === st.id)).map(
+              (it) => it.questionId,
+            ),
+          );
+        }
+        // Soal tanpa subtes (jarang) tetap di akhir, ikut teracak.
+        questionOrder.push(
+          ...shuffled(items.filter((it) => !it.subtesId)).map((it) => it.questionId),
+        );
+      } else {
+        questionOrder.push(...shuffled(items).map((it) => it.questionId));
+      }
+    }
 
     // @@unique(examId, studentId) menjaga invariant atomik — dua request
     // paralel yang sama-sama lolos cek di atas tetap hanya menghasilkan
@@ -87,6 +126,7 @@ export class ExamAttemptsService {
           studentId: student.id,
           maxScore,
           status: 'IN_PROGRESS',
+          ...(questionOrder ? { questionOrder } : {}),
         },
         include: {
           exam: {
@@ -159,6 +199,7 @@ export class ExamAttemptsService {
         lockedReason: true,
         unlockedAt: true,
         unlockedBy: true,
+        questionOrder: true,
         exam: {
           select: {
             id: true,
@@ -181,6 +222,20 @@ export class ExamAttemptsService {
     });
     if (!attempt || attempt.studentId !== student.id) {
       throw new NotFoundException('Attempt tidak ditemukan.');
+    }
+
+    // Self-heal: tutup state subtes terbuka yang durasinya sudah lewat.
+    // State ini bisa menggantung (attempt ke-lock saat subtes habis, atau
+    // client crash sebelum POST submit) — tanpa ini siswa dilempar kembali
+    // ke subtes basi, jawabannya ditolak, dan subtes berikutnya terblokir.
+    if (attempt.status !== 'SUBMITTED' && attempt.exam.subtes.length > 0) {
+      const healed = await this.closeExpiredSubtes(attemptId);
+      if (healed.size > 0) {
+        const healedAt = new Date();
+        attempt.subtesStates = attempt.subtesStates.map((st) =>
+          healed.has(st.subtesId) ? { ...st, submittedAt: healedAt } : st,
+        );
+      }
     }
 
     // Hasil: mode "langsung lihat" → rilis segera setelah submit; mode
@@ -241,6 +296,22 @@ export class ExamAttemptsService {
     ]);
 
     const answersMap = new Map(answers.map((a) => [a.questionId, a]));
+
+    // Urutan soal attempt — acak tersimpan di questionOrder dipakai apa
+    // adanya (pengerjaan, resume, dan hasil akhir memakai urutan yang
+    // sama); attempt lama tanpa questionOrder tetap pakai sortOrder.
+    const order = Array.isArray(attempt.questionOrder)
+      ? (attempt.questionOrder as string[])
+      : null;
+    if (order?.length) {
+      const pos = new Map(order.map((qid, i) => [qid, i]));
+      items.sort(
+        (a, b) =>
+          (pos.get(a.questionId) ?? Number.MAX_SAFE_INTEGER) -
+            (pos.get(b.questionId) ?? Number.MAX_SAFE_INTEGER) ||
+          a.sortOrder - b.sortOrder,
+      );
+    }
 
     // Rekap per subtes (try out multi-mapel) — dihitung saat hasil dirilis.
     // Selagi mengerjakan, subtesResults berisi progres jawaban saja.
@@ -384,6 +455,37 @@ export class ExamAttemptsService {
   }
 
   /**
+   * Tutup otomatis state subtes yang durasinya sudah lewat tapi belum
+   * tersubmit (state menggantung — attempt ke-lock saat subtes habis, atau
+   * client crash sebelum sempat POST submit). Mengembalikan subtesId yang
+   * baru saja ditutup supaya pemanggil bisa menyegarkan data di memori.
+   */
+  private async closeExpiredSubtes(attemptId: string): Promise<Set<string>> {
+    const now = Date.now();
+    const openStates = await this.prisma.examAttemptSubtes.findMany({
+      where: { attemptId, submittedAt: null },
+      select: {
+        id: true,
+        startedAt: true,
+        subtesId: true,
+        subtes: { select: { durationMinutes: true } },
+      },
+    });
+    const expired = openStates.filter(
+      (st) =>
+        st.subtes.durationMinutes > 0 &&
+        now > st.startedAt.getTime() + st.subtes.durationMinutes * 60_000,
+    );
+    if (expired.length > 0) {
+      await this.prisma.examAttemptSubtes.updateMany({
+        where: { id: { in: expired.map((s) => s.id) } },
+        data: { submittedAt: new Date(now) },
+      });
+    }
+    return new Set(expired.map((s) => s.subtesId));
+  }
+
+  /**
    * Pastikan subtes boleh ditulis — state ada, belum dikumpulkan,
    * durasi belum habis. Durasi lewat → subtes otomatis ditandai
    * selesai dan jawaban baru ditolak.
@@ -449,6 +551,9 @@ export class ExamAttemptsService {
     const order = attempt.exam.subtes.map((s) => s.id);
     const idx = order.indexOf(subtesId);
     if (idx === -1) throw new BadRequestException('Subtes bukan bagian ujian ini.');
+    // Tutup subtes terbuka yang durasinya sudah lewat — state menggantung
+    // (mis. ke-lock saat habis waktu) tidak boleh memblokir subtes berikutnya.
+    await this.closeExpiredSubtes(attemptId);
     // Urutan wajib — subtes sebelumnya harus submitted.
     const prevIds = order.slice(0, idx);
     if (prevIds.length) {
@@ -537,6 +642,11 @@ export class ExamAttemptsService {
         'Attempt ini dikunci karena pelanggaran proctoring. Hubungi pengawas untuk membuka.',
       );
     }
+    if (attempt.status === 'SUBMITTED') {
+      // Idempotent — klik "Kumpulkan" berulang mengembalikan detail yang
+      // sama, bukan error yang membuat siswa mengira submit gagal.
+      return this.getAttemptDetail(userId, attemptId);
+    }
     if (attempt.status !== 'IN_PROGRESS') {
       throw new BadRequestException('Attempt ini sudah dikumpulkan.');
     }
@@ -578,7 +688,11 @@ export class ExamAttemptsService {
       },
     });
     if (finalized.count === 0) {
-      throw new BadRequestException('Attempt ini sudah dikumpulkan.');
+      // Auto-submit scheduler menang race — attempt sudah SUBMITTED.
+      // Perlakukan sebagai sukses idempotent: kembalikan detail attempt
+      // supaya client pindah ke status terkumpul, bukan error 400 yang
+      // membuat siswa menekan "Kumpulkan" berulang tanpa hasil.
+      return this.getAttemptDetail(userId, attemptId);
     }
 
     // Fase 4b: catat poin berdasar score_rules aktif (idempotent, gagal poin

@@ -263,6 +263,9 @@ const ROLE_PERMISSION_MAP: Record<string, string[]> = {
     // Pengaturan bersama — kedua admin bisa kontribusi (template reminder,
     // branding, akun kas, dsb).
     PERMISSION_CODES.SETTINGS_MANAGE,
+    // Antrean & pengiriman WA — notifikasi akademik (jadwal, materi, nilai).
+    PERMISSION_CODES.WHATSAPP_OUTBOX_VIEW,
+    PERMISSION_CODES.WHATSAPP_OUTBOX_MANAGE,
     // Backup & restore database dari halaman Pengaturan.
     PERMISSION_CODES.BACKUP_MANAGE,
   ],

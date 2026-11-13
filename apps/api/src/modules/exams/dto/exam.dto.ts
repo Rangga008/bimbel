@@ -86,6 +86,11 @@ export class CreateExamDto {
   @IsBoolean()
   proctoringEnabled?: boolean;
 
+  /** Acak urutan soal per attempt; bersubtes = acak dalam tiap subtes. */
+  @IsOptional()
+  @IsBoolean()
+  shuffleQuestions?: boolean;
+
   @IsOptional()
   @IsString()
   notes?: string;
@@ -177,6 +182,11 @@ export class UpdateExamDto {
   @IsOptional()
   @IsBoolean()
   proctoringEnabled?: boolean;
+
+  /** Acak urutan soal per attempt; bersubtes = acak dalam tiap subtes. */
+  @IsOptional()
+  @IsBoolean()
+  shuffleQuestions?: boolean;
 
   @IsOptional()
   @IsString()

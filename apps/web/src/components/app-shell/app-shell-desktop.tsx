@@ -36,6 +36,7 @@ import {
 	type RoleKey,
 } from "@/config/role-nav";
 import { NotificationBell, userInitials } from "./shell-shared";
+import { RoleSwitcher } from "./role-switcher";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { useBranding } from "@/lib/use-branding";
 
@@ -193,9 +194,14 @@ export function AppShellDesktop({
 									<p className="truncate text-sm font-semibold">
 										{branding.appName}
 									</p>
-									<p className="truncate text-xs text-muted-foreground">
-										{ROLE_LABELS[role]}
-									</p>
+									<RoleSwitcher
+										role={role}
+										fallback={
+											<p className="truncate text-xs text-muted-foreground">
+												{ROLE_LABELS[role]}
+											</p>
+										}
+									/>
 								</div>
 								<Button
 									variant="ghost"

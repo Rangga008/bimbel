@@ -15,7 +15,7 @@ import {
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../rbac/permissions.guard';
-import { RequirePermissions } from '../rbac/permissions.decorator';
+import { RequireAnyPermissions, RequirePermissions } from '../rbac/permissions.decorator';
 import { PERMISSION_CODES } from '../rbac/permissions.constants';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
@@ -198,6 +198,31 @@ export class UsersController {
     return { success: true };
   }
 
+  /** Verifikasi manual No. HP oleh admin — untuk kasus OTP WhatsApp tidak sampai. */
+  @Post(':id/verify-phone')
+  @RequireAnyPermissions(
+    PERMISSION_CODES.USERS_MANAGE,
+    PERMISSION_CODES.PEOPLE_STUDENT_MANAGE,
+    PERMISSION_CODES.PEOPLE_PARENT_MANAGE,
+  )
+  async verifyPhone(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const result = await this.usersService.verifyPhone(id);
+    await this.auditService.log({
+      actorId: actor.id,
+      action: 'USER_PHONE_VERIFIED',
+      entity: 'User',
+      entityId: id,
+      newData: { phone: result.phone, verifiedBy: actor.email },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return result;
+  }
+
   @Post(':id/reset-password')
   @RequirePermissions(PERMISSION_CODES.USERS_RESET_PASSWORD)
   async resetPassword(
@@ -279,6 +304,15 @@ export class UsersController {
   ) {
     if (actor.id === userId) {
       throw new ForbiddenException('Tidak bisa mengubah role akun sendiri.');
+    }
+
+    const role = await this.prisma.role.findUnique({ where: { id: roleId } });
+    if (!role) throw new NotFoundException('Role tidak ditemukan.');
+    // Simetris dengan grant — role OWNER hanya boleh dicabut oleh OWNER.
+    if (role.name === 'OWNER' && !actor.roles.includes('OWNER')) {
+      throw new ForbiddenException(
+        'Hanya Owner yang dapat mencabut role Owner.',
+      );
     }
 
     const before = await this.usersService.findByIdWithRoles(userId);

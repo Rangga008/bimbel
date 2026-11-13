@@ -46,6 +46,7 @@ export function buildExamPayload(form: ExamFormState) {
     scheduledEndAt: localInputToIso(form.scheduledEndAt),
     durationMinutes: form.durationMinutes,
     proctoringEnabled: form.proctoringEnabled,
+    shuffleQuestions: form.shuffleQuestions,
     showResultImmediately: form.showResultImmediately,
     isPublic: form.isPublic,
     notes: form.notes || undefined,

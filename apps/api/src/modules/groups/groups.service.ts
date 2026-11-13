@@ -95,34 +95,105 @@ export class GroupsService {
         throw new BadRequestException('Level tersebut bukan bagian dari program yang dipilih.');
       }
     }
-    const hasSchedule = dto.dayOfWeek !== undefined || dto.startMin !== undefined || dto.endMin !== undefined;
-    if (hasSchedule && (dto.dayOfWeek === undefined || dto.startMin === undefined || dto.endMin === undefined)) {
+    // Normalisasi jadwal: bentuk baru `schedules[]` (multi-mapel, tiap item
+    // bisa beda hari/jam/tutor/ruangan) menang atas field jadwal tunggal lama.
+    const legacyProvided =
+      dto.dayOfWeek !== undefined || dto.startMin !== undefined || dto.endMin !== undefined;
+    if (
+      legacyProvided &&
+      (dto.dayOfWeek === undefined || dto.startMin === undefined || dto.endMin === undefined)
+    ) {
       throw new BadRequestException('Jadwal awal butuh hari, jam mulai, dan jam selesai.');
     }
-    if (dto.tutorId) {
-      const tutor = await this.prisma.tutor.findUnique({ where: { id: dto.tutorId } });
-      if (!tutor) throw new BadRequestException('Tutor tidak ditemukan.');
-      if (!tutor.isActive) throw new BadRequestException('Tutor nonaktif.');
+    const scheduleInputs = dto.schedules?.length
+      ? dto.schedules
+      : legacyProvided
+        ? [{
+            dayOfWeek: dto.dayOfWeek!,
+            startMin: dto.startMin!,
+            endMin: dto.endMin!,
+            subjectId: dto.subjectId,
+            roomId: dto.roomId,
+            tutorId: dto.tutorId,
+          }]
+        : [];
+
+    // Semua tutor yang dirujuk (lead + per-jadwal) harus ada & aktif — cek batch.
+    const tutorIds = [
+      ...new Set(
+        [dto.tutorId, ...scheduleInputs.map((s) => s.tutorId)].filter(
+          (id): id is string => Boolean(id),
+        ),
+      ),
+    ];
+    if (tutorIds.length) {
+      const tutors = await this.prisma.tutor.findMany({ where: { id: { in: tutorIds } } });
+      if (tutors.length !== tutorIds.length) {
+        throw new BadRequestException('Tutor tidak ditemukan.');
+      }
+      if (tutors.some((t) => !t.isActive)) throw new BadRequestException('Tutor nonaktif.');
     }
-    if (dto.roomId) {
-      const room = await this.prisma.room.findUnique({ where: { id: dto.roomId } });
-      if (!room) throw new BadRequestException('Ruangan tidak ditemukan.');
-      if (!room.isActive) throw new BadRequestException('Ruangan nonaktif.');
+    const roomIds = [
+      ...new Set(
+        [dto.roomId, ...scheduleInputs.map((s) => s.roomId)].filter(
+          (id): id is string => Boolean(id),
+        ),
+      ),
+    ];
+    if (roomIds.length) {
+      const rooms = await this.prisma.room.findMany({ where: { id: { in: roomIds } } });
+      if (rooms.length !== roomIds.length) {
+        throw new BadRequestException('Ruangan tidak ditemukan.');
+      }
+      if (rooms.some((r) => !r.isActive)) {
+        throw new BadRequestException('Ruangan nonaktif.');
+      }
     }
     const today = new Date();
     const validFrom = dto.validFrom ?? `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    // Validasi jadwal SEBELUM menulis — kalau tutor/ruangan bentrok, grup tidak
-    // jadi dibuat sama sekali (tidak ada tulisan parsial).
-    if (hasSchedule) {
-      this.schedules.assertTimeRange(dto.startMin!, dto.endMin!);
+    // Validasi SEMUA jadwal SEBELUM menulis — kalau tutor/ruangan bentrok, grup
+    // tidak jadi dibuat sama sekali (tidak ada tulisan parsial).
+    if (scheduleInputs.length) {
       const vf = parseDateOnly(validFrom);
       const vt = dto.validTo ? parseDateOnly(dto.validTo) : null;
       if (vt && vt < vf) throw new BadRequestException('validTo harus setelah validFrom.');
-      await this.schedules.assertNoScheduleConflict({
-        tutorId: dto.tutorId ?? null, roomId: dto.roomId ?? null,
-        dayOfWeek: dto.dayOfWeek!, startMin: dto.startMin!, endMin: dto.endMin!,
-        validFrom: vf, validTo: vt,
-      });
+      scheduleInputs.forEach((s) => this.schedules.assertTimeRange(s.startMin, s.endMin));
+      // Bentrok antar item dalam batch yang sama (tutor/ruangan sama, hari sama,
+      // jam tumpang tindih) — DB check tidak menangkap ini karena belum ditulis.
+      for (let i = 0; i < scheduleInputs.length; i += 1) {
+        const a = scheduleInputs[i];
+        const aTutor = a.tutorId ?? dto.tutorId ?? null;
+        for (let j = i + 1; j < scheduleInputs.length; j += 1) {
+          const b = scheduleInputs[j];
+          const bTutor = b.tutorId ?? dto.tutorId ?? null;
+          const overlap =
+            a.dayOfWeek === b.dayOfWeek &&
+            a.startMin < b.endMin &&
+            b.startMin < a.endMin;
+          if (!overlap) continue;
+          if (aTutor && aTutor === bTutor) {
+            throw new BadRequestException(
+              `Jadwal ke-${i + 1} dan ke-${j + 1} bentrok — tutor yang sama di jam yang sama.`,
+            );
+          }
+          if (a.roomId && a.roomId === b.roomId) {
+            throw new BadRequestException(
+              `Jadwal ke-${i + 1} dan ke-${j + 1} bentrok — ruangan yang sama di jam yang sama.`,
+            );
+          }
+        }
+      }
+      for (const s of scheduleInputs) {
+        await this.schedules.assertNoScheduleConflict({
+          tutorId: s.tutorId ?? dto.tutorId ?? null,
+          roomId: s.roomId ?? null,
+          dayOfWeek: s.dayOfWeek,
+          startMin: s.startMin,
+          endMin: s.endMin,
+          validFrom: vf,
+          validTo: vt,
+        });
+      }
     }
     const group = await this.prisma.learningGroup.create({
       data: {
@@ -136,23 +207,29 @@ export class GroupsService {
       include: groupListInclude,
     });
     try {
-      // Tutor lead opsional — langsung ditugaskan sebagai tutor kelompok.
+      // Tutor lead + tutor per-jadwal langsung ditugaskan sebagai tutor kelompok.
       if (dto.tutorId) {
         await this.prisma.groupTutor.create({
           data: { groupId: group.id, tutorId: dto.tutorId, isLead: true },
         });
       }
+      for (const tid of tutorIds) {
+        if (tid === dto.tutorId) continue;
+        await this.prisma.groupTutor.create({
+          data: { groupId: group.id, tutorId: tid, isLead: false },
+        });
+      }
       // Jadwal mingguan awal otomatis dibuat mulai tanggal assign (default hari
       // ini) — sesinya tinggal di-generate dari halaman Jadwal & Sesi.
-      if (hasSchedule) {
+      for (const s of scheduleInputs) {
         await this.schedules.create({
           groupId: group.id,
-          tutorId: dto.tutorId ?? null,
-          roomId: dto.roomId ?? null,
-          subjectId: dto.subjectId ?? null,
-          dayOfWeek: dto.dayOfWeek!,
-          startMin: dto.startMin!,
-          endMin: dto.endMin!,
+          tutorId: s.tutorId ?? dto.tutorId ?? null,
+          roomId: s.roomId ?? null,
+          subjectId: s.subjectId ?? null,
+          dayOfWeek: s.dayOfWeek,
+          startMin: s.startMin,
+          endMin: s.endMin,
           validFrom,
           validTo: dto.validTo ?? null,
         });

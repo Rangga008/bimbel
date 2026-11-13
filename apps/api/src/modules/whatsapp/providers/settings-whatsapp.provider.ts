@@ -61,4 +61,11 @@ export class SettingsWhatsAppProvider implements WhatsAppProvider {
   async send(message: WhatsAppMessage): Promise<WhatsAppSendResult> {
     return (await this.resolve()).send(message);
   }
+
+  async checkDelivery(providerRef: string) {
+    const inner = await this.resolve();
+    return inner.checkDelivery
+      ? inner.checkDelivery(providerRef)
+      : { status: 'unknown' };
+  }
 }

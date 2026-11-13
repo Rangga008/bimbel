@@ -21,6 +21,7 @@ import { PhoneVerificationBanner } from "@/components/shared/phone-verification-
 import { useAuthStore } from "@/stores/auth-store";
 import { ROLE_LABELS, navItemsFor, type RoleKey } from "@/config/role-nav";
 import { NotificationBell, userInitials } from "./shell-shared";
+import { RoleSwitcher } from "./role-switcher";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { useBranding } from "@/lib/use-branding";
 
@@ -80,9 +81,14 @@ export function AppShellMobile({
 						<p className="truncate text-sm leading-tight font-semibold">
 							{branding.appName}
 						</p>
-						<p className="truncate text-xs leading-tight text-muted-foreground">
-							{ROLE_LABELS[role]}
-						</p>
+						<RoleSwitcher
+							role={role}
+							fallback={
+								<p className="truncate text-xs leading-tight text-muted-foreground">
+									{ROLE_LABELS[role]}
+								</p>
+							}
+						/>
 					</div>
 				</Link>
 				<div className="flex shrink-0 items-center gap-1.5">

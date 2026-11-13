@@ -37,6 +37,7 @@ interface OutboxRow {
 	status: "PENDING" | "SENT" | "FAILED";
 	attempts: number;
 	error: string | null;
+	deliveryStatus: string | null;
 	sentAt: string | null;
 	createdAt: string;
 }
@@ -310,6 +311,17 @@ export function WhatsAppOutboxManager({
 							{row.sentAt ? (
 								<p className="mt-1 text-xs text-muted-foreground">
 									Terkirim {new Date(row.sentAt).toLocaleString("id-ID")}
+								</p>
+							) : null}
+							{row.status === "SENT" &&
+							row.deliveryStatus &&
+							["pending", "processing", "waiting"].includes(
+								row.deliveryStatus,
+							) ? (
+								<p className="mt-1 text-xs text-amber-600">
+									Status provider: {row.deliveryStatus} — pesan belum
+									pasti sampai ke penerima (cek device WhatsApp di
+									dashboard gateway).
 								</p>
 							) : null}
 						</div>

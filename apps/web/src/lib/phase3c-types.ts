@@ -56,6 +56,8 @@ export interface ExamRow {
   maxScore: number;
   durationMinutes: number | null;
   proctoringEnabled: boolean;
+  /** true = urutan soal diacak per attempt (bersubtes = per subtes). */
+  shuffleQuestions?: boolean;
   /** true = siswa langsung melihat nilai+kunci setelah submit. */
   showResultImmediately?: boolean;
   /** Kode akses untuk peserta luar (ditukar di halaman ujian siswa). */
@@ -217,6 +219,8 @@ export interface CreateExamDto {
   scheduledEndAt: string;
   durationMinutes?: number;
   proctoringEnabled?: boolean;
+  /** true = urutan soal diacak per attempt (bersubtes = per subtes). */
+  shuffleQuestions?: boolean;
   /** true = siswa langsung melihat hasil setelah submit. */
   showResultImmediately?: boolean;
   /** true = tampil di halaman publik /tryout. */
@@ -244,6 +248,7 @@ export interface UpdateExamDto {
   status?: ExamStatus;
   durationMinutes?: number;
   proctoringEnabled?: boolean;
+  shuffleQuestions?: boolean;
   showResultImmediately?: boolean;
   /** true = tampil di halaman publik /tryout. */
   isPublic?: boolean;

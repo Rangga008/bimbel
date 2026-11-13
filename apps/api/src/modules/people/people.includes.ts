@@ -1,6 +1,6 @@
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-const userBrief = { id: true, email: true, name: true, phone: true, avatarUrl: true } as const;
+const userBrief = { id: true, email: true, name: true, phone: true, avatarUrl: true, phoneVerifiedAt: true } as const;
 
 export const studentInclude = {
   user: { select: userBrief },

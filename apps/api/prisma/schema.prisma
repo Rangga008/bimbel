@@ -1523,6 +1523,11 @@ model Exam {
   /// true = siswa langsung melihat nilai+kunci setelah submit;
   /// false = hasil baru dirilis setelah waktu ujian berakhir / diakhiri pengawas.
   showResultImmediately Boolean @default(false)
+  /// Acak urutan soal per attempt — untuk ujian bersubtes, acak hanya di
+  /// dalam tiap subtes (urutan subtes tetap). Urutan final disimpan di
+  /// ExamAttempt.questionOrder supaya nomor soal konsisten di pengerjaan,
+  /// refresh/resume, dan hasil akhir.
+  shuffleQuestions Boolean @default(false)
   /// Kode akses ujian — dimasukkan siswa (terutama peserta luar) untuk
   /// membuka akses ujian tanpa harus jadi anggota kelompok/jenjangnya.
   accessCode       String?   @unique
@@ -1652,6 +1657,10 @@ model ExamAttempt {
   lockedReason    String?            // Alasan penguncian
   unlockedAt      DateTime?          // Waktu attempt dibuka kembali
   unlockedBy      String?            // User yang membuka kembali attempt
+  /// Urutan questionId final untuk attempt ini saat exam.shuffleQuestions
+  /// aktif — null = pakai sortOrder asli. Disimpan (bukan diacak ulang)
+  /// supaya refresh, unlock, dan hasil akhir konsisten.
+  questionOrder   Json?
 
   exam     Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
   student  Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -1936,6 +1945,11 @@ model WhatsAppOutbox {
   status         WhatsAppOutboxStatus @default(PENDING)
   provider       String?              @db.VarChar(40)
   providerRef    String?
+  /** Respons mentah provider saat kirim — diagnostik (mis. process/detail Fonnte). */
+  providerResponse String?
+  /** Status pengiriman terakhir menurut provider (sent/pending/invalid/expired). */
+  deliveryStatus String?             @db.VarChar(20)
+  deliveryCheckedAt DateTime?
   attempts       Int                  @default(0)
   error          String?
   sentAt         DateTime?

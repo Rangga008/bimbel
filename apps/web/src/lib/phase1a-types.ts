@@ -4,6 +4,8 @@ export interface ApiUserBrief {
   name: string;
   phone: string | null;
   avatarUrl?: string | null;
+  /** No. HP sudah terverifikasi (OTP WhatsApp atau manual oleh admin). */
+  phoneVerifiedAt?: string | null;
 }
 
 export interface StudentItem {

@@ -27,6 +27,7 @@ import { AccountsManager } from "@/components/phase0b/accounts-manager";
 import { ProfilePage } from "@/components/shared/profile-page";
 import { NotificationsInbox } from "@/components/phase1d/notifications-inbox";
 import { FinanceSettings } from "@/components/shared/finance-settings";
+import { WhatsAppOutboxManager } from "@/components/phase5b/whatsapp-outbox-manager";
 import { SkeletonPage } from "@/components/skeleton-page";
 import { findNavItem } from "@/config/role-nav";
 
@@ -68,6 +69,7 @@ export default async function AdminAcademicMenuPage({
 	if (slug === "analisis") return <AdminAcademicAnalytics />;
 	if (slug === "ranking") return <AdminRankingPage />;
 	if (slug === "laporan") return <AdvancedReportsManager />;
+	if (slug === "antrean-wa") return <WhatsAppOutboxManager />;
 	if (slug === "pengaturan") return <FinanceSettings />;
 	if (slug === "akun") return <AccountsManager basePath="/admin-academic" />;
 	if (slug === "notifikasi") return <NotificationsInbox />;

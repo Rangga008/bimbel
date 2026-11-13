@@ -48,7 +48,11 @@ const VIOLATION_LABEL: Record<ProctoringViolationType, string> = {
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
-const lastIndexKey = (attemptId: string) => `exam-attempt-${attemptId}-idx`;
+// Posisi soal disimpan per-subtes — indeks subtes sebelumnya tidak boleh
+// dipulihkan ke subtes aktif (siswa terlihat "lompat" ke soal lain).
+const lastIndexKey = (attemptId: string, subtesId?: string | null) =>
+  `exam-attempt-${attemptId}-idx-${subtesId ?? 'all'}`;
+const legacyIndexKey = (attemptId: string) => `exam-attempt-${attemptId}-idx`;
 
 /**
  * Fase 3d — Proctoring realistis di sisi client.
@@ -110,6 +114,45 @@ function useExamProctoring(params: {
     };
   }, [active, reportViolation]);
 
+  // Tahan layar agar tidak tidur/mat selama attempt aktif — screen-off
+  // memicu visibilitychange yang terhitung pelanggaran. Best-effort:
+  // browser tanpa Screen Wake Lock API diabaikan; lock dilepas otomatis
+  // saat halaman hidden lalu diminta ulang saat kembali visible.
+  useEffect(() => {
+    if (!active) return;
+    type WakeLockSentinel = { release: () => Promise<void> };
+    const nav = navigator as Navigator & {
+      wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinel> };
+    };
+    if (!nav.wakeLock?.request) return;
+
+    const lockRef = { current: null as WakeLockSentinel | null };
+    let cancelled = false;
+    const acquire = async () => {
+      try {
+        const lock = await nav.wakeLock!.request('screen');
+        if (cancelled) {
+          void lock.release();
+          return;
+        }
+        lockRef.current = lock;
+      } catch {
+        // Ditolak (baterai hemat, tab tak fokus, dsb.) — deteksi biasa tetap jalan.
+      }
+    };
+    const onVisible = () => {
+      if (!document.hidden && !lockRef.current) void acquire();
+    };
+    void acquire();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      void lockRef.current?.release();
+      lockRef.current = null;
+    };
+  }, [active]);
+
   const requestFullscreen = useCallback(async () => {
     if (!document.documentElement.requestFullscreen) return false;
     try {
@@ -144,6 +187,11 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
   const retryCounts = useRef<Record<string, number>>({});
   const timeUpHandledRef = useRef(false);
   const indexRestoredRef = useRef(false);
+  // Mirror jawaban lokal — dipakai untuk kirim ulang jawaban yang gagal
+  // tersimpan selama attempt LOCKED begitu attempt di-unlock.
+  const answersRef = useRef<Record<string, SaveExamAnswerDto>>({});
+  answersRef.current = answers;
+  const prevStatusRef = useRef<string | null>(null);
 
   // Source of truth = react-query cache. Polling saat status LOCKED (menunggu
   // unlock pengawas) dan saat waktu habis (menunggu auto-submit server).
@@ -180,9 +228,16 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
       return next;
     });
     // Pulihkan posisi soal terakhir (bertahan saat kunci → unlock → lanjut).
+    // Kunci disimpan per-subtes — indeks subtes lain tidak boleh dipulihkan.
     if (!indexRestoredRef.current) {
       indexRestoredRef.current = true;
-      const saved = Number(localStorage.getItem(lastIndexKey(attemptId)));
+      const states = attemptQ.data?.subtesStates ?? [];
+      const activeId =
+        states.find((s) => s.startedAt && !s.submittedAt)?.subtesId ?? null;
+      const raw =
+        localStorage.getItem(lastIndexKey(attemptId, activeId)) ??
+        localStorage.getItem(legacyIndexKey(attemptId));
+      const saved = Number(raw);
       if (Number.isFinite(saved) && saved >= 0) {
         setCurrentIndex(Math.min(saved, items.length - 1));
       }
@@ -195,10 +250,14 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
     const max = Math.max(0, visibleItemsRef.current.length - 1);
     const clamped = Math.max(0, Math.min(index, max));
     setCurrentIndex(clamped);
-    localStorage.setItem(lastIndexKey(attemptId), String(clamped));
+    localStorage.setItem(
+      lastIndexKey(attemptId, activeSubtesIdRef.current),
+      String(clamped),
+    );
     setNumPadOpen(false);
   };
   const visibleItemsRef = useRef<{ questionId: string }[]>([]);
+  const activeSubtesIdRef = useRef<string | null>(null);
 
   // Timer sisi klien: hanya menampilkan hitung mundur. Waktu otoritatif tetap
   // server (scheduled_end_at + auto-submit scheduler) — client hanya menampilkan
@@ -321,6 +380,29 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
     }, debounceMs);
   };
 
+  // Jawaban yang gagal terkirim selama attempt LOCKED (retry habis saat masa
+  // kunci) dikirim ulang begitu attempt di-unlock — mencegah jawaban "hilang"
+  // padahal siswa sudah menjawab.
+  useEffect(() => {
+    const status = attempt?.status ?? null;
+    if (prevStatusRef.current === 'LOCKED' && status === 'IN_PROGRESS' && attempt) {
+      // Hanya subtes yang masih terbuka — jawaban untuk subtes yang sudah
+      // ditutup server-side tidak perlu dikirim ulang (akan ditolak 400).
+      const openSubtes = new Set(
+        (attempt.subtesStates ?? []).filter((s) => !s.submittedAt).map((s) => s.subtesId),
+      );
+      const multiSubtes = (attempt.exam.subtes?.length ?? 0) > 0;
+      for (const [questionId, answer] of Object.entries(answersRef.current)) {
+        const item = attempt.items.find((it) => it.questionId === questionId);
+        if (!item) continue;
+        if (multiSubtes && (!item.subtesId || !openSubtes.has(item.subtesId))) continue;
+        void persistAnswer(questionId, answer);
+      }
+    }
+    prevStatusRef.current = status;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attempt?.status]);
+
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
   // Panel navigasi subtes di top bar (gaya GO) — status tiap subtes + aksi mulai.
@@ -346,6 +428,9 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
       qc.setQueryData(attemptQueryKey(attemptId), data);
     } catch (e) {
       setError(err(e, 'Gagal mengumpulkan ujian'));
+      // Refetch — attempt mungkin sudah terkumpul via auto-submit; cache
+      // basi membuat tombol Kumpulkan terlihat aktif padahal sudah final.
+      void attemptQ.refetch();
     }
   };
 
@@ -467,6 +552,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
     ? attempt.items.filter((it) => it.subtesId === activeSubtesId)
     : attempt.items;
   visibleItemsRef.current = visibleItems;
+  activeSubtesIdRef.current = activeSubtesId;
 
   const isAnswered = (questionId: string) => {
     const a = answers[questionId];
@@ -726,7 +812,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
       {isLastVisible ? (
         <Button
           onClick={() => (hasSubtes ? setSubtesConfirmOpen(true) : submitExam())}
-          disabled={!isInProgress || timeLeft <= 0 || subtesBusy}
+          disabled={!isInProgress || subtesBusy}
         >
           {hasSubtes ? 'Kumpulkan Subtes' : 'Kumpulkan'}
         </Button>
@@ -921,7 +1007,7 @@ export function ExamTaker({ attemptId }: ExamTakerProps) {
                 size="sm"
                 variant={allSubtesDone ? 'default' : 'outline'}
                 onClick={submitExam}
-                disabled={!allSubtesDone || timeLeft <= 0 || subtesBusy}
+                disabled={!allSubtesDone || subtesBusy}
                 className="shrink-0"
               >
                 Kumpulkan Ujian
