@@ -6,9 +6,10 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowRightLeft, Check, Square, SquareCheck } from 'lucide-react';
+import { ArrowRightLeft, Check, Search, Square, SquareCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { SessionDetail, SessionItem } from '@/lib/phase1c-types';
@@ -29,6 +30,8 @@ export function SessionRosterEditor({
   const qc = useQueryClient();
   const [picked, setPicked] = useState<Set<string> | null>(null);
   const [moveTarget, setMoveTarget] = useState<Record<string, string>>({});
+  // Filter nama peserta — kelompok besar butuh pencarian, bukan scroll.
+  const [query, setQuery] = useState('');
 
   const detailQ = useQuery({
     queryKey: ['sessions', sessionId, 'roster-editor'],
@@ -113,6 +116,10 @@ export function SessionRosterEditor({
   if (!d) return <p className="text-sm text-muted-foreground">Detail sesi tidak tersedia.</p>;
 
   const members = d.group.members ?? [];
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? members.filter((m) => m.student.user.name.toLowerCase().includes(q))
+    : members;
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
@@ -128,18 +135,30 @@ export function SessionRosterEditor({
             variant="ghost"
             size="sm"
             className="h-7 text-xs"
-            onClick={() => setPicked(new Set(members.map((m) => m.studentId)))}
+            onClick={() =>
+              setPicked((prev) => {
+                const base = new Set(prev ?? serverIds);
+                for (const m of filtered) base.add(m.studentId);
+                return base;
+              })
+            }
           >
-            Pilih semua
+            {q ? 'Pilih hasil' : 'Pilih semua'}
           </Button>
           <Button
             type="button"
             variant="ghost"
             size="sm"
             className="h-7 text-xs"
-            onClick={() => setPicked(new Set())}
+            onClick={() =>
+              setPicked((prev) => {
+                const base = new Set(prev ?? serverIds);
+                for (const m of filtered) base.delete(m.studentId);
+                return base;
+              })
+            }
           >
-            Kosongkan
+            {q ? 'Kosongkan hasil' : 'Kosongkan'}
           </Button>
         </div>
       </div>
@@ -148,8 +167,19 @@ export function SessionRosterEditor({
         dipecah ke beberapa sesi — siswa yang berhalangan bisa dipindahkan ke
         sesi lain lewat dropdown di tiap baris.
       </p>
-      <div className="flex flex-col gap-1.5">
-        {members.map((m) => {
+      {members.length > 0 ? (
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="h-8 pl-7 text-xs"
+            placeholder="Cari nama siswa…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+      ) : null}
+      <div className="flex max-h-72 flex-col gap-1.5 overflow-y-auto">
+        {filtered.map((m) => {
           const on = active.has(m.studentId);
           const target = moveTarget[m.studentId] ?? '';
           return (
@@ -210,7 +240,17 @@ export function SessionRosterEditor({
             Kelompok ini belum punya anggota siswa.
           </p>
         ) : null}
+        {members.length > 0 && filtered.length === 0 ? (
+          <p className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">
+            Tidak ada siswa bernama &quot;{query.trim()}&quot;.
+          </p>
+        ) : null}
       </div>
+      {q ? (
+        <p className="text-[11px] text-muted-foreground">
+          Menampilkan {filtered.length} dari {members.length} siswa.
+        </p>
+      ) : null}
       {dirty ? (
         <div className="flex items-center gap-2">
           <Button size="sm" disabled={saveM.isPending} onClick={() => saveM.mutate()}>

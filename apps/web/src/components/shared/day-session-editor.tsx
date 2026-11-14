@@ -7,7 +7,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CalendarClock, DoorOpen, Flag, ListChecks, Pencil, Plus, Trash2, User } from "lucide-react";
+import { CalendarClock, DoorOpen, Flag, ListChecks, Pencil, Plus, Search, Trash2, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +60,8 @@ export function DaySessionEditor({
 	const [form, setForm] = useState<CreateForm>({ ...EMPTY, tutorId: defaultTutorId });
 	// Centang siswa untuk sesi baru — null = semua anggota (default).
 	const [pickedStudents, setPickedStudents] = useState<Set<string> | null>(null);
+	// Filter nama pada panel centang siswa — kelompok besar butuh pencarian.
+	const [studentQuery, setStudentQuery] = useState("");
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [deleteTarget, setDeleteTarget] = useState<SessionItem | null>(null);
 	const [editForm, setEditForm] = useState({ start: "", end: "", subjectId: "", roomId: "", status: "" });
@@ -141,6 +143,17 @@ export function DaySessionEditor({
 		if (gd.program.subject) map.set(gd.program.subject.id, gd.program.subject);
 		return [...map.values()];
 	}, [groupDetailQ.data]);
+	// Anggota kelompok terfilter pencarian — aksi "Semua/Bersihkan" berlaku
+	// ke hasil filter saat query aktif, ke seluruh anggota saat kosong.
+	const groupMembers = useMemo(
+		() => (groupDetailQ.data && !Array.isArray(groupDetailQ.data) ? (groupDetailQ.data.members ?? []) : []),
+		[groupDetailQ.data],
+	);
+	const filteredMembers = useMemo(() => {
+		const q = studentQuery.trim().toLowerCase();
+		if (!q) return groupMembers;
+		return groupMembers.filter((m) => m.student.user.name.toLowerCase().includes(q));
+	}, [groupMembers, studentQuery]);
 
 	const assignM = useMutation({
 		mutationFn: ({ sessionId, tutorId }: { sessionId: string; tutorId: string | null }) =>
@@ -158,6 +171,7 @@ export function DaySessionEditor({
 			toast.success("Sesi baru dibuat dan tutor ditugaskan.");
 			setForm({ ...EMPTY, tutorId: defaultTutorId });
 			setPickedStudents(null);
+			setStudentQuery("");
 			invalidate();
 		},
 		onError: (e) => toast.error(e instanceof ApiError ? e.message : "Gagal membuat sesi."),
@@ -449,7 +463,7 @@ export function DaySessionEditor({
 							className="h-9 rounded-md border px-2 text-sm"
 							value={form.groupId}
 							disabled={!form.tutorId}
-							onChange={(e) => { setForm((f) => ({ ...f, groupId: e.target.value, subjectId: "" })); setPickedStudents(null); }}
+							onChange={(e) => { setForm((f) => ({ ...f, groupId: e.target.value, subjectId: "" })); setPickedStudents(null); setStudentQuery(""); }}
 						>
 							<option value="">
 								{!form.tutorId
@@ -506,28 +520,49 @@ export function DaySessionEditor({
 						<Input type="time" value={form.end} onChange={(e) => setForm((f) => ({ ...f, end: e.target.value }))} />
 					</div>
 				</div>
-				{form.groupId && (groupDetailQ.data?.members?.length ?? 0) > 0 ? (
+				{form.groupId && groupMembers.length > 0 ? (
 					<div className="flex flex-col gap-2 rounded-md border bg-background p-2.5">
-						<div className="flex items-center justify-between gap-2">
+						<div className="flex flex-wrap items-center justify-between gap-2">
 							<p className="text-xs font-medium">
 								Siswa yang hadir di sesi ini{" "}
 								<span className="font-normal text-muted-foreground">
-									({pickedStudents?.size ?? groupDetailQ.data!.members.length}/{groupDetailQ.data!.members.length} dicentang)
+									({pickedStudents?.size ?? groupMembers.length}/{groupMembers.length} dicentang)
 								</span>
 							</p>
 							<div className="flex gap-1.5">
 								<Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[11px]"
-									onClick={() => setPickedStudents(new Set(groupDetailQ.data!.members.map((m) => m.studentId)))}>
-									Semua
+									onClick={() =>
+										setPickedStudents((prev) => {
+											const base = new Set(prev ?? groupMembers.map((m) => m.studentId));
+											for (const m of filteredMembers) base.add(m.studentId);
+											return base;
+										})
+									}>
+									{studentQuery.trim() ? "Semua hasil" : "Semua"}
 								</Button>
 								<Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[11px]"
-									onClick={() => setPickedStudents(new Set())}>
-									Bersihkan
+									onClick={() =>
+										setPickedStudents((prev) => {
+											const base = new Set(prev ?? groupMembers.map((m) => m.studentId));
+											for (const m of filteredMembers) base.delete(m.studentId);
+											return base;
+										})
+									}>
+									{studentQuery.trim() ? "Bersihkan hasil" : "Bersihkan"}
 								</Button>
 							</div>
 						</div>
+						<div className="relative">
+							<Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+							<Input
+								className="h-8 pl-7 text-xs"
+								placeholder="Cari nama siswa…"
+								value={studentQuery}
+								onChange={(e) => setStudentQuery(e.target.value)}
+							/>
+						</div>
 						<div className="grid max-h-40 grid-cols-1 gap-1 overflow-y-auto sm:grid-cols-2">
-							{groupDetailQ.data!.members.map((m) => {
+							{filteredMembers.map((m) => {
 								const on = pickedStudents === null || pickedStudents.has(m.studentId);
 								return (
 									<label key={m.studentId} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-muted/60">
@@ -537,7 +572,7 @@ export function DaySessionEditor({
 											checked={on}
 											onChange={() =>
 												setPickedStudents((prev) => {
-													const base = new Set(prev ?? groupDetailQ.data!.members.map((mm) => mm.studentId));
+													const base = new Set(prev ?? groupMembers.map((mm) => mm.studentId));
 													if (base.has(m.studentId)) base.delete(m.studentId);
 													else base.add(m.studentId);
 													return base;
@@ -548,7 +583,17 @@ export function DaySessionEditor({
 									</label>
 								);
 							})}
+							{filteredMembers.length === 0 ? (
+								<p className="col-span-full py-2 text-center text-xs text-muted-foreground">
+									Tidak ada siswa bernama &quot;{studentQuery.trim()}&quot;.
+								</p>
+							) : null}
 						</div>
+						{studentQuery.trim() ? (
+							<p className="text-[11px] text-muted-foreground">
+								Menampilkan {filteredMembers.length} dari {groupMembers.length} siswa.
+							</p>
+						) : null}
 					</div>
 				) : null}
 				<div>
