@@ -94,18 +94,16 @@ export function AttendanceCorrectBox() {
       </div>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <div className="flex flex-col gap-1.5"><Label htmlFor="corr-tingkat">Tingkat</Label>
-          <select
+          <ComboboxField
             id="corr-tingkat"
-            className="h-10 rounded-md border px-3 text-sm"
             value={tingkat}
-            onChange={(e) => {
-              setTingkat(e.target.value);
+            onChange={(v) => {
+              setTingkat(v);
               setGroupId(''); setSessionId(''); setStudentId('');
             }}
-          >
-            <option value="">- Pilih tingkat -</option>
-            {tingkats.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
+            options={tingkats.map((t) => ({ value: t, label: t }))}
+            placeholder="- Pilih tingkat -"
+          />
         </div>
         <div className="flex flex-col gap-1.5"><Label htmlFor="corr-group">Kelompok</Label>
           <ComboboxField

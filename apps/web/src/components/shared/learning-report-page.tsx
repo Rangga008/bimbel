@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { FileText, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
+import { ComboboxField } from "@/components/shared/combobox-field";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -174,68 +175,45 @@ export function LearningReportPage({
 							<Label htmlFor="lrp-student">
 								{audience === "parent" ? "Anak" : "Siswa"}
 							</Label>
-							<select
+							<ComboboxField
 								id="lrp-student"
-								className="h-9 rounded-md border bg-background px-3 text-sm"
 								value={studentId}
-								onChange={(e) => {
-									setStudentId(e.target.value);
+								onChange={(v) => {
+									setStudentId(v);
 									setExcluded(new Set());
 								}}
-							>
-								<option value="">
-									{studentsQ.isLoading ? "Memuat…" : "— Pilih —"}
-								</option>
-								{students.map((s) => (
-									<option key={s.id} value={s.id}>
-										{s.user?.name ?? s.name ?? s.id}
-									</option>
-								))}
-							</select>
+								options={students.map((s) => ({ value: s.id, label: s.user?.name ?? s.name ?? s.id }))}
+								placeholder={studentsQ.isLoading ? "Memuat…" : "— Pilih —"}
+								emptyText="Tidak ada siswa bernama itu."
+							/>
 						</div>
 					) : null}
 					<div className="grid gap-1.5">
 						<Label htmlFor="lrp-cat">Tipe ujian utama</Label>
-						<select
+						<ComboboxField
 							id="lrp-cat"
-							className="h-9 rounded-md border bg-background px-3 text-sm"
 							value={category}
-							onChange={(e) => {
-								setCategory(e.target.value);
+							onChange={(v) => {
+								setCategory(v);
 								setExcluded(new Set());
 							}}
-						>
-							<option value="">
-								{catsQ.isLoading
-									? "Memuat…"
-									: "— Pilih tipe (mis. TKA / TO / UTBK) —"}
-							</option>
-							{cats.map((c) => (
-								<option key={c.code} value={c.code}>
-									{c.name}
-								</option>
-							))}
-						</select>
+							options={cats.map((c) => ({ value: c.code, label: c.name }))}
+							placeholder={catsQ.isLoading ? "Memuat…" : "— Pilih tipe (mis. TKA / TO / UTBK) —"}
+							emptyText="Tidak ada tipe bernama itu."
+						/>
 					</div>
 					<div className="grid gap-1.5">
 						<Label htmlFor="lrp-basic">
 							Tes Kemampuan Dasar (opsional)
 						</Label>
-						<select
+						<ComboboxField
 							id="lrp-basic"
-							className="h-9 rounded-md border bg-background px-3 text-sm"
 							value={basic}
-							onChange={(e) => setBasic(e.target.value)}
-						>
-							<option value="">— Tidak ada —</option>
-							{cats
-								.filter((c) => c.code !== category)
-								.map((c) => (
-									<option key={c.code} value={c.code}>
-										{c.name}
-									</option>
-								))}
-						</select>
+							onChange={setBasic}
+							options={cats.filter((c) => c.code !== category).map((c) => ({ value: c.code, label: c.name }))}
+							placeholder="— Tidak ada —"
+							emptyText="Tidak ada tipe bernama itu."
+						/>
 					</div>
 				</div>
 

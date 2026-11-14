@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { FileText, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
+import { ComboboxField } from "@/components/shared/combobox-field";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -117,41 +118,27 @@ export function LearningReportButton({ endpoint }: { endpoint: string }) {
 						<div className="grid gap-4 py-2">
 							<div className="grid gap-1.5">
 								<Label htmlFor="lr-cat">Tipe ujian utama</Label>
-								<select
+								<ComboboxField
 									id="lr-cat"
-									className="h-9 rounded-md border bg-background px-3 text-sm"
 									value={category}
-									onChange={(e) => setCategory(e.target.value)}
-								>
-									<option value="">
-										{catsQ.isLoading ? "Memuat…" : "— Pilih tipe (mis. TKA / TO / UTBK) —"}
-									</option>
-									{cats.map((c) => (
-										<option key={c.code} value={c.code}>
-											{c.name}
-										</option>
-									))}
-								</select>
+									onChange={setCategory}
+									options={cats.map((c) => ({ value: c.code, label: c.name }))}
+									placeholder={catsQ.isLoading ? "Memuat…" : "— Pilih tipe (mis. TKA / TO / UTBK) —"}
+									emptyText="Tidak ada tipe bernama itu."
+								/>
 							</div>
 							<div className="grid gap-1.5">
 								<Label htmlFor="lr-basic">
 									Tes Kemampuan Dasar (opsional)
 								</Label>
-								<select
+								<ComboboxField
 									id="lr-basic"
-									className="h-9 rounded-md border bg-background px-3 text-sm"
 									value={basic}
-									onChange={(e) => setBasic(e.target.value)}
-								>
-									<option value="">— Tidak ada —</option>
-									{cats
-										.filter((c) => c.code !== category)
-										.map((c) => (
-											<option key={c.code} value={c.code}>
-												{c.name}
-											</option>
-										))}
-								</select>
+									onChange={setBasic}
+									options={cats.filter((c) => c.code !== category).map((c) => ({ value: c.code, label: c.name }))}
+									placeholder="— Tidak ada —"
+									emptyText="Tidak ada tipe bernama itu."
+								/>
 								<p className="text-xs text-muted-foreground">
 									Tipe ujian ini ditampilkan sebagai tabel terpisah
 									"Tes Kemampuan Dasar" di atas tabel utama.

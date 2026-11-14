@@ -111,19 +111,20 @@ export function SessionOverrideBox({ sessionId, onDeleted }: { sessionId: string
           Tutor per sesi bisa berbeda-beda tiap minggu — pilih dari tutor yang ditugaskan ke kelompok ini.
         </p>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <select
-            className="h-9 flex-1 rounded-md border px-2 text-sm"
-            value={tutorDraft ?? d?.tutor?.id ?? ''}
-            onChange={(e) => setTutorDraft(e.target.value)}
-            disabled={isCancelled}
-          >
-            <option value="">— Belum ditentukan —</option>
-            {(d?.group.tutors ?? []).map((t) => (
-              <option key={t.tutorId} value={t.tutorId} disabled={!t.tutor.isActive}>
-                {t.tutor.user.name}{t.isLead ? ' (lead)' : ''}{t.tutor.isActive ? '' : ' — nonaktif'}
-              </option>
-            ))}
-          </select>
+          <div className="flex-1">
+            <ComboboxField
+              id={`sob-tutor-${sessionId}`}
+              value={tutorDraft ?? d?.tutor?.id ?? ''}
+              onChange={setTutorDraft}
+              disabled={isCancelled}
+              options={(d?.group.tutors ?? []).map((t) => ({
+                value: t.tutorId,
+                label: `${t.tutor.user.name}${t.isLead ? ' (lead)' : ''}${t.tutor.isActive ? '' : ' — nonaktif'}`,
+              }))}
+              placeholder="— Belum ditentukan —"
+              emptyText="Tidak ada tutor bernama itu."
+            />
+          </div>
           <Button
             size="sm"
             variant="outline"

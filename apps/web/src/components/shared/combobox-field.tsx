@@ -88,18 +88,23 @@ export function ComboboxField({
 				</div>
 			</div>
 			<Combobox.Portal>
-				<Combobox.Positioner sideOffset={4} className="z-50">
-					<Combobox.Popup className="max-h-80 w-(--anchor-width) overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg">
+				<Combobox.Positioner sideOffset={4} collisionPadding={8} className="z-50">
+					{/* max-h mengikuti --available-height dari positioner — popup tidak
+					    pernah melebihi sisa ruang viewport, jadi opsi terakhir selalu
+					    terlihat dan list bisa di-scroll sampai habis. Lebar minimal
+					    selebar trigger tapi boleh melebar sampai 26rem/viewport supaya
+					    label opsi panjang (tanggal + mapel) tetap terbaca, tidak "…". */}
+					<Combobox.Popup className="flex max-h-[min(20rem,var(--available-height))] w-max min-w-(--anchor-width) max-w-[min(26rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg">
 						<Combobox.Empty className="px-3 py-4 text-center text-sm text-muted-foreground">
 							{emptyText}
 						</Combobox.Empty>
-						<Combobox.List className="max-h-80 overflow-y-auto p-1">
+						<Combobox.List className="min-h-0 flex-1 overflow-y-auto p-1">
 							{(option: ComboboxOption) => (
 								<Combobox.Item
 									key={option.value}
 									value={option}
 									className={cn(
-										"flex cursor-default items-center gap-2 rounded-lg px-3 py-2 text-sm outline-none",
+										"flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm outline-none transition-colors",
 										"data-highlighted:bg-muted data-selected:font-medium",
 									)}
 								>

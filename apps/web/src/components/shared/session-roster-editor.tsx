@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, ApiError } from '@/lib/api-client';
+import { ComboboxField } from '@/components/shared/combobox-field';
 import type { SessionDetail, SessionItem } from '@/lib/phase1c-types';
 import { fmtDateTime } from '@/lib/phase1c-types';
 import { cn } from '@/lib/utils';
@@ -192,7 +193,7 @@ export function SessionRosterEditor({
             >
               <button
                 type="button"
-                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                className="-m-1 flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 text-left transition-colors hover:bg-muted/60"
                 onClick={() => toggle(m.studentId)}
               >
                 {on ? (
@@ -205,26 +206,27 @@ export function SessionRosterEditor({
               {on && moveTargets.length ? (
                 <div className="flex items-center gap-1.5 pl-6 sm:pl-0">
                   <ArrowRightLeft className="size-3.5 shrink-0 text-muted-foreground" />
-                  <select
-                    className="h-8 max-w-52 rounded-md border px-1.5 text-xs"
-                    value={target}
-                    onChange={(e) =>
-                      setMoveTarget((prev) => ({ ...prev, [m.studentId]: e.target.value }))
-                    }
-                  >
-                    <option value="">Pindah ke sesi…</option>
-                    {moveTargets.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {fmtDateTime(s.startsAt)}
-                        {s.subject ? ` — ${s.subject.name}` : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="max-w-52 flex-1">
+                    <ComboboxField
+                      id={`roster-move-${sessionId}-${m.studentId}`}
+                      value={target}
+                      disabled={moveM.isPending}
+                      onChange={(v) =>
+                        setMoveTarget((prev) => ({ ...prev, [m.studentId]: v }))
+                      }
+                      options={moveTargets.map((s) => ({
+                        value: s.id,
+                        label: `${fmtDateTime(s.startsAt)}${s.subject ? ` — ${s.subject.name}` : ''}`,
+                      }))}
+                      placeholder="Pindah ke sesi…"
+                      emptyText="Tidak ada sesi cocok."
+                    />
+                  </div>
                   <Button
                     type="button"
                     size="sm"
-                    variant="outline"
-                    className="h-8 text-xs"
+                    variant={target ? 'default' : 'outline'}
+                    className={cn('h-8 text-xs transition-all', target && 'shadow-sm')}
                     disabled={!target || moveM.isPending}
                     onClick={() => moveM.mutate({ studentId: m.studentId, toSessionId: target })}
                   >

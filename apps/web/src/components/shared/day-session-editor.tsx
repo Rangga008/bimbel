@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiFetch, ApiError } from "@/lib/api-client";
+import { ComboboxField } from "@/components/shared/combobox-field";
+import { SessionRosterEditor } from "@/components/shared/session-roster-editor";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { cn } from "@/lib/utils";
 import type { TutorItem } from "@/lib/phase1a-types";
@@ -346,19 +348,19 @@ export function DaySessionEditor({
 						</div>
 						<div className="flex items-center gap-1.5">
 							<User className="size-3.5 shrink-0 text-muted-foreground" />
-							<select
-								className="h-8 w-40 rounded-md border px-1.5 text-xs"
-								value={s.tutorId ?? ""}
-								disabled={assignM.isPending || s.status === "CANCELLED"}
-								onChange={(e) => assignM.mutate({ sessionId: s.id, tutorId: e.target.value || null })}
-							>
-								<option value="">— Belum ditentukan —</option>
-								{activeTutors
-									.filter((t) => (t.groupTutors ?? []).some((gt) => gt.groupId === s.groupId) || t.id === s.tutorId)
-									.map((t) => (
-										<option key={t.id} value={t.id}>{t.user.name}</option>
-									))}
-							</select>
+							<div className="w-44">
+								<ComboboxField
+									id={`dse-tutor-${s.id}`}
+									value={s.tutorId ?? ""}
+									disabled={assignM.isPending || s.status === "CANCELLED"}
+									onChange={(v) => assignM.mutate({ sessionId: s.id, tutorId: v || null })}
+									options={activeTutors
+										.filter((t) => (t.groupTutors ?? []).some((gt) => gt.groupId === s.groupId) || t.id === s.tutorId)
+										.map((t) => ({ value: t.id, label: t.user.name }))}
+									placeholder="— Belum ditentukan —"
+									emptyText="Tidak ada tutor bernama itu."
+								/>
+							</div>
 							<Button
 								variant="ghost" size="icon" className="size-8"
 								title="Edit sesi (jam/mapel/ruangan/status)"
@@ -397,20 +399,22 @@ export function DaySessionEditor({
 										<Label className="text-xs">Selesai</Label>
 										<Input type="time" className="h-8 text-xs" value={editForm.end} onChange={(e) => setEditForm((f) => ({ ...f, end: e.target.value }))} />
 									</div>
-									<div className="flex flex-col gap-1">
-										<Label className="text-xs">Mapel</Label>
-										<select className="h-8 rounded-md border px-1.5 text-xs" value={editForm.subjectId} onChange={(e) => setEditForm((f) => ({ ...f, subjectId: e.target.value }))}>
-											<option value="">— Ikut jenjang —</option>
-											{editSubjects.map((sub) => <option key={sub.id} value={sub.id}>{sub.name}</option>)}
-										</select>
-									</div>
-									<div className="flex flex-col gap-1">
-										<Label className="text-xs">Ruangan</Label>
-										<select className="h-8 rounded-md border px-1.5 text-xs" value={editForm.roomId} onChange={(e) => setEditForm((f) => ({ ...f, roomId: e.target.value }))}>
-											<option value="">— Tentukan nanti —</option>
-											{(roomsQ.data ?? []).filter((r) => r.isActive || r.id === s.roomId).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-										</select>
-									</div>
+									<ComboboxField
+										id={`dse-subject-${s.id}`} label="Mapel"
+										value={editForm.subjectId}
+										onChange={(v) => setEditForm((f) => ({ ...f, subjectId: v }))}
+										options={editSubjects.map((sub) => ({ value: sub.id, label: sub.name }))}
+										placeholder="— Ikut jenjang —"
+										emptyText="Tidak ada mapel bernama itu."
+									/>
+									<ComboboxField
+										id={`dse-room-${s.id}`} label="Ruangan"
+										value={editForm.roomId}
+										onChange={(v) => setEditForm((f) => ({ ...f, roomId: v }))}
+										options={(roomsQ.data ?? []).filter((r) => r.isActive || r.id === s.roomId).map((r) => ({ value: r.id, label: r.name }))}
+										placeholder="— Tentukan nanti —"
+										emptyText="Tidak ada ruangan bernama itu."
+									/>
 									<div className="flex flex-col gap-1">
 										<Label className="text-xs">Status</Label>
 										<select className="h-8 rounded-md border px-1.5 text-xs" value={editForm.status} onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value }))}>
@@ -426,6 +430,11 @@ export function DaySessionEditor({
 									</Button>
 									<Button size="sm" variant="ghost" className="h-8" onClick={() => setEditingId(null)}>Batal</Button>
 								</div>
+								{s.status !== "CANCELLED" ? (
+									<div className="border-t pt-2">
+										<SessionRosterEditor sessionId={s.id} />
+									</div>
+								) : null}
 							</div>
 						) : null}
 					</div>
@@ -442,75 +451,56 @@ export function DaySessionEditor({
 					<Plus className="size-4" /> Tugaskan tutor ke sesi baru
 				</p>
 				<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+					<ComboboxField
+						id="dse-tutor" label="Tutor"
+						value={form.tutorId}
+						onChange={(v) => setForm((f) => ({ ...f, tutorId: v, groupId: "", subjectId: "" }))}
+						options={activeTutors.map((t) => ({
+							value: t.id,
+							label: `${t.user.name}${t.specialization ? ` (${t.specialization})` : ""}`,
+						}))}
+						placeholder="— Pilih tutor —"
+						emptyText="Tidak ada tutor bernama itu."
+					/>
 					<div className="flex flex-col gap-1.5">
-						<Label>Tutor</Label>
-						<select
-							className="h-9 rounded-md border px-2 text-sm"
-							value={form.tutorId}
-							onChange={(e) => setForm((f) => ({ ...f, tutorId: e.target.value, groupId: "", subjectId: "" }))}
-						>
-							<option value="">— Pilih tutor —</option>
-							{activeTutors.map((t) => (
-								<option key={t.id} value={t.id}>
-									{t.user.name}{t.specialization ? ` (${t.specialization})` : ""}
-								</option>
-							))}
-						</select>
-					</div>
-					<div className="flex flex-col gap-1.5">
-						<Label>Kelompok</Label>
-						<select
-							className="h-9 rounded-md border px-2 text-sm"
+						<ComboboxField
+							id="dse-group" label="Kelompok"
 							value={form.groupId}
-							disabled={!form.tutorId}
-							onChange={(e) => { setForm((f) => ({ ...f, groupId: e.target.value, subjectId: "" })); setPickedStudents(null); setStudentQuery(""); }}
-						>
-							<option value="">
-								{!form.tutorId
+							disabled={!form.tutorId || tutorGroups.length === 0}
+							onChange={(v) => { setForm((f) => ({ ...f, groupId: v, subjectId: "" })); setPickedStudents(null); setStudentQuery(""); }}
+							options={tutorGroups.map((g) => ({ value: g.id, label: g.name }))}
+							placeholder={
+								!form.tutorId
 									? "— Pilih tutor dulu —"
 									: tutorGroups.length === 0
 										? "— Tutor belum ditugaskan ke kelompok —"
-										: "— Pilih kelompok —"}
-							</option>
-							{tutorGroups.map((g) => (
-								<option key={g.id} value={g.id}>{g.name}</option>
-							))}
-						</select>
+										: "— Pilih kelompok —"
+							}
+							emptyText="Tidak ada kelompok bernama itu."
+						/>
 						{form.tutorId && tutorGroups.length === 0 ? (
 							<p className="text-xs text-warning-700">
 								Tugaskan tutor ini ke kelompok dulu lewat halaman Kelompok.
 							</p>
 						) : null}
 					</div>
-					<div className="flex flex-col gap-1.5">
-						<Label>Mapel</Label>
-						<select
-							className="h-9 rounded-md border px-2 text-sm"
-							value={form.subjectId}
-							disabled={!form.groupId || groupDetailQ.isLoading}
-							onChange={(e) => setForm((f) => ({ ...f, subjectId: e.target.value }))}
-						>
-							<option value="">
-								{groupSubjects.length ? "— Ikut jadwal/jenjang —" : "— Kelompok belum punya mapel —"}
-							</option>
-							{groupSubjects.map((s) => (
-								<option key={s.id} value={s.id}>{s.name}</option>
-							))}
-						</select>
-					</div>
-					<div className="flex flex-col gap-1.5">
-						<Label>Ruangan</Label>
-						<select
-							className="h-9 rounded-md border px-2 text-sm"
-							value={form.roomId}
-							onChange={(e) => setForm((f) => ({ ...f, roomId: e.target.value }))}
-						>
-							<option value="">— Tentukan nanti —</option>
-							{(roomsQ.data ?? []).filter((r) => r.isActive).map((r) => (
-								<option key={r.id} value={r.id}>{r.name}</option>
-							))}
-						</select>
-					</div>
+					<ComboboxField
+						id="dse-subject" label="Mapel"
+						value={form.subjectId}
+						disabled={!form.groupId || groupDetailQ.isLoading || groupSubjects.length === 0}
+						onChange={(v) => setForm((f) => ({ ...f, subjectId: v }))}
+						options={groupSubjects.map((s) => ({ value: s.id, label: s.name }))}
+						placeholder={groupSubjects.length ? "— Ikut jadwal/jenjang —" : "— Kelompok belum punya mapel —"}
+						emptyText="Tidak ada mapel bernama itu."
+					/>
+					<ComboboxField
+						id="dse-room" label="Ruangan"
+						value={form.roomId}
+						onChange={(v) => setForm((f) => ({ ...f, roomId: v }))}
+						options={(roomsQ.data ?? []).filter((r) => r.isActive).map((r) => ({ value: r.id, label: r.name }))}
+						placeholder="— Tentukan nanti —"
+						emptyText="Tidak ada ruangan bernama itu."
+					/>
 					<div className="flex flex-col gap-1.5">
 						<Label>Jam mulai</Label>
 						<Input type="time" value={form.start} onChange={(e) => setForm((f) => ({ ...f, start: e.target.value }))} />

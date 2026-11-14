@@ -655,27 +655,22 @@ export function ParentEnrollments() {
 						{(childrenQ.data?.length ?? 0) > 0 ? (
 							<div className="flex flex-col gap-1.5">
 								<Label htmlFor="enr-existing">Anak</Label>
-								<select
+								<ComboboxField
 									id="enr-existing"
 									value={form.existingStudentId}
-									onChange={(e) =>
+									onChange={(v) =>
 										setForm({
 											...form,
-											existingStudentId: e.target.value,
-											childName: e.target.value
-												? (childrenQ.data ?? []).find((c) => c.id === e.target.value)?.name ?? form.childName
+											existingStudentId: v,
+											childName: v
+												? (childrenQ.data ?? []).find((c) => c.id === v)?.name ?? form.childName
 												: form.childName,
 										})
 									}
-									className="border-input bg-background h-9 rounded-md border px-3 text-sm"
-								>
-									<option value="">Anak baru — isi data di bawah</option>
-									{(childrenQ.data ?? []).map((c) => (
-										<option key={c.id} value={c.id}>
-											{c.name} — daftarkan ke program lain
-										</option>
-									))}
-								</select>
+									options={(childrenQ.data ?? []).map((c) => ({ value: c.id, label: `${c.name} — daftarkan ke program lain` }))}
+									placeholder="Anak baru — isi data di bawah"
+									emptyText="Tidak ada anak bernama itu."
+								/>
 							</div>
 						) : null}
 						{!form.existingStudentId ? (

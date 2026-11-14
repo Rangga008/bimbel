@@ -14,6 +14,7 @@ import { useDebouncedValue } from '@/lib/use-debounced-value';
 import type { QuestionRow, QuestionSummary } from '@/lib/phase3a-types';
 import { QUESTION_TYPES, DIFFICULTY_LEVELS } from '@/lib/phase3a-types';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
+import { ComboboxField } from '@/components/shared/combobox-field';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { EmptyState } from '@/components/shared/empty-state';
 import { MathContent, plainPreview } from '@/components/shared/math-content';
@@ -204,18 +205,14 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
                 Pilih dari daftar untuk memakai bacaan yang sudah ada.
               </p>
               {(stimuliQ.data ?? []).length > 0 && (
-                <select
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                <ComboboxField
+                  id="stim-pick"
                   value=""
-                  onChange={(e) => e.target.value && setStimText(e.target.value)}
-                >
-                  <option value="">— Pakai bacaan yang sudah ada —</option>
-                  {stimuliQ.data!.map((t, i) => (
-                    <option key={i} value={t}>
-                      {t.length > 90 ? `${t.slice(0, 90)}…` : t}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => v && setStimText(v)}
+                  options={stimuliQ.data!.map((t) => ({ value: t, label: t.length > 90 ? `${t.slice(0, 90)}…` : t }))}
+                  placeholder="— Pakai bacaan yang sudah ada —"
+                  emptyText="Tidak ada bacaan cocok."
+                />
               )}
               <textarea
                 className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -464,18 +461,14 @@ export function QuestionsManager({ canManage, basePath }: { canManage: boolean; 
                 Pilih dari daftar untuk memakai bacaan yang sudah ada.
               </p>
               {(stimuliQ.data ?? []).length > 0 && (
-                <select
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                <ComboboxField
+                  id="stim-pick"
                   value=""
-                  onChange={(e) => e.target.value && setStimText(e.target.value)}
-                >
-                  <option value="">— Pakai bacaan yang sudah ada —</option>
-                  {stimuliQ.data!.map((t, i) => (
-                    <option key={i} value={t}>
-                      {t.length > 90 ? `${t.slice(0, 90)}…` : t}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => v && setStimText(v)}
+                  options={stimuliQ.data!.map((t) => ({ value: t, label: t.length > 90 ? `${t.slice(0, 90)}…` : t }))}
+                  placeholder="— Pakai bacaan yang sudah ada —"
+                  emptyText="Tidak ada bacaan cocok."
+                />
               )}
               <textarea
                 className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"

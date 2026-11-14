@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
+import { ComboboxField } from "@/components/shared/combobox-field";
 import { cn } from "@/lib/utils";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -107,7 +108,7 @@ export function LeaderboardCard({
     queryFn: () => apiFetch<NamedOption[]>("/buildings"),
   });
 
-  const selectCls = "h-9 rounded-md border border-input bg-background px-3 text-sm";
+  
   const data = leaderboardQ.data;
 
   return (
@@ -142,30 +143,38 @@ export function LeaderboardCard({
           ) : null}
           {adminFilters ? (
             <>
-              <select className={selectCls} value={groupId} onChange={(e) => setGroupId(e.target.value)}>
-                <option value="">Semua kelompok</option>
-                {groupsQ.data?.map((g) => (
-                  <option key={g.id} value={g.id}>{g.name}</option>
-                ))}
-              </select>
-              <select className={selectCls} value={levelId} onChange={(e) => setLevelId(e.target.value)}>
-                <option value="">Semua level</option>
-                {levelsQ.data?.map((l) => (
-                  <option key={l.id} value={l.id}>{l.name}</option>
-                ))}
-              </select>
-              <select className={selectCls} value={programId} onChange={(e) => setProgramId(e.target.value)}>
-                <option value="">Semua program</option>
-                {programsQ.data?.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-              <select className={selectCls} value={buildingId} onChange={(e) => setBuildingId(e.target.value)}>
-                <option value="">Semua gedung</option>
-                {buildingsQ.data?.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
+              <div className="w-44">
+                <ComboboxField
+                  id="lb-group" value={groupId} onChange={setGroupId}
+                  options={(groupsQ.data ?? []).map((g) => ({ value: g.id, label: g.name }))}
+                  placeholder="Semua kelompok"
+                  emptyText="Tidak ada kelompok bernama itu."
+                />
+              </div>
+              <div className="w-44">
+                <ComboboxField
+                  id="lb-level" value={levelId} onChange={setLevelId}
+                  options={(levelsQ.data ?? []).map((l) => ({ value: l.id, label: l.name }))}
+                  placeholder="Semua level"
+                  emptyText="Tidak ada level bernama itu."
+                />
+              </div>
+              <div className="w-44">
+                <ComboboxField
+                  id="lb-program" value={programId} onChange={setProgramId}
+                  options={(programsQ.data ?? []).map((p) => ({ value: p.id, label: p.name }))}
+                  placeholder="Semua program"
+                  emptyText="Tidak ada program bernama itu."
+                />
+              </div>
+              <div className="w-44">
+                <ComboboxField
+                  id="lb-building" value={buildingId} onChange={setBuildingId}
+                  options={(buildingsQ.data ?? []).map((b) => ({ value: b.id, label: b.name }))}
+                  placeholder="Semua gedung"
+                  emptyText="Tidak ada gedung bernama itu."
+                />
+              </div>
             </>
           ) : null}
         </div>

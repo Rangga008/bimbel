@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ComboboxField } from "@/components/shared/combobox-field";
 import {
 	Dialog,
 	DialogContent,
@@ -130,18 +131,16 @@ export function FeedbackMatrix({
 				</div>
 				<div className="flex flex-wrap items-center gap-2">
 					{showGroupPicker && !fixedGroupId ? (
-						<select
-							className="h-9 max-w-56 rounded-md border px-2 text-sm"
-							value={groupId}
-							onChange={(e) => setGroupId(e.target.value)}
-						>
-							<option value="">— Pilih kelompok —</option>
-							{(groupsQ.data ?? []).map((g) => (
-								<option key={g.id} value={g.id}>
-									{g.name}
-								</option>
-							))}
-						</select>
+						<div className="w-56">
+							<ComboboxField
+								id="fb-group"
+								value={groupId}
+								onChange={setGroupId}
+								options={(groupsQ.data ?? []).map((g) => ({ value: g.id, label: g.name }))}
+								placeholder="— Pilih kelompok —"
+								emptyText="Tidak ada kelompok bernama itu."
+							/>
+						</div>
 					) : null}
 					<div className="flex items-center gap-1">
 						<Button

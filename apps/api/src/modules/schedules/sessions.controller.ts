@@ -133,8 +133,9 @@ export class SessionsController {
 
   /**
    * Pindahkan 1 siswa ke sesi lain dalam kelompok yang sama (berhalangan di
-   * sesi awal). Absensi yang sudah ada ikut berpindah. Admin atau tutor
-   * pengampu kedua sesi.
+   * sesi awal). Absensi yang sudah ada ikut berpindah. Admin atau tutor yang
+   * mengelola sesi asal — sesi tujuan cukup satu kelompok & terjadwal, jadi
+   * tutor boleh memindahkan ke sesi yang diampu tutor lain.
    */
   @Post('sessions/:id/students/:studentId/move')
   @RequirePermissions(PERMISSION_CODES.SESSION_VIEW)

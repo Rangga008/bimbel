@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DaySessionEditor } from "@/components/shared/day-session-editor";
+import { ComboboxField } from "@/components/shared/combobox-field";
 import { apiFetch } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { SessionItem } from "@/lib/phase1c-types";
@@ -114,17 +115,16 @@ export function TutorPlanner({
 					</p>
 				</div>
 				<div className="flex flex-wrap items-center gap-2">
-					<select
-						className="h-9 rounded-md border px-2 text-sm"
-						value={tutorFilter}
-						onChange={(e) => setTutorFilter(e.target.value)}
-						aria-label="Filter tutor"
-					>
-						<option value="">Semua tutor</option>
-						{tutors.map((t) => (
-							<option key={t.id} value={t.id}>{t.user.name}</option>
-						))}
-					</select>
+					<div className="w-52">
+						<ComboboxField
+							id="tp-tutor-filter"
+							value={tutorFilter}
+							onChange={setTutorFilter}
+							options={tutors.map((t) => ({ value: t.id, label: t.user.name }))}
+							placeholder="Semua tutor"
+							emptyText="Tidak ada tutor bernama itu."
+						/>
+					</div>
 					<div className="flex items-center gap-1">
 						<Button variant="outline" size="icon" className="size-8" onClick={() => setWeekStart(addDays(weekStart, -7))} aria-label="Minggu sebelumnya">
 							<ChevronLeft className="size-4" />

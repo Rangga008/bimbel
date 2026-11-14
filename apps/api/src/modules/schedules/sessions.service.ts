@@ -416,10 +416,15 @@ export class SessionsService {
         'Sesi tujuan harus dalam kelompok yang sama.',
       );
     }
-    if (to.status === 'CANCELLED') {
-      throw new BadRequestException('Sesi tujuan sudah dibatalkan.');
+    if (to.status !== 'SCHEDULED') {
+      throw new BadRequestException(
+        'Sesi tujuan harus berstatus terjadwal dan belum dibatalkan.',
+      );
     }
-    await this.assertSessionManager(dto.toSessionId, actor);
+    // Otorisasi cukup di sesi asal: pemindahan antar-sesi dalam satu kelompok
+    // adalah kelanjutan dari pengelolaan roster sesi asal (mis. tutor jam 8
+    // memindahkan siswa berhalangan ke sesi jam 11 yang diampu tutor lain
+    // dalam kelompok yang sama).
     const memberIds = await this.groupMemberIds(from.groupId);
     if (!memberIds.includes(studentId)) {
       throw new BadRequestException('Siswa bukan anggota kelompok ini.');

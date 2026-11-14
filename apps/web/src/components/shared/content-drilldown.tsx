@@ -7,6 +7,7 @@ import type { LucideIcon } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/shared/empty-state';
+import { ComboboxField } from '@/components/shared/combobox-field';
 import { apiFetch } from '@/lib/api-client';
 import {
   applyDrill,
@@ -129,19 +130,16 @@ function DrillQuickSelect({
   onPick: (id: string) => void;
 }) {
   return (
-    <select
-      aria-label={label}
-      value={current === '' || current === DRILL_ALL || current === DRILL_NONE ? '' : current}
-      onChange={(e) => onPick(e.target.value || DRILL_ALL)}
-      className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs sm:w-40 sm:flex-none"
-    >
-      <option value="">{label}</option>
-      {options.map((o) => (
-        <option key={o.id} value={o.id}>
-          {o.name}
-        </option>
-      ))}
-    </select>
+    <div className="min-w-0 flex-1 sm:w-40 sm:flex-none" aria-label={label}>
+      <ComboboxField
+        id={`drill-${label}`}
+        value={current === '' || current === DRILL_ALL || current === DRILL_NONE ? '' : current}
+        onChange={(v) => onPick(v || DRILL_ALL)}
+        options={options.map((o) => ({ value: o.id, label: o.name }))}
+        placeholder={label}
+        emptyText="Tidak ada yang cocok."
+      />
+    </div>
   );
 }
 

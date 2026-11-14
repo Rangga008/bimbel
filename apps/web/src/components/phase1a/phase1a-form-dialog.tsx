@@ -116,25 +116,18 @@ export function Phase1aFormDialog({
               >
                 <div className="relative">
                   {field.options ? (
-                    <select
+                    <ComboboxField
                       id={`fase1a-${field.name}`}
-                      name={field.name}
-                      required={field.required}
-                      aria-invalid={error ? true : undefined}
-                      className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
                       value={value}
-                      onChange={(e) => {
-                        onChange(field.name, e.target.value);
+                      required={field.required}
+                      error={error}
+                      options={field.options}
+                      placeholder="— Pilih —"
+                      onChange={(v) => {
+                        onChange(field.name, v);
                         if (error) setErrors((prev) => ({ ...prev, [field.name]: '' }));
                       }}
-                    >
-                      {value === '' ? <option value="">— Pilih —</option> : null}
-                      {field.options.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   ) : field.currency ? (
                     <CurrencyInput
                       id={`fase1a-${field.name}`}

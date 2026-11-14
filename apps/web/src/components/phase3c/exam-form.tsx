@@ -16,6 +16,7 @@ import {
   emptyQuestionPickerFilters,
 } from '@/components/shared/question-picker';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
+import { ComboboxField } from '@/components/shared/combobox-field';
 import {
   categoryOptions,
   sortLevels,
@@ -905,17 +906,13 @@ function SubtesSubjectSelect({
     ? lvl.levelSubjects.map((ls) => ({ value: ls.subject.id, label: ls.subject.name }))
     : (subjectsQ.data ?? []).map((s) => ({ value: s.id, label: s.name }));
   return (
-    <select
-      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+    <ComboboxField
+      id="ex-subject"
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      <option value="">Pilih mapel…</option>
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+      onChange={onChange}
+      options={options}
+      placeholder="Pilih mapel…"
+      emptyText="Tidak ada mapel bernama itu."
+    />
   );
 }
