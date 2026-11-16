@@ -1,12 +1,15 @@
 'use client';
 
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, FileUp, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { apiFetch } from '@/lib/api-client';
+import type { ProgramItem, SubjectItem } from '@/lib/phase3a-types';
 import {
   QuestionPicker,
   QuestionPickerFilters,
@@ -15,8 +18,11 @@ import {
 import { QuickQuestionCreate } from '@/components/shared/quick-question-create';
 import { QuestionImportDialog } from '@/components/phase3a/question-import-dialog';
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
-import { categoryOptions } from '@/lib/content-taxonomy';
-import { useContentCategories } from '@/components/shared/content-drilldown';
+import { categoryOptions, sortLevels, tingkatCode } from '@/lib/content-taxonomy';
+import {
+  useContentCategories,
+  useContentLevels,
+} from '@/components/shared/content-drilldown';
 
 /** Satu subtes di form — nama, mapel opsional, dan soalnya sendiri.
  *  Berbeda dari ujian: latsol tidak punya durasi/jadwal. */
@@ -95,6 +101,60 @@ export function LatsolPackageForm({
   questionsOnly?: boolean;
 }) {
   const catsQ = useContentCategories();
+  const levelsQ = useContentLevels();
+  const programsQ = useQuery({
+    queryKey: ['programs-lite'],
+    queryFn: () => apiFetch<ProgramItem[]>('/programs'),
+  });
+  const levels = levelsQ.data ?? [];
+
+  // Kaskade scope — sama seperti form materi/ujian: Tingkat memfilter
+  // jenjang, jenjang mengisi program & memfilter mapel.
+  const tingkatOptions = [
+    ...new Set(levels.map((l) => tingkatCode(l)).filter((t): t is string => !!t)),
+  ]
+    .map((t) => ({
+      value: t,
+      label: t,
+      sort: Math.min(
+        ...levels
+          .filter((l) => tingkatCode(l) === t)
+          .map((l) => l.gradeLevel?.sortOrder ?? 9999),
+      ),
+    }))
+    .sort((a, b) => a.sort - b.sort);
+  if (levels.some((l) => !tingkatCode(l))) {
+    tingkatOptions.push({ value: 'none', label: 'Lainnya', sort: 9999 });
+  }
+
+  const levelOptions = sortLevels(levels)
+    .filter((l) => {
+      const tk = tingkatCode(l);
+      const tingkatOk =
+        !form.tingkat || (form.tingkat === 'none' ? !tk : tk === form.tingkat);
+      return tingkatOk && (!form.programId || l.program?.id === form.programId);
+    })
+    .map((l) => ({
+      value: l.id,
+      label: l.program?.name ? `${l.name} — ${l.program.name}` : l.name,
+    }));
+
+  const selectedLevel = levels.find((l) => l.id === form.levelId);
+  const subjectsQ = useQuery({
+    queryKey: ['subjects'],
+    queryFn: () => apiFetch<SubjectItem[]>('/master/subjects'),
+    enabled: !selectedLevel?.levelSubjects?.length,
+  });
+  const subjectOptions = selectedLevel?.levelSubjects?.length
+    ? selectedLevel.levelSubjects
+        .map((ls) => ls.subject)
+        .filter((s): s is { id: string; name: string } => !!s)
+        .map((s) => ({ value: s.id, label: s.name }))
+    : (subjectsQ.data ?? []).map((s) => ({
+        value: s.id,
+        label: `${s.code} — ${s.name}`,
+      }));
+
   // 'main' = daftar soal utama, angka = indeks subtes.
   const [importTarget, setImportTarget] = useState<'main' | number | null>(null);
   const [activeSubtes, setActiveSubtes] = useState(0);
@@ -430,6 +490,61 @@ export function LatsolPackageForm({
         <CardTitle className="text-base">Detail Paket</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Phase1aSelectField
+            id="lp-tingkat"
+            label="Tingkat"
+            value={form.tingkat}
+            onChange={(v) =>
+              onChange({ ...form, tingkat: v, levelId: '', subjectId: '' })
+            }
+            options={tingkatOptions}
+            placeholder="SD/SMP/SMA…"
+          />
+          <Phase1aSelectField
+            id="lp-level"
+            label="Jenjang *"
+            value={form.levelId}
+            onChange={(v) => {
+              const lvl = levels.find((l) => l.id === v);
+              const tk = v ? (tingkatCode(lvl) ?? 'none') : form.tingkat;
+              onChange({
+                ...form,
+                levelId: v,
+                subjectId: '',
+                tingkat: tk,
+                programId: lvl?.program?.id ?? form.programId,
+                // Bank soal di halaman Kelola Soal ikut terfilter jenjang ini.
+                pickerFilters: {
+                  ...form.pickerFilters,
+                  tingkat: tk,
+                  levelId: v,
+                  subjectId: '',
+                },
+              });
+            }}
+            options={levelOptions}
+            placeholder="Wajib — paket dikategorikan per jenjang"
+          />
+          <Phase1aSelectField
+            id="lp-subject"
+            label="Mapel (opsional — paket campuran boleh tanpa mapel)"
+            value={form.subjectId}
+            onChange={(v) => onChange({ ...form, subjectId: v })}
+            options={subjectOptions}
+            placeholder="Semua mapel"
+          />
+          <Phase1aSelectField
+            id="lp-program"
+            label="Program (opsional)"
+            value={form.programId}
+            onChange={(v) => onChange({ ...form, programId: v })}
+            options={(programsQ.data ?? []).map((p) => ({
+              value: p.id,
+              label: p.name,
+            }))}
+          />
+        </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="lp-title">Judul Paket *</Label>
           <Input
