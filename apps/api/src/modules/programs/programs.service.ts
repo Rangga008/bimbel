@@ -149,6 +149,7 @@ export class ProgramsService {
                 durationWeeks: true,
                 price: true,
                 description: true,
+                isFeatured: true,
               },
               orderBy: { name: 'asc' },
             },

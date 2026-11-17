@@ -63,6 +63,7 @@ export class PackagesService {
           dto.price === undefined ? undefined : new Prisma.Decimal(dto.price),
         description: dto.description,
         isActive: dto.isActive,
+        isFeatured: dto.isFeatured,
       },
     });
   }
@@ -97,6 +98,7 @@ export class PackagesService {
           : {}),
         ...(dto.description !== undefined ? { description: dto.description } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(dto.isFeatured !== undefined ? { isFeatured: dto.isFeatured } : {}),
       },
     });
   }

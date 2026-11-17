@@ -504,8 +504,9 @@ export default function LandingPage() {
 			? display.testimonials
 			: TESTIMONIALS;
 
-	// Hanya paket dengan siswa terbanyak yang tampil di landing — katalog
-	// lengkap pindah ke halaman /program dan /program/[code].
+	// Paket yang tampil di landing: paket yang ditandai admin "tampil di
+	// landing" (isFeatured). Bila belum ada yang ditandai, fallback ke urutan
+	// siswa terbanyak seperti sebelumnya. Katalog lengkap tetap di /program.
 	const allSlides: PackageSlide[] = programs.flatMap((p) =>
 		p.levels.flatMap((l) =>
 			l.packages.map((pkg) => ({
@@ -517,9 +518,14 @@ export default function LandingPage() {
 			})),
 		),
 	);
-	const popularSlides = [...allSlides]
-		.sort((a, b) => (b.pkg.studentCount ?? 0) - (a.pkg.studentCount ?? 0))
-		.slice(0, POPULAR_LIMIT);
+	const byStudentDesc = (a: PackageSlide, b: PackageSlide) =>
+		(b.pkg.studentCount ?? 0) - (a.pkg.studentCount ?? 0);
+	const featuredSlides = allSlides
+		.filter((s) => s.pkg.isFeatured)
+		.sort(byStudentDesc);
+	const popularSlides = (
+		featuredSlides.length > 0 ? featuredSlides : [...allSlides].sort(byStudentDesc)
+	).slice(0, POPULAR_LIMIT);
 
 	const statItems = [
 		{ icon: Users, value: stats?.students, label: "Siswa aktif terdaftar" },

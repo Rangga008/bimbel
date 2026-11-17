@@ -10,6 +10,8 @@ export interface LandingPackage {
   durationWeeks: number | null;
   price: string | null;
   description: string | null;
+  /** Ditandai admin "tampil di landing" — mengisi slider Paket Terpopuler. */
+  isFeatured?: boolean;
   /** Jumlah siswa aktif di kelompok yang memakai paket ini. */
   studentCount: number;
 }
@@ -57,6 +59,8 @@ export interface LandingFacility {
 export interface LandingLocation {
   name: string;
   address: string | null;
+  /** Link Google Maps (opsional) — klik lokasi membuka maps di tab baru. */
+  mapsUrl?: string | null;
 }
 
 /** Satu slide foto hero — gambar + link klik opsional. */
@@ -78,6 +82,8 @@ export interface LandingTestimonial {
 export interface LandingLocationSetting {
   name: string;
   address: string;
+  /** Link Google Maps (opsional) — tempel URL share maps; kosong = cari alamat. */
+  mapsUrl?: string;
 }
 
 export interface LandingDisplay {

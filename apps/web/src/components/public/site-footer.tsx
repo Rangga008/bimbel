@@ -18,6 +18,20 @@ const FOOTER_LINKS = [
 	{ href: "/#kontak", label: "Kontak" },
 ];
 
+/** URL maps lokasi — link maps yang di-set admin, atau pencarian alamat. */
+function locationMapsHref(loc: {
+	name: string;
+	address?: string | null;
+	mapsUrl?: string | null;
+}) {
+	if (loc.mapsUrl) return loc.mapsUrl;
+	if (loc.address) {
+		const q = `${loc.name} ${loc.address}`;
+		return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+	}
+	return null;
+}
+
 /** Footer publik — navigasi, program, lokasi & jam operasional. */
 export function SiteFooter() {
 	const branding = useBranding();
@@ -110,9 +124,9 @@ export function SiteFooter() {
 					</p>
 					{locations.length > 0 ? (
 						<ul className="flex flex-col gap-3 text-sm text-brand-blue-100">
-							{locations.map((loc) => (
-								<li key={loc.name} className="flex items-start gap-2">
-									<MapPin className="mt-0.5 size-4 shrink-0 text-brand-gold-300" />
+							{locations.map((loc) => {
+								const href = locationMapsHref(loc);
+								const body = (
 									<span>
 										<span className="font-medium text-white">{loc.name}</span>
 										{loc.address ? (
@@ -120,9 +134,31 @@ export function SiteFooter() {
 												{loc.address}
 											</span>
 										) : null}
+										{href ? (
+											<span className="mt-0.5 block text-xs text-brand-gold-300">
+												Buka di Google Maps ↗
+											</span>
+										) : null}
 									</span>
-								</li>
-							))}
+								);
+								return (
+									<li key={loc.name} className="flex items-start gap-2">
+										<MapPin className="mt-0.5 size-4 shrink-0 text-brand-gold-300" />
+										{href ? (
+											<a
+												href={href}
+												target="_blank"
+												rel="noopener noreferrer"
+												className="w-fit rounded-sm transition-opacity outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-brand-gold-300/60"
+											>
+												{body}
+											</a>
+										) : (
+											body
+										)}
+									</li>
+								);
+							})}
 						</ul>
 					) : (
 						<p className="text-sm text-brand-blue-200">

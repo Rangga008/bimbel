@@ -119,6 +119,8 @@ export interface DisplaySettings {
 export interface LandingLocationSetting {
   name: string;
   address: string;
+  /** Link Google Maps opsional — klik lokasi di footer membuka maps. */
+  mapsUrl?: string;
 }
 
 /** Default konten landing — dipakai saat admin belum mengoverride teks. */
@@ -578,18 +580,31 @@ export const SETTING_DEFS: {
       if (rawLocations.length > 10) {
         throw new BadRequestException('locations maksimal 10 lokasi.');
       }
-      const locations = rawLocations.map((entry, i) => ({
-        name: asString(
-          (entry as Record<string, unknown>)?.name,
-          `Nama lokasi ${i + 1}`,
-          120,
-        ),
-        address: asString(
-          (entry as Record<string, unknown>)?.address,
-          `Alamat lokasi ${i + 1}`,
-          250,
-        ),
-      }));
+      const locations = rawLocations.map((entry, i) => {
+        const rawMaps = (entry as Record<string, unknown>)?.mapsUrl;
+        const mapsUrl =
+          rawMaps === undefined || rawMaps === null || rawMaps === ''
+            ? ''
+            : asString(rawMaps, `Link maps lokasi ${i + 1}`, 500);
+        if (mapsUrl && !/^https?:\/\//.test(mapsUrl)) {
+          throw new BadRequestException(
+            `Link maps lokasi ${i + 1} harus URL http(s):// yang valid.`,
+          );
+        }
+        return {
+          name: asString(
+            (entry as Record<string, unknown>)?.name,
+            `Nama lokasi ${i + 1}`,
+            120,
+          ),
+          address: asString(
+            (entry as Record<string, unknown>)?.address,
+            `Alamat lokasi ${i + 1}`,
+            250,
+          ),
+          mapsUrl,
+        };
+      });
       return {
         heroImages,
         registrationUrl,

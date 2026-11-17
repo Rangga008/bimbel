@@ -103,6 +103,8 @@ interface TestimonialEntry {
 interface LocationEntry {
 	name: string;
 	address: string;
+	/** Link Google Maps opsional — klik lokasi di footer membuka maps. */
+	mapsUrl?: string;
 }
 
 interface DisplaySettings {
@@ -977,8 +979,9 @@ export function FinanceSettings() {
 									{display.locations.map((loc, i) => (
 										<div
 											key={i}
-											className="grid gap-2 rounded-md border p-3 sm:grid-cols-[1fr_1.4fr_auto] sm:items-center"
+											className="grid gap-2 rounded-md border p-3"
 										>
+											<div className="grid gap-2 sm:grid-cols-[1fr_1.4fr_auto] sm:items-center">
 											<Input
 												placeholder="Nama lokasi — mis. Cabang Cicaheum"
 												value={loc.name}
@@ -1028,6 +1031,22 @@ export function FinanceSettings() {
 											>
 												<Trash2 className="size-3.5" /> Hapus
 											</Button>
+											</div>
+											<Input
+												placeholder="Link Google Maps (opsional) — tempel URL share maps, mis. https://maps.app.goo.gl/…"
+												value={loc.mapsUrl ?? ""}
+												onChange={(e) =>
+													setDisplay({
+														...display,
+														locations: display.locations.map(
+															(x, j) =>
+																j === i
+																	? { ...x, mapsUrl: e.target.value }
+																	: x,
+														),
+													})
+												}
+											/>
 										</div>
 									))}
 								</div>
@@ -1042,7 +1061,7 @@ export function FinanceSettings() {
 												...display,
 												locations: [
 													...display.locations,
-													{ name: "", address: "" },
+													{ name: "", address: "", mapsUrl: "" },
 												],
 											})
 										}
@@ -1065,6 +1084,11 @@ export function FinanceSettings() {
 														<p className="text-xs text-sky-200">
 															{loc.address || "Alamat"}
 														</p>
+														{loc.mapsUrl ? (
+															<p className="text-xs text-amber-300 underline">
+																Buka di Google Maps ↗
+															</p>
+														) : null}
 													</li>
 												))}
 											</ul>

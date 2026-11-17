@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, BookOpen, GraduationCap, Layers, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, GraduationCap, Layers, Pencil, Plus, Star, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -14,7 +14,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { EmptyState } from '@/components/shared/empty-state';
 import { CurrencyInput } from '@/components/shared/currency-input';
 import { apiFetch, ApiError } from '@/lib/api-client';
-import type { LevelItem, MasterItem, ProgramItem } from '@/lib/phase1a-types';
+import type { LevelItem, MasterItem, PackageItem, ProgramItem } from '@/lib/phase1a-types';
 import {
   Phase1aFormDialog,
   Phase1aSelectField,
@@ -318,6 +318,24 @@ export function ProgramDetailPage({ programId, basePath, canManage }: { programI
     onError: (e) => toast.error(err(e, 'Gagal memperbarui level.')),
   });
 
+  const togglePkgFeatured = useMutation({
+    mutationFn: (pkg: PackageItem) =>
+      apiFetch(`/packages/${pkg.id}`, {
+        method: 'PATCH',
+        body: { isFeatured: !pkg.isFeatured },
+      }),
+    onSuccess: (_d, pkg) => {
+      toast.success(
+        pkg.isFeatured
+          ? `"${pkg.name}" dihapus dari paket populer landing.`
+          : `"${pkg.name}" kini tampil di "Paket Terpopuler" landing.`,
+      );
+      refreshAll();
+      qc.invalidateQueries({ queryKey: ['public-landing'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal mengubah status paket.')),
+  });
+
   const deleteProgramM = useMutation({
     mutationFn: () => apiFetch(`/programs/${programId}`, { method: 'DELETE' }),
     onSuccess: () => {
@@ -492,6 +510,43 @@ export function ProgramDetailPage({ programId, basePath, canManage }: { programI
                           level.sessionDurationMin ? `${level.sessionDurationMin} menit` : null,
                         ].filter(Boolean).map((t) => (
                           <Badge key={t as string} variant="secondary" className="text-[11px]">{t}</Badge>
+                        ))}
+                      </div>
+                    ) : null}
+                    {(level.packages ?? []).length > 0 ? (
+                      <div className="flex flex-col gap-1.5 rounded-md border border-dashed p-2">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Paket ({(level.packages ?? []).length})
+                          {canManage ? ' — klik bintang untuk tampil di landing' : ''}
+                        </p>
+                        {(level.packages ?? []).map((pkg) => (
+                          <div key={pkg.id} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="min-w-0 truncate">
+                              {pkg.name} · {pkg.totalSessions} sesi
+                              {pkg.isActive ? null : <span className="text-muted-foreground"> (nonaktif)</span>}
+                            </span>
+                            {canManage ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 shrink-0 gap-1 px-1.5 text-xs"
+                                title={pkg.isFeatured ? 'Hapus dari paket populer landing' : 'Tampilkan di landing'}
+                                disabled={togglePkgFeatured.isPending}
+                                onClick={() => togglePkgFeatured.mutate(pkg)}
+                              >
+                                <Star
+                                  className={
+                                    pkg.isFeatured
+                                      ? 'size-3.5 fill-amber-400 text-amber-400'
+                                      : 'size-3.5 text-muted-foreground/40'
+                                  }
+                                />
+                                {pkg.isFeatured ? 'Populer' : 'Ke landing'}
+                              </Button>
+                            ) : pkg.isFeatured ? (
+                              <Badge variant="secondary" className="shrink-0 text-[11px]">Populer</Badge>
+                            ) : null}
+                          </div>
                         ))}
                       </div>
                     ) : null}

@@ -128,6 +128,8 @@ export interface PackageItem {
   price: string | number | null;
   description: string | null;
   isActive: boolean;
+  /** Ditandai admin untuk tampil di slider "Paket Terpopuler" landing. */
+  isFeatured?: boolean;
   level?: {
     id: string;
     name: string;
