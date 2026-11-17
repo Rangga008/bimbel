@@ -835,6 +835,38 @@ async function main() {
     });
   }
 
+  // Paket belajar per jenjang — bagian dari katalog harga (bukan demo):
+  // mengisi slider "Paket Program" di landing dan dipakai pendaftaran.
+  const allActiveLevels = await prisma.level.findMany({
+    where: { isActive: true },
+    include: { program: { select: { name: true } } },
+  });
+  for (const lvl of allActiveLevels) {
+    const pkgName = `Paket ${lvl.name}`;
+    const exists = await prisma.package.findFirst({
+      where: { levelId: lvl.id, name: pkgName },
+      select: { id: true },
+    });
+    if (exists) continue;
+    const [totalSessions, durationWeeks] =
+      lvl.priceUnit === 'YEAR'
+        ? [40, 40]
+        : lvl.priceUnit === 'SESSION'
+          ? [8, 4]
+          : [4, 4];
+    await prisma.package.create({
+      data: {
+        levelId: lvl.id,
+        name: pkgName,
+        code: `PKG-${lvl.id.slice(0, 8).toUpperCase()}`,
+        totalSessions,
+        durationWeeks,
+        price: lvl.price ?? null,
+        description: `Paket ${lvl.program.name} — ${lvl.name}.`,
+      },
+    });
+  }
+
   if (minimalSeed) {
     console.log(
       'SEED_MODE=minimal — konten demo dilewati (hanya akun admin/owner + master data).',
@@ -1324,37 +1356,6 @@ async function main() {
     where: { email: 'adminacademic1@bimbel.test' },
   });
   const seededBy = seedAdminUser?.id || 'seed';
-
-  // a) Paket belajar per jenjang — mengisi slider "Paket Program" di landing.
-  const allActiveLevels = await prisma.level.findMany({
-    where: { isActive: true },
-    include: { program: { select: { name: true } } },
-  });
-  for (const lvl of allActiveLevels) {
-    const pkgName = `Paket ${lvl.name}`;
-    const exists = await prisma.package.findFirst({
-      where: { levelId: lvl.id, name: pkgName },
-      select: { id: true },
-    });
-    if (exists) continue;
-    const [totalSessions, durationWeeks] =
-      lvl.priceUnit === 'YEAR'
-        ? [40, 40]
-        : lvl.priceUnit === 'SESSION'
-          ? [8, 4]
-          : [4, 4];
-    await prisma.package.create({
-      data: {
-        levelId: lvl.id,
-        name: pkgName,
-        code: `PKG-${lvl.id.slice(0, 8).toUpperCase()}`,
-        totalSessions,
-        durationWeeks,
-        price: lvl.price ?? null,
-        description: `Paket ${lvl.program.name} — ${lvl.name}.`,
-      },
-    });
-  }
 
   // a2) Tautkan kelompok demo ke paket — landing mengurutkan "paket
   // terpopuler" dari jumlah anggota kelompok yang memakai paket itu.
