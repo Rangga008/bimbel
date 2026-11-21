@@ -140,6 +140,17 @@ export class AuthController {
    * langsung login — response identik dengan /auth/login supaya client bisa
    * memakai satu handler sesi.
    */
+  /**
+   * Token anti-bot untuk form /daftar & /daftar-siswa — POST register wajib
+   * membawa token ini (umur maks 2 jam, submit minimal 2 detik setelah
+   * diterbitkan). POST tanpa token = bot langsung ditolak.
+   */
+  @Get('register-token')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  registerToken() {
+    return this.authService.issueRegisterToken();
+  }
+
   @Post('register')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })

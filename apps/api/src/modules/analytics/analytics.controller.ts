@@ -3,8 +3,8 @@
  * Per-question analytics & student performance dashboard
  * Role-based access control for Student, Parent, Tutor, Admin Academic
  */
-import { Controller, Get, Query, UseGuards, Param, Res } from '@nestjs/common';
-import type { Response } from 'express';
+import { Controller, Get, Query, UseGuards, Param, Req, Res } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../rbac/permissions.guard';
 import { RequirePermissions, RequireAnyPermissions } from '../rbac/permissions.decorator';
@@ -32,6 +32,23 @@ function parseExamIds(raw?: string) {
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class AnalyticsController {
   constructor(private readonly analytics: AnalyticsService) {}
+
+  /**
+   * Origin host API dari request — dipakai sebagai fallback base URL pada
+   * dokumen cetak HTML bila branding.appUrl kosong, supaya gambar media
+   * relatif (/api/media/…) tetap resolve saat dokumen dibuka via blob URL.
+   */
+  private reqOrigin(req: Request): string | undefined {
+    const proto =
+      (req.headers['x-forwarded-proto'] as string | undefined)
+        ?.split(',')[0]
+        ?.trim() || req.protocol;
+    const host =
+      (req.headers['x-forwarded-host'] as string | undefined)
+        ?.split(',')[0]
+        ?.trim() || req.headers.host;
+    return host ? `${proto}://${host}` : undefined;
+  }
 
   /**
    * Get per-question analytics for a specific question
@@ -162,21 +179,23 @@ export class AnalyticsController {
     @Query('part') part: string,
     @Query('key') key: string,
     @Query('groupId') groupId: string | undefined,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
+    const origin = this.reqOrigin(req);
     let html: string;
     if (part === 'answers') {
       const recap = await this.analytics.getExamAnswerRecap(examId, groupId || undefined, actor);
-      html = await this.analytics.renderAnswerRecapHtml(recap);
+      html = await this.analytics.renderAnswerRecapHtml(recap, origin);
     } else if (part === 'scores') {
       const recap = await this.analytics.getExamScoreRecap(examId, groupId || undefined, actor);
-      html = await this.analytics.renderScoreRecapHtml(recap);
+      html = await this.analytics.renderScoreRecapHtml(recap, origin);
     } else if (part === 'analysis') {
       const analysis = await this.analytics.getQuestionAnalysisItems(examId, actor);
-      html = await this.analytics.renderQuestionAnalysisHtml(analysis);
+      html = await this.analytics.renderQuestionAnalysisHtml(analysis, origin);
     } else {
       const sheet = await this.analytics.getExamQuestionSheet(examId, key === '1', actor);
-      html = await this.analytics.renderQuestionSheetHtml(sheet);
+      html = await this.analytics.renderQuestionSheetHtml(sheet, origin);
     }
     res.set({ 'Content-Type': 'text/html; charset=utf-8' });
     res.send(html);
@@ -261,6 +280,7 @@ export class AnalyticsController {
     @Query('category') category = '',
     @Query('basic') basic: string | undefined,
     @Query('exams') exams: string | undefined,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     await this.analytics.assertStudentPerformanceAccess(user, studentId);
@@ -271,7 +291,7 @@ export class AnalyticsController {
       parseExamIds(exams),
     );
     res.set({ 'Content-Type': 'text/html; charset=utf-8' });
-    res.send(await this.analytics.renderLearningReportHtml(report));
+    res.send(await this.analytics.renderLearningReportHtml(report, this.reqOrigin(req)));
   }
 
   /**
@@ -285,6 +305,7 @@ export class AnalyticsController {
     @Query('category') category = '',
     @Query('basic') basic: string | undefined,
     @Query('exams') exams: string | undefined,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const report = await this.analytics.getChildLearningReport(
@@ -295,7 +316,7 @@ export class AnalyticsController {
       parseExamIds(exams),
     );
     res.set({ 'Content-Type': 'text/html; charset=utf-8' });
-    res.send(await this.analytics.renderLearningReportHtml(report));
+    res.send(await this.analytics.renderLearningReportHtml(report, this.reqOrigin(req)));
   }
 
   /** Laporan hasil belajar mandiri — siswa (data sendiri). */
@@ -306,6 +327,7 @@ export class AnalyticsController {
     @Query('category') category = '',
     @Query('basic') basic: string | undefined,
     @Query('exams') exams: string | undefined,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const report = await this.analytics.getMyLearningReport(
@@ -315,7 +337,7 @@ export class AnalyticsController {
       parseExamIds(exams),
     );
     res.set({ 'Content-Type': 'text/html; charset=utf-8' });
-    res.send(await this.analytics.renderLearningReportHtml(report));
+    res.send(await this.analytics.renderLearningReportHtml(report, this.reqOrigin(req)));
   }
 
   /**

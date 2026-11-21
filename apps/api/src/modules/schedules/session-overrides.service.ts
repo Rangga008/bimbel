@@ -5,6 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { ensureStudentProfile } from '../../common/utils/student-profile';
 import { NotificationEventsService } from '../notifications/notification-events.service';
 import { ConflictService } from './conflict.service';
 import { sessionListInclude } from './schedules.includes';
@@ -95,9 +96,7 @@ export class SessionOverridesService {
   }
 
   async mineForStudent(userId: string, q: SessionsQueryDto) {
-    const student = await this.prisma.student.findUnique({ where: { userId } });
-    if (!student)
-      throw new ForbiddenException('Akun ini tidak terhubung ke data siswa.');
+    const student = await ensureStudentProfile(this.prisma, userId);
     const memberships = await this.prisma.groupMember.findMany({
       where: { studentId: student.id },
       select: { groupId: true },

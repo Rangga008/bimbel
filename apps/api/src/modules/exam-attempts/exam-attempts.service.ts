@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { ensureStudentProfile } from '../../common/utils/student-profile';
 import { AuditService } from '../../common/audit/audit.service';
 import { PhoneVerificationService } from '../../common/phone-verification/phone-verification.service';
 import { ExamsService } from '../exams/exams.service';
@@ -31,10 +32,7 @@ export class ExamAttemptsService {
   ) {}
 
   async requireStudent(userId: string) {
-    const s = await this.prisma.student.findUnique({ where: { userId } });
-    if (!s)
-      throw new ForbiddenException('Akun ini tidak terhubung ke data siswa.');
-    return s;
+    return ensureStudentProfile(this.prisma, userId);
   }
 
   /**

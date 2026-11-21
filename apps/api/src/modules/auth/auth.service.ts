@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import type { Prisma } from '@prisma/client';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { MailerService } from '../mailer/mailer.service';
@@ -19,6 +19,7 @@ import { WhatsAppOutboxService } from '../whatsapp/whatsapp-outbox.service';
 import { AuthenticatedUser } from './types/authenticated-user.type';
 import { ROLE_NAMES } from '../rbac/permissions.constants';
 import type { RegisterParentDto } from './dto/register-parent.dto';
+import type { RegisterStudentDto } from './dto/register-student.dto';
 
 export interface LoginContext {
   ipAddress?: string;
@@ -196,7 +197,61 @@ export class AuthService {
     return `wa.${digits}.${Date.now()}@hp.bimbel.local`;
   }
 
+  // ------------------------------------------------------------ anti-bot
+  // Token pendaftaran: HMAC timestamp yang diterbitkan GET /auth/register-token.
+  // Bot yang menembak POST langsung tidak memuat halaman → tak punya token.
+  // Token juga berumur (2 jam) & butuh umur minimal 2 detik (form dibuka dulu
+  // baru disubmit — POST kilat ciri khas bot juga ditolak).
+
+  private registerTokenSecret() {
+    return (
+      this.config.get<string>('REGISTER_TOKEN_SECRET') ||
+      this.config.getOrThrow<string>('JWT_ACCESS_SECRET')
+    );
+  }
+
+  issueRegisterToken() {
+    const ts = Date.now();
+    const sig = createHmac('sha256', this.registerTokenSecret())
+      .update(`reg:${ts}`)
+      .digest('hex');
+    return { token: `${ts}.${sig}`, expiresInSeconds: 7200 };
+  }
+
+  private assertRegisterToken(token: string | undefined) {
+    const [ts, sig] = (token ?? '').split('.');
+    const t = Number(ts);
+    const expected = ts
+      ? createHmac('sha256', this.registerTokenSecret())
+          .update(`reg:${ts}`)
+          .digest('hex')
+      : '';
+    const valid =
+      !!t && !!sig && sig.length === expected.length &&
+      timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+    if (!valid) {
+      throw new BadRequestException(
+        'Token pendaftaran tidak valid — muat ulang halaman lalu coba lagi.',
+      );
+    }
+    const age = Date.now() - t;
+    if (age < 2_000 || age > 2 * 3_600_000) {
+      throw new BadRequestException(
+        'Token pendaftaran kedaluwarsa — muat ulang halaman lalu coba lagi.',
+      );
+    }
+  }
+
+  /** Field honeypot harus kosong — yang mengisi hanya bot form-filler. */
+  private assertHoneypot(website: string | undefined) {
+    if (website && website.trim()) {
+      throw new BadRequestException('Pendaftaran tidak dapat diproses.');
+    }
+  }
+
   async registerParent(dto: RegisterParentDto) {
+    this.assertHoneypot(dto.website);
+    this.assertRegisterToken(dto.regToken);
     return this.prisma.$transaction(async (tx) => {
       const phone = dto.phone?.trim() || undefined;
       // Cegah duplikasi akun aktif: no HP yang sudah dipakai akun aktif
@@ -246,13 +301,9 @@ export class AuthService {
    * anggota kelompok tsb — bisa mengerjakan ujian yang ditugaskan ke
    * kelompok itu tanpa menunggu penempatan admin.
    */
-  async registerStudent(dto: {
-    name: string;
-    phone?: string;
-    password: string;
-    email?: string;
-    joinCode?: string;
-  }) {
+  async registerStudent(dto: RegisterStudentDto) {
+    this.assertHoneypot(dto.website);
+    this.assertRegisterToken(dto.regToken);
     return this.prisma.$transaction(async (tx) => {
       const phone = dto.phone?.trim() || undefined;
       if (phone) {

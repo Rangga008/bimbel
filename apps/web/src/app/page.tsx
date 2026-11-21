@@ -21,6 +21,7 @@ import {
 	FileCheck2,
 	GraduationCap,
 	MapPin,
+	MessageCircle,
 	NotebookPen,
 	Package2,
 	Presentation,
@@ -475,6 +476,9 @@ export default function LandingPage() {
 	const heroImages = landingHeroImages(display);
 	const regUrl =
 		display?.registrationUrl || DEFAULT_REGISTRATION_URL;
+	// Link "Hubungi Kami" — diatur di Pengaturan > Tampilan Landing
+	// (wa.me/…); kosong → tombol disembunyikan.
+	const contactUrl = display?.contactUrl || "";
 
 	// Konten landing — diatur admin di Pengaturan > Tampilan Landing;
 	// fallback ke bawaan bila belum diisi.
@@ -612,6 +616,19 @@ export default function LandingPage() {
 							>
 								Masuk
 							</Button>
+							{contactUrl ? (
+								<Button
+									size="lg"
+									variant="outline"
+									render={
+										<a href={contactUrl} target="_blank" rel="noopener noreferrer" />
+									}
+									className="gap-2 border-white/30 bg-white/5 text-white hover:bg-white/15 hover:text-white"
+								>
+									<MessageCircle className="size-4" />
+									Hubungi Kami
+								</Button>
+							) : null}
 							<a
 								href={regUrl}
 								target="_blank"
@@ -1130,6 +1147,19 @@ export default function LandingPage() {
 							>
 								Masuk
 							</Button>
+							{contactUrl ? (
+								<Button
+									size="lg"
+									variant="outline"
+									render={
+										<a href={contactUrl} target="_blank" rel="noopener noreferrer" />
+									}
+									className="gap-2 border-white/30 bg-white/5 text-white hover:bg-white/15 hover:text-white"
+								>
+									<MessageCircle className="size-4" />
+									Hubungi Kami
+								</Button>
+							) : null}
 							<a
 								href={regUrl}
 								target="_blank"

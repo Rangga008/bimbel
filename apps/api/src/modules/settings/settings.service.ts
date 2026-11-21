@@ -99,6 +99,10 @@ export interface DisplaySettings {
   /** Link eksternal formulir info & pendaftaran (buku tamu Google Form) —
    *  tombol Daftar di landing mengarah ke sini. */
   registrationUrl: string;
+  /** Link tombol "Hubungi Kami" di hero landing — mis. wa.me/62xxxx.
+   *  Kosong = fallback ke wa.me dari company.phone, disembunyikan bila
+   *  itu pun kosong. */
+  contactUrl: string;
   /** Konten teks landing per section — kosong berarti pakai default. */
   heroBadge: string;
   heroTitle: string;
@@ -482,6 +486,7 @@ export const SETTING_DEFS: {
     defaults: {
       heroImages: [],
       registrationUrl: 'https://s.id/info-daftarGFS2627',
+      contactUrl: '',
       ...LANDING_DISPLAY_DEFAULTS,
       testimonials: [
         {
@@ -540,6 +545,16 @@ export const SETTING_DEFS: {
       if (registrationUrl && !/^https?:\/\//.test(registrationUrl)) {
         throw new BadRequestException(
           'display.registrationUrl harus URL http(s):// yang valid.',
+        );
+      }
+      const contactUrl = asString(
+        o.contactUrl ?? '',
+        'display.contactUrl',
+        500,
+      );
+      if (contactUrl && !/^https?:\/\//.test(contactUrl)) {
+        throw new BadRequestException(
+          'display.contactUrl harus URL http(s):// yang valid.',
         );
       }
       const text = (
@@ -608,6 +623,7 @@ export const SETTING_DEFS: {
       return {
         heroImages,
         registrationUrl,
+        contactUrl,
         heroBadge: text('heroBadge', 'Badge hero', 120),
         heroTitle: text('heroTitle', 'Judul hero', 120),
         heroHighlight: text('heroHighlight', 'Sorotan judul hero', 120),

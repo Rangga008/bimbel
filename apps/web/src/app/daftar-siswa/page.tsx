@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -64,6 +64,15 @@ export default function DaftarSiswaPage() {
 	const [showPassword, setShowPassword] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const availability = useAvailability(email, phone);
+	// Token anti-bot (GET /auth/register-token) — wajib di POST /auth/register-student.
+	const [regToken, setRegToken] = useState("");
+	// Honeypot — input tersembunyi yang hanya diisi bot; harus tetap kosong.
+	const [website, setWebsite] = useState("");
+	useEffect(() => {
+		apiFetch<{ token: string }>("/auth/register-token", { auth: false })
+			.then((r) => setRegToken(r.token))
+			.catch(() => {});
+	}, []);
 
 	async function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
@@ -84,6 +93,8 @@ export default function DaftarSiswaPage() {
 					phone: phone.trim() || undefined,
 					password,
 					email: email.trim() || undefined,
+					regToken,
+					website,
 				},
 				auth: false,
 			});
@@ -103,6 +114,9 @@ export default function DaftarSiswaPage() {
 			toast.error(message);
 		} finally {
 			setIsSubmitting(false);
+			apiFetch<{ token: string }>("/auth/register-token", { auth: false })
+				.then((r) => setRegToken(r.token))
+				.catch(() => {});
 		}
 	}
 
@@ -129,6 +143,18 @@ export default function DaftarSiswaPage() {
 				</CardHeader>
 				<CardContent className="pb-6">
 					<form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+						{/* Honeypot anti-bot — tidak terlihat oleh pengguna; bot
+						    form-filler yang mengisinya ditolak server. */}
+						<input
+							type="text"
+							name="website"
+							value={website}
+							onChange={(e) => setWebsite(e.target.value)}
+							className="pointer-events-none absolute -left-[9999px] size-0 opacity-0"
+							tabIndex={-1}
+							autoComplete="off"
+							aria-hidden="true"
+						/>
 						<div className="flex flex-col gap-1.5">
 							<Label htmlFor="name">Nama Lengkap</Label>
 							<div className="relative">

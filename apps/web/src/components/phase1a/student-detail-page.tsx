@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, BadgePercent, ClipboardCheck, GraduationCap, Layers, MapPin, Pencil, Plus, School, Trash2, Users, Wallet } from 'lucide-react';
+import { ArrowLeft, BadgePercent, ClipboardCheck, GraduationCap, Layers, Link2, MapPin, Pencil, Plus, School, Trash2, Users, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -127,6 +127,9 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
   const [discountMonths, setDiscountMonths] = useState('');
   const [addProgramOpen, setAddProgramOpen] = useState(false);
   const [addForm, setAddForm] = useState({ programId: '', levelId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', paidInstallments: '0' });
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkSearch, setLinkSearch] = useState('');
+  const [linkUserId, setLinkUserId] = useState('');
 
   const studentQ = useQuery({
     queryKey: ['students', studentId],
@@ -246,6 +249,33 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
     onError: (e) => toast.error(err(e, 'Gagal memperbarui siswa.')),
   });
 
+  // "Hubungkan Akun" — untuk siswa yang mendaftar sendiri padahal data
+  // akademiknya dibuat admin/ortu (profil akun baru kosong → error
+  // "tidak terhubung ke data siswa" di latsol/ujian).
+  const linkCandidatesQ = useQuery({
+    queryKey: ['student-account-candidates', linkSearch],
+    queryFn: () =>
+      apiFetch<
+        { id: string; name: string; email: string; phone: string | null; student: { id: string } | null }[]
+      >(`/student-account-candidates?search=${encodeURIComponent(linkSearch)}`),
+    enabled: linkOpen && linkSearch.trim().length >= 2,
+  });
+  const linkM = useMutation({
+    mutationFn: () =>
+      apiFetch(`/students/${studentId}/link-account`, {
+        method: 'POST',
+        body: { userId: linkUserId },
+      }),
+    onSuccess: () => {
+      toast.success('Akun login berhasil dihubungkan ke data siswa ini.');
+      setLinkOpen(false);
+      setLinkSearch('');
+      setLinkUserId('');
+      qc.invalidateQueries({ queryKey: ['students'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal menghubungkan akun.')),
+  });
+
   const deleteM = useMutation({
     mutationFn: () => apiFetch(`/students/${studentId}`, { method: 'DELETE' }),
     onSuccess: () => {
@@ -332,6 +362,9 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                 <>
                   <Button variant="outline" size="sm" onClick={openEdit}>
                     <Pencil className="size-3.5" /> Edit
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setLinkOpen(true)} title="Hubungkan data siswa ini ke akun login lain (misal akun yang dibuat sendiri oleh siswa)">
+                    <Link2 className="size-3.5" /> Hubungkan Akun
                   </Button>
                   <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleteOpen(true)}>
                     <Trash2 className="size-3.5" /> Hapus
@@ -730,6 +763,70 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
               onClick={() => discountM.mutate()}
             >
               {discountM.isPending ? 'Menerapkan…' : 'Terapkan Diskon'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={linkOpen} onOpenChange={(o) => { setLinkOpen(o); if (!o) { setLinkSearch(''); setLinkUserId(''); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Hubungkan Akun Login</DialogTitle>
+            <DialogDescription>
+              Pilih akun siswa yang akan memakai data {s?.user.name ?? 'siswa ini'} — misal akun
+              yang dibuat sendiri oleh siswa lewat halaman daftar. Profil kosong milik
+              akun itu dihapus; kalau profilnya sudah punya jejak data, penukaran ditolak.
+              Akun lama ({s?.user.email}) tetap ada dan akan mendapat profil eksternal baru.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="link-search">Cari akun (nama / email / no. HP)</Label>
+              <Input
+                id="link-search"
+                placeholder="Ketik minimal 2 huruf…"
+                value={linkSearch}
+                onChange={(e) => { setLinkSearch(e.target.value); setLinkUserId(''); }}
+                autoFocus
+              />
+            </div>
+            {linkCandidatesQ.isLoading ? <Skeleton className="h-20 w-full" /> : null}
+            {linkSearch.trim().length >= 2 && linkCandidatesQ.data?.length === 0 ? (
+              <p className="rounded-md border border-dashed px-3 py-3 text-center text-xs text-muted-foreground">
+                Tidak ada akun siswa yang cocok.
+              </p>
+            ) : null}
+            {(linkCandidatesQ.data?.length ?? 0) > 0 ? (
+              <ul className="max-h-56 divide-y overflow-y-auto rounded-md border">
+                {linkCandidatesQ.data!.map((u) => (
+                  <li key={u.id}>
+                    <label className={`flex cursor-pointer items-center gap-3 px-3 py-2 text-sm transition-colors hover:bg-muted/60 ${linkUserId === u.id ? 'bg-primary/5' : ''}`}>
+                      <input
+                        type="radio"
+                        name="link-account"
+                        className="size-4 accent-primary"
+                        checked={linkUserId === u.id}
+                        onChange={() => setLinkUserId(u.id)}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">{u.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {u.email}{u.phone ? ` · ${u.phone}` : ''}
+                        </span>
+                      </span>
+                      {u.student ? (
+                        <Badge variant="outline" className="shrink-0 text-[10px]">sudah punya profil</Badge>
+                      ) : null}
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setLinkOpen(false)}>Batal</Button>
+            <Button disabled={!linkUserId || linkM.isPending} onClick={() => linkM.mutate()}>
+              {linkM.isPending ? 'Menghubungkan…' : 'Hubungkan'}
             </Button>
           </DialogFooter>
         </DialogContent>

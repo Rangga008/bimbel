@@ -187,6 +187,8 @@ export function ParentEnrollments() {
 	const qc = useQueryClient();
 	const [open, setOpen] = useState(false);
 	const [form, setForm] = useState(EMPTY_FORM);
+	/** Mode dialog: anak baru vs daftarkan anak yang sudah ada ke program lain. */
+	const [childMode, setChildMode] = useState<'new' | 'existing'>('new');
 	const [deleteChild, setDeleteChild] = useState<{ id: string; name: string } | null>(null);
 	const [editChild, setEditChild] = useState<MyChild | null>(null);
 	const [childEditForm, setChildEditForm] = useState(EMPTY_CHILD_EDIT);
@@ -331,6 +333,7 @@ export function ParentEnrollments() {
 			);
 			setOpen(false);
 			setForm(EMPTY_FORM);
+			setChildMode('new');
 			qc.invalidateQueries({ queryKey: ["my-enrollments"] });
 			qc.invalidateQueries({ queryKey: ["my-children"] });
 			qc.invalidateQueries({ queryKey: ["parent-invoices"] });
@@ -642,7 +645,7 @@ export function ParentEnrollments() {
 					<DialogHeader>
 						<DialogTitle>Daftarkan Anak</DialogTitle>
 						<DialogDescription>
-							Isi data anak lalu pilih program &amp; jenjang. Invoice (biaya pendaftaran + periode pertama) akan terbit otomatis.
+							Pilih &quot;Anak baru&quot; untuk mengisi data anak, atau &quot;Anak saya yang sudah ada&quot; untuk mendaftarkan anak ke program lain. Invoice (biaya pendaftaran + periode pertama) akan terbit otomatis.
 						</DialogDescription>
 					</DialogHeader>
 					<form
@@ -654,26 +657,52 @@ export function ParentEnrollments() {
 					>
 						{(childrenQ.data?.length ?? 0) > 0 ? (
 							<div className="flex flex-col gap-1.5">
-								<Label htmlFor="enr-existing">Anak</Label>
-								<ComboboxField
-									id="enr-existing"
-									value={form.existingStudentId}
-									onChange={(v) =>
-										setForm({
-											...form,
-											existingStudentId: v,
-											childName: v
-												? (childrenQ.data ?? []).find((c) => c.id === v)?.name ?? form.childName
-												: form.childName,
-										})
-									}
-									options={(childrenQ.data ?? []).map((c) => ({ value: c.id, label: `${c.name} — daftarkan ke program lain` }))}
-									placeholder="Anak baru — isi data di bawah"
-									emptyText="Tidak ada anak bernama itu."
-								/>
+								<Label>Anak yang didaftarkan *</Label>
+								<div className="grid grid-cols-2 gap-1 rounded-lg border bg-muted/40 p-1">
+									<button
+										type="button"
+										onClick={() => {
+											setChildMode('new');
+											setForm({ ...form, existingStudentId: '' });
+										}}
+										className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${childMode === 'new' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+									>
+										Anak baru
+									</button>
+									<button
+										type="button"
+										onClick={() => setChildMode('existing')}
+										className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${childMode === 'existing' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+									>
+										Anak saya yang sudah ada
+									</button>
+								</div>
+								{childMode === 'existing' ? (
+									<ComboboxField
+										id="enr-existing"
+										value={form.existingStudentId}
+										onChange={(v) =>
+											setForm({
+												...form,
+												existingStudentId: v,
+												childName: v
+													? (childrenQ.data ?? []).find((c) => c.id === v)?.name ?? form.childName
+													: form.childName,
+											})
+										}
+										options={(childrenQ.data ?? []).map((c) => ({ value: c.id, label: c.name }))}
+										placeholder="Pilih anak yang mau didaftarkan…"
+										emptyText="Tidak ada anak bernama itu."
+									/>
+								) : null}
+								{childMode === 'existing' ? (
+									<p className="text-xs text-muted-foreground">
+										Anak yang dipilih didaftarkan ke program baru — data diri &amp; akunnya tidak berubah.
+									</p>
+								) : null}
 							</div>
 						) : null}
-						{!form.existingStudentId ? (
+						{childMode === 'new' ? (
 							<>
 						<div className="flex flex-col gap-1.5">
 							<Label htmlFor="enr-name">Nama Lengkap Anak *</Label>
@@ -735,7 +764,7 @@ export function ParentEnrollments() {
 										minLength={9}
 									/>
 									<TakenHint show={addAvail.phoneTaken}>
-										Nomor HP ini sudah dipakai akun lain — anak tidak akan bisa login dengannya.
+										Nomor HP ini sudah dipakai akun lain — boleh saja bila itu akun Anda/anak Anda lain (keluarga boleh berbagi nomor).
 									</TakenHint>
 								</div>
 								<div className="flex flex-col gap-1.5">
@@ -1042,7 +1071,7 @@ export function ParentEnrollments() {
 									placeholder="08..."
 								/>
 								<TakenHint show={editAvail.phoneTaken}>
-									Nomor HP ini sudah dipakai akun aktif lain.
+									Nomor HP ini sudah dipakai akun aktif lain — boleh bila itu akun Anda/anak Anda lain.
 								</TakenHint>
 							</div>
 							<div className="flex flex-col gap-1.5">

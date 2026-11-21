@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -86,6 +87,43 @@ export class StudentsController {
       entityId: id,
       oldData: { isActive: before.isActive },
       newData: dto,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return updated;
+  }
+
+  /**
+   * Kandidat akun siswa untuk fitur "Hubungkan Akun" — dipakai saat siswa
+   * mendaftar sendiri padahal data akademiknya dibuat admin/ortu.
+   */
+  @Get('student-account-candidates')
+  @RequirePermissions(PERMISSION_CODES.PEOPLE_STUDENT_MANAGE)
+  linkCandidates(@Query('search') search?: string) {
+    return this.people.findStudentAccountCandidates(search ?? '');
+  }
+
+  /**
+   * Hubungkan ulang akun login lain ke data siswa ini — misal siswa yang
+   * mendaftar sendiri padahal data akademiknya dibuat admin/ortu.
+   */
+  @Post('students/:id/link-account')
+  @RequirePermissions(PERMISSION_CODES.PEOPLE_STUDENT_MANAGE)
+  async linkAccount(
+    @Param('id') id: string,
+    @Body() body: { userId?: string },
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const userId = String(body?.userId ?? '').trim();
+    if (!userId) throw new BadRequestException('userId wajib diisi.');
+    const updated = await this.people.linkAccount(id, userId);
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'STUDENT_ACCOUNT_LINKED',
+      entity: 'Student',
+      entityId: id,
+      newData: { userId },
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });

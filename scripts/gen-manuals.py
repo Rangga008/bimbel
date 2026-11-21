@@ -1,13 +1,26 @@
 #!/usr/bin/env python3
 """Generate Word manuals untuk Admin Finance & Admin Academic.
-Isi mencakup semua menu/fitur per role + placeholder screenshot."""
+
+Fitur:
+- Halaman DAFTAR ISI di awal — tiap entri adalah hyperlink internal:
+  Ctrl+Klik (Word) lompat langsung ke judul bab terkait.
+- Semua menu sidebar role tercakup (sesuai apps/web/src/config/role-nav.ts).
+- Placeholder [ Screenshot: ... ] untuk tempel tangkapan layar.
+
+Regenerate: python scripts/gen-manuals.py
+"""
 from docx import Document
-from docx.shared import Pt, RGBColor, Inches
+from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 
 BRAND = RGBColor(0x0B, 0x5C, 0xAB)
+LINK = "0563C1"
 GRAY = RGBColor(0x55, 0x55, 0x55)
 
+
+# ---------------------------------------------------------------- helpers
 def shot(doc, caption):
     p = doc.add_paragraph()
     r = p.add_run(f'[ Screenshot: {caption} ]')
@@ -18,50 +31,41 @@ def shot(doc, caption):
     p.paragraph_format.space_after = Pt(8)
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-def h1(doc, t): doc.add_heading(t, 1)
-def h2(doc, t): doc.add_heading(t, 2)
-def h3(doc, t): doc.add_heading(t, 3)
+
+def h1(doc, t, bookmark=None):
+    h = doc.add_heading(t, 1)
+    if bookmark:
+        _add_bookmark(h, bookmark)
+    return h
+
+
+def h3(doc, t):
+    doc.add_heading(t, 3)
+
+
 def para(doc, t, bold=False):
     p = doc.add_paragraph()
-    r = p.add_run(t); r.bold = bold
+    r = p.add_run(t)
+    r.bold = bold
     return p
+
+
 def bullets(doc, items):
     for i in items:
         doc.add_paragraph(i, style='List Bullet')
+
+
 def steps(doc, items):
     for i in items:
         doc.add_paragraph(i, style='List Number')
+
+
 def tip(doc, t):
     p = doc.add_paragraph()
-    r = p.add_run('Tips: '); r.bold = True
+    r = p.add_run('Tips: ')
+    r.bold = True
     p.add_run(t)
 
-def cover(doc, role, title, subtitle):
-    for _ in range(6): doc.add_paragraph()
-    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run('BIMBEL GFS'); r.font.size = Pt(16); r.font.color.rgb = BRAND; r.bold = True
-    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run(title); r.font.size = Pt(28); r.bold = True
-    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p.add_run(subtitle).font.size = Pt(13)
-    doc.add_paragraph()
-    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run(f'Panduan untuk role: {role}'); r.font.size = Pt(12); r.bold = True
-    doc.add_page_break()
-
-def intro(doc, audience):
-    h1(doc, 'Pendahuluan')
-    para(doc, audience)
-    bullets(doc, [
-        'Login menggunakan email/nomor HP + password yang diberikan admin.',
-        'Menu sidebar di sebelah kiri dikelompokkan per kategori; klik nama menu untuk membuka halaman.',
-        'Ikon lonceng di kanan atas menampilkan notifikasi; klik avatar untuk logout.',
-        'Tampilan menyesuaikan desktop dan mobile — di HP sidebar bisa dibuka lewat ikon garis tiga.',
-        'Setiap perubahan penting tercatat di audit log sistem.',
-    ])
-    para(doc, 'Setiap bab berikut menjelaskan satu menu beserta fungsinya dan langkah penggunaan umum. '
-              'Tempat kosong bertanda [ Screenshot: ... ] disediakan untuk menempel tangkapan layar halaman terkait.', bold=False)
-    doc.add_page_break()
 
 def table(doc, headers, rows):
     t = doc.add_table(rows=1, cols=len(headers))
@@ -73,516 +77,782 @@ def table(doc, headers, rows):
         for i, v in enumerate(row):
             cells[i].text = v
 
-# ============================================================ FINANCE
-def build_finance():
+
+# ------------------------------------------------- bookmark + hyperlink TOC
+_bm_id = [1000]
+
+
+def _add_bookmark(paragraph, name):
+    """Sisipkan bookmark bernama `name` pada sebuah paragraph (untuk anchor)."""
+    _bm_id[0] += 1
+    bid = str(_bm_id[0])
+    start = OxmlElement('w:bookmarkStart')
+    start.set(qn('w:id'), bid)
+    start.set(qn('w:name'), name)
+    end = OxmlElement('w:bookmarkEnd')
+    end.set(qn('w:id'), bid)
+    paragraph._p.insert(0, start)
+    paragraph._p.append(end)
+
+
+def _add_internal_link(paragraph, text, anchor):
+    """Tambahkan hyperlink internal (w:hyperlink w:anchor) ke paragraph."""
+    link = OxmlElement('w:hyperlink')
+    link.set(qn('w:anchor'), anchor)
+    run = OxmlElement('w:r')
+    rpr = OxmlElement('w:rPr')
+    color = OxmlElement('w:color')
+    color.set(qn('w:val'), LINK)
+    rpr.append(color)
+    u = OxmlElement('w:u')
+    u.set(qn('w:val'), 'single')
+    rpr.append(u)
+    run.append(rpr)
+    t = OxmlElement('w:t')
+    t.set(qn('xml:space'), 'preserve')
+    t.text = text
+    run.append(t)
+    link.append(run)
+    paragraph._p.append(link)
+
+
+def toc_page(doc, entries):
+    """Halaman Daftar Isi — tiap entri Ctrl+Klik → lompat ke judul bab."""
+    doc.add_heading('Daftar Isi', 1)
+    p = doc.add_paragraph()
+    r = p.add_run(
+        'Tahan Ctrl lalu klik judul untuk langsung menuju bab tersebut.'
+    )
+    r.italic = True
+    r.font.size = Pt(9)
+    r.font.color.rgb = GRAY
+    for text, anchor in entries:
+        p = doc.add_paragraph()
+        p.paragraph_format.space_after = Pt(2)
+        _add_internal_link(p, text, anchor)
+    doc.add_page_break()
+
+
+def cover(doc, role, title, subtitle):
+    for _ in range(6):
+        doc.add_paragraph()
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run('BIMBEL GFS')
+    r.font.size = Pt(16)
+    r.font.color.rgb = BRAND
+    r.bold = True
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run(title)
+    r.font.size = Pt(28)
+    r.bold = True
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.add_run(subtitle).font.size = Pt(13)
+    doc.add_paragraph()
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run(f'Panduan untuk role: {role}')
+    r.font.size = Pt(12)
+    r.bold = True
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run('Versi November 2026')
+    r.font.size = Pt(10)
+    r.font.color.rgb = GRAY
+    doc.add_page_break()
+
+
+def render_section(doc, sec, anchor):
+    h1(doc, sec['title'], bookmark=anchor)
+    for t in sec.get('paras', []):
+        para(doc, t)
+    if 'steps' in sec:
+        steps(doc, sec['steps'])
+    if 'bullets' in sec:
+        bullets(doc, sec['bullets'])
+    for t in sec.get('tips', []):
+        tip(doc, t)
+    if 'table' in sec:
+        table(doc, sec['table'][0], sec['table'][1])
+    for sub in sec.get('subs', []):
+        h3(doc, sub['title'])
+        for t in sub.get('paras', []):
+            para(doc, t)
+        if 'steps' in sub:
+            steps(doc, sub['steps'])
+        if 'bullets' in sub:
+            bullets(doc, sub['bullets'])
+        for t in sub.get('tips', []):
+            tip(doc, t)
+    for cap in sec.get('shots', []):
+        shot(doc, cap)
+
+
+def build_doc(role, subtitle, audience_paras, sections, out_path):
     doc = Document()
-    cover(doc, 'ADMIN FINANCE', 'Manual Pengguna', 'Sistem Manajemen Bimbel GFS — Modul Keuangan & Administrasi')
-    intro(doc,
-        'Manual ini ditujukan untuk staf Admin Finance. Role ini menangani seluruh siklus keuangan '
-        'bimbel: pendaftaran & tagihan siswa, pembayaran, penagihan piutang, kas/bank, pengeluaran, '
-        'RAB (anggaran), payroll tutor, hingga laporan keuangan. Admin Finance juga mengelola data '
-        'siswa/orang tua, pengaturan sistem, akun pengguna, dan antrean notifikasi WhatsApp.')
+    cover(doc, role, 'Manual Pengguna', subtitle)
+    entries = [('Pendahuluan', 'sec_0')] + [
+        (s['title'], f'sec_{i}') for i, s in enumerate(sections, 1)
+    ]
+    toc_page(doc, entries)
 
-    h1(doc, '1. Dashboard')
-    para(doc, 'Halaman awal setelah login. Menampilkan ringkasan kondisi keuangan dan operasional hari ini.')
+    h1(doc, 'Pendahuluan', bookmark='sec_0')
+    for t in audience_paras:
+        para(doc, t)
     bullets(doc, [
-        'Ringkasan kas & tagihan: total piutang berjalan, pembayaran masuk periode ini.',
-        'Pembayaran yang menunggu verifikasi — klik untuk langsung memproses.',
-        'Invoice yang akan jatuh tempo.',
-        'Shortcut ke fungsi harian yang sering dipakai.',
+        'Login menggunakan email/nomor HP + password yang diberikan admin.',
+        'Menu sidebar di sebelah kiri dikelompokkan per kategori; klik nama menu untuk membuka halaman.',
+        'Ikon lonceng di kanan atas menampilkan notifikasi; klik avatar untuk logout.',
+        'Tampilan menyesuaikan desktop dan mobile — di HP sidebar bisa dibuka lewat ikon garis tiga.',
+        'Semua dropdown pemilihan (tutor, kelompok, mapel, ruangan, siswa, sesi, program, jenjang, akun) bersifat searchable — ketik untuk mencari. Daftar dropdown juga tidak terpotong di tepi layar (scroll sampai opsi terakhir).',
+        'Setiap perubahan penting tercatat di audit log sistem.',
     ])
-    shot(doc, 'Dashboard Admin Finance — kartu ringkasan dan daftar pembayaran pending')
+    para(doc,
+         'Setiap bab berikut menjelaskan satu menu beserta fungsinya dan langkah penggunaan umum. '
+         'Tempat kosong bertanda [ Screenshot: ... ] disediakan untuk menempel tangkapan layar halaman terkait.')
+    doc.add_page_break()
 
-    h1(doc, '2. Data Siswa')
-    para(doc, 'Kelola data siswa: melihat daftar, detail profil, kelompok yang diikuti, tagihan, dan riwayat.')
-    bullets(doc, [
-        'Pencarian & filter siswa berdasarkan nama/kelompok/status.',
-        'Halaman detail siswa: data diri, orang tua, kelompok, invoice, kehadiran.',
-        'Kirim reminder WhatsApp ke orang tua siswa (tagihan, jadwal mingguan, performa bulanan).',
-        'Nonaktifkan siswa yang sudah tidak aktif (data historis tetap tersimpan).',
-    ])
-    shot(doc, 'Daftar siswa dengan kolom pencarian dan filter')
-    shot(doc, 'Halaman detail siswa — profil, kelompok, dan tagihan')
+    for i, sec in enumerate(sections, 1):
+        render_section(doc, sec, f'sec_{i}')
 
-    h1(doc, '3. Data Orang Tua')
-    para(doc, 'Kelola akun orang tua/wali yang terhubung ke satu atau lebih anak.')
-    bullets(doc, [
-        'Melihat orang tua beserta anak-anak yang terhubung.',
-        'Mengaitkan/memutuskan relasi orang tua ↔ siswa.',
-        'Mengirim reminder WhatsApp langsung ke orang tua.',
-        'Melihat statement (ringkasan tagihan) per orang tua.',
-    ])
-    shot(doc, 'Daftar orang tua beserta anak yang terhubung')
+    doc.save(out_path)
+    print(f'{out_path} dibuat')
 
-    h1(doc, '4. Pendaftaran')
-    para(doc, 'Memproses pendaftaran siswa baru — baik yang mendaftar lewat form publik maupun pendaftaran manual oleh admin.')
-    steps(doc, [
-        'Buka menu Pendaftaran — daftar pendaftar baru (status MENUNGGU) tampil di atas.',
-        'Klik pendaftar untuk melihat detail: nama, program & jenjang pilihan, kontak.',
-        'Verifikasi data, lalu setujui — sistem membuat akun siswa & menghubungkan ke orang tua.',
-        'Setelah disetujui, lakukan penempatan ke kelompok dan terbitkan invoice pertama.',
-        'Pendaftar juga bisa ditolak dengan catatan alasan.',
-    ])
-    bullets(doc, [
-        'Pendaftaran mandiri oleh orang tua dari portal juga masuk ke antrean yang sama.',
-        'Link info pendaftaran publik: https://s.id/info-daftarGFS2627.',
-    ])
-    shot(doc, 'Antrean pendaftaran dengan status MENUNGGU / DISETUJUI / DITOLAK')
 
-    h1(doc, '5. Program')
-    para(doc, 'Daftar program bimbel: Kelas Reguler (multi-mapel), Kelas Extra, dan Kelas Privat.')
-    bullets(doc, [
-        'Melihat daftar program beserta kode, kategori, dan jenjang yang tersedia.',
-        'Program menentukan struktur kelas dan skema penagihan.',
-    ])
-    shot(doc, 'Daftar program beserta kategori')
+SHARED_SYS_SECTIONS = [
+    {
+        'title': 'Pengaturan',
+        'paras': [
+            'Konfigurasi sistem — sebagian bagian hanya tampil sesuai wewenang role. '
+            'Tiap sub-bagian punya tombol Simpan sendiri.',
+        ],
+        'subs': [
+            {
+                'title': 'Identitas & Branding',
+                'bullets': [
+                    'Nama aplikasi, tagline, logo (rekomendasi 1:1, min. 512×512 px, PNG/WebP transparan).',
+                    'Identitas lembaga: alamat, telepon, email — dipakai di kwitansi & laporan cetak.',
+                ],
+            },
+            {
+                'title': 'Tampilan Landing',
+                'bullets': [
+                    'Teks hero/tentang/CTA, foto hero (rekomendasi 21:9 desktop, 16:10 mobile — object-cover).',
+                    'Testimoni di halaman awal.',
+                    'Lokasi di Footer: nama lokasi, alamat, dan Link Google Maps (opsional) — tempel URL share maps; '
+                    'klik lokasi di footer membuka Google Maps di tab baru. Kosongkan daftar untuk memakai data gedung.',
+                    'Link formulir info & pendaftaran publik.',
+                ],
+            },
+            {
+                'title': 'Template Pesan WhatsApp',
+                'bullets': [
+                    'Template reminder: tagihan, jadwal mingguan, performa bulanan, feedback, tutor berhalangan.',
+                    'Variabel {nama}, {tagihan}, dll. diganti otomatis — ikuti panduan di tiap kolom.',
+                ],
+            },
+            {
+                'title': 'Pembayaran & Lainnya',
+                'bullets': [
+                    'Akun kas/bank dan kredensial payment gateway (wewenang Finance).',
+                    'Parameter sistem lainnya sesuai wewenang role.',
+                ],
+            },
+        ],
+        'shots': ['Halaman pengaturan — bagian identitas', 'Bagian Lokasi di Footer dengan kolom link Google Maps'],
+    },
+    {
+        'title': 'Manajemen Akun',
+        'bullets': [
+            'Buat akun baru, atur ulang password, aktif/nonaktifkan akun.',
+            'Kelola role akun lewat dialog "Kelola Role" — tombol Tambah/Hapus per role.',
+            'Role OWNER hanya bisa diberikan/dicabut oleh Owner; akun sendiri tidak bisa dicabut rolenya.',
+            'Akun nonaktif tidak bisa login tetapi datanya tetap tersimpan.',
+        ],
+        'shots': ['Daftar akun dan dialog kelola role'],
+    },
+    {
+        'title': 'Notifikasi & Profil',
+        'bullets': [
+            'Notifikasi: pusat pemberitahuan in-app — klik untuk menuju halaman terkait, tandai sudah dibaca.',
+            'Profil: ubah nama, foto, nomor HP, password sendiri.',
+            'Preferensi notifikasi: pilih kanal in-app dan/atau WhatsApp per jenis pemberitahuan.',
+        ],
+        'shots': ['Panel notifikasi dan halaman profil'],
+    },
+]
 
-    h1(doc, '6. Kelompok')
-    para(doc, 'Kelompok belajar per program & jenjang. Admin Finance melihat struktur kelompok untuk kebutuhan penagihan.')
-    bullets(doc, [
-        'Daftar kelompok beserta kode, program, jenjang, kapasitas, dan jumlah anggota.',
-        'Detail kelompok: anggota siswa, tutor pengampu, dan sesi yang berjalan.',
-        'Pembuatan & pengaturan kelompok akademik ditangani Admin Academic.',
-    ])
-    shot(doc, 'Daftar kelompok dan detail anggota')
 
-    h1(doc, '7. Harga Program')
-    para(doc, 'Mengatur tarif per program/jenjang dan harga tambahan — menjadi dasar nominal invoice otomatis.')
-    bullets(doc, [
-        'Harga per program & jenjang (paket per bulan/per periode).',
-        'Biaya tambahan (pendaftaran, materi, dll.) per paket.',
-        'Perubahan harga berlaku untuk invoice yang diterbitkan setelahnya — invoice lama tidak berubah.',
-    ])
-    tip(doc, 'Pastikan harga benar sebelum akhir bulan — generate invoice massal memakai harga saat itu.')
-    shot(doc, 'Tabel harga per program dan jenjang')
+# ============================================================ FINANCE
+FINANCE_SECTIONS = [
+    {
+        'title': '1. Dashboard',
+        'paras': [
+            'Halaman awal setelah login — ringkasan kondisi keuangan & operasional hari ini.',
+        ],
+        'bullets': [
+            'Aksi Cepat di bawah judul: Verifikasi Bukti, Buat Invoice, Transaksi Harian, Pendaftaran, Penagihan.',
+            'Kartu KPI: piutang berjalan, pembayaran masuk periode ini, invoice jatuh tempo.',
+            'Pembayaran yang menunggu verifikasi — klik untuk langsung memproses.',
+            'Strip kesehatan sistem: jumlah pesan WhatsApp antre/gagal — klik untuk membuka Antrean WA.',
+            'Grafik tren pemasukan/pengeluaran per periode.',
+        ],
+        'shots': ['Dashboard Admin Finance — aksi cepat, KPI, dan pembayaran pending'],
+    },
+    {
+        'title': '2. Siswa',
+        'paras': ['Kelola data siswa: daftar, detail profil, kelompok, tagihan, dan riwayat.'],
+        'bullets': [
+            'Pencarian & filter siswa berdasarkan nama/kelompok/status.',
+            'Detail siswa: data diri, orang tua, kelompok yang diikuti, invoice, kehadiran, nilai.',
+            'Kirim reminder WhatsApp ke orang tua siswa (tagihan, jadwal mingguan, performa bulanan).',
+            'Nonaktifkan siswa yang sudah tidak aktif (data historis tetap tersimpan).',
+        ],
+        'shots': ['Daftar siswa dengan pencarian dan filter', 'Detail siswa — profil, kelompok, tagihan'],
+    },
+    {
+        'title': '3. Orang Tua',
+        'paras': ['Kelola akun orang tua/wali yang terhubung ke satu atau lebih anak.'],
+        'bullets': [
+            'Daftar orang tua beserta anak-anak yang terhubung.',
+            'Mengaitkan/memutuskan relasi orang tua ↔ siswa.',
+            'Melihat akun yang dipakai anak (telepon/email) — berguna saat ortu lupa login anak.',
+            'Kirim reminder WhatsApp langsung ke orang tua.',
+            'Statement (ringkasan tagihan) per orang tua — bisa dicetak/diunduh.',
+        ],
+        'shots': ['Daftar orang tua beserta anak yang terhubung'],
+    },
+    {
+        'title': '4. Pendaftaran',
+        'paras': [
+            'Memproses pendaftar baru — dari form publik maupun pendaftaran yang dibuat orang tua '
+            'di portal. Alur: pendaftar → verifikasi → akun siswa dibuat → penempatan → invoice.',
+        ],
+        'steps': [
+            'Buka menu Pendaftaran — antrean pendaftar status MENUNGGU tampil di atas.',
+            'Klik pendaftar untuk detail: nama, program & jenjang pilihan, kontak, status akun anak (menunggu/terverifikasi).',
+            'Setujui — sistem membuat akun siswa dan menghubungkannya ke orang tua.',
+            'Lanjutkan penempatan ke kelompok dan terbitkan invoice pertama.',
+            'Atau tolak dengan catatan alasan.',
+        ],
+        'bullets': [
+            'Label harga di formulir tambah anak menunjukkan paket & cara bayar tahun ajaran.',
+            'Link info pendaftaran publik: https://s.id/info-daftarGFS2627.',
+        ],
+        'shots': ['Antrean pendaftaran — MENUNGGU / DISETUJUI / DITOLAK'],
+    },
+    {
+        'title': '5. Program',
+        'paras': [
+            'Daftar program bimbel: Kelas Reguler (multi-mapel), Kelas Extra, dan Kelas Privat. '
+            'Klik program untuk membuka halaman detail berisi kartu-kartu jenjang.',
+        ],
+        'bullets': [
+            'Di detail program, tiap kartu jenjang menampilkan mapel, harga, dan daftar paket belajar.',
+            'Paket Populer: klik tombol bintang di samping nama paket untuk menandai paket tampil di slider '
+            '"Paket Terpopuler" halaman awal (landing). Klik lagi untuk melepas tanda.',
+            'Bila tidak ada paket yang ditandai, slider menampilkan paket dengan siswa terbanyak seperti biasa.',
+            'Edit Program mengubah nama, kategori, biaya pendaftaran, deskripsi, dan status aktif.',
+        ],
+        'shots': ['Daftar program', 'Kartu jenjang dengan daftar paket dan tombol bintang populer'],
+    },
+    {
+        'title': '6. Kelompok',
+        'paras': ['Kelompok belajar per program & jenjang — dasar penagihan dan penempatan siswa.'],
+        'bullets': [
+            'Daftar kelompok: kode, program, jenjang, kapasitas, jumlah anggota.',
+            'Detail kelompok: anggota siswa, tutor pengampu, dan sesi yang berjalan.',
+            'Buat kelompok baru: nama, program, jenjang, tutor lead, mapel — penjadwalan dilakukan '
+            'terpisah per tanggal di menu Jadwal & Sesi (bukan template mingguan di sini).',
+        ],
+        'shots': ['Daftar kelompok dan detail anggota'],
+    },
+    {
+        'title': '7. Harga Program',
+        'paras': ['Mengatur tarif per program/jenjang — dasar nominal invoice otomatis.'],
+        'bullets': [
+            'Pilih program → jenjang → isi pricelist sesuai satuan harga (per tahun ajaran / per bulan / per pertemuan / per paket).',
+            'Reguler: harga lunas awal, angsuran 2x, angsuran bulanan. Privat: harga per jumlah siswa + durasi. Extra: harga promo untuk siswa reguler.',
+            'Biaya pendaftaran bisa di-override per jenjang — kosong = ikut program.',
+            'Perubahan berlaku untuk invoice yang diterbitkan setelahnya — invoice lama tidak berubah.',
+        ],
+        'tips': ['Pastikan harga benar sebelum akhir bulan — generate invoice massal memakai harga saat itu.'],
+        'shots': ['Form harga per jenjang sesuai satuan'],
+    },
+    {
+        'title': '8. Invoice',
+        'paras': ['Menerbitkan dan mengelola tagihan siswa.'],
+        'steps': [
+            'Buat invoice individual dari detail siswa, atau generate massal per periode.',
+            'Tiap invoice punya nomor unik, jatuh tempo, rincian item, dan status (DRAFT / ISSUED / LUNAS / BATAL).',
+            'Invoice ISSUED otomatis tampil di portal orang tua.',
+            'Pembayaran terverifikasi menurunkan sisa tagihan otomatis; LUNAS menampilkan riwayat pembayaran.',
+            'Invoice keliru bisa dibatalkan selama belum ada pembayaran.',
+        ],
+        'shots': ['Daftar invoice dengan status dan sisa tagihan', 'Detail invoice — item dan riwayat pembayaran'],
+    },
+    {
+        'title': '9. Pembayaran',
+        'paras': ['Mencatat pembayaran dan memverifikasi pembayaran yang dikirim orang tua.'],
+        'bullets': [
+            'Pembayaran manual (tunai/transfer cek manual): nominal, metode, tanggal, invoice tujuan.',
+            'Verifikasi pembayaran online: cocokkan bukti → setujui atau tolak.',
+            'Riwayat pembayaran per invoice & per siswa dapat ditelusuri.',
+            'Struk/kwitansi pembayaran dapat dicetak atau diunduh sebagai bukti untuk orang tua — '
+            'kwitansi juga punya link publik yang dikirim via WhatsApp.',
+        ],
+        'shots': ['Form input pembayaran dan daftar yang menunggu verifikasi'],
+    },
+    {
+        'title': '10. Bukti',
+        'paras': ['Antrean bukti transfer yang diunggah orang tua dari portal.'],
+        'steps': [
+            'Buka bukti baru — tampil foto/scan transfer beserta invoice terkait.',
+            'Cocokkan nominal & pengirim dengan mutasi/invoice.',
+            'Setujui → saldo invoice berkurang dan status diperbarui otomatis.',
+            'Tolak dengan alasan → orang tua dinotifikasi untuk mengunggah ulang.',
+        ],
+        'shots': ['Antrean bukti pembayaran dengan pratinjau gambar'],
+    },
+    {
+        'title': '11. Transaksi Harian',
+        'paras': ['Buku kas harian: seluruh mutasi masuk/keluar per akun kas & bank.'],
+        'bullets': [
+            'Filter per tanggal dan per akun (kas tunai, rekening bank, e-wallet).',
+            'Saldo berjalan per akun.',
+            'Catat transaksi non-invoice (penjualan modul, penerimaan lain).',
+        ],
+        'shots': ['Transaksi harian per akun kas/bank'],
+    },
+    {
+        'title': '12. Penagihan & Reminder',
+        'paras': ['Kontrol piutang: invoice belum lunas + umur tagihan + pengiriman reminder WhatsApp.'],
+        'steps': [
+            'Lihat piutang per siswa/invoice, urutkan jatuh tempo atau umur.',
+            'Kirim reminder WA satu per satu atau massal — isi pesan mengikuti template di Pengaturan.',
+            'Status reminder (terkirim/terakhir dikirim) tercatat di tiap baris.',
+            'Tagihan lunas otomatis hilang dari daftar.',
+        ],
+        'shots': ['Daftar piutang dengan tombol kirim reminder WhatsApp'],
+    },
+    {
+        'title': '13. Kas/Bank',
+        'paras': ['Master akun keuangan tempat pembayaran diterima.'],
+        'bullets': [
+            'Tambah/ubah akun: nama, jenis (kas/bank/e-wallet), nomor rekening, atas nama.',
+            'Akun aktif tampil sebagai pilihan saat mencatat pembayaran.',
+            'Rekening ini juga yang dilihat orang tua saat membayar.',
+        ],
+        'shots': ['Daftar akun kas dan bank'],
+    },
+    {
+        'title': '14. RAB',
+        'paras': ['Rencana Anggaran Biaya per periode — pembanding rencana vs realisasi pengeluaran.'],
+        'bullets': [
+            'Buat RAB per periode dengan item anggaran dan plafon.',
+            'Pantau realisasi vs anggaran per item.',
+            'Status RAB: draft, disetujui, berjalan, ditutup.',
+        ],
+        'shots': ['Daftar RAB dan detail item anggaran'],
+    },
+    {
+        'title': '15. Pengeluaran',
+        'paras': ['Seluruh pengeluaran operasional selain gaji tutor.'],
+        'bullets': [
+            'Input: tanggal, kategori, nominal, akun sumber, bukti/nota.',
+            'Kategori pengeluaran dapat dikelola.',
+            'Masuk ke laporan laba-rugi dan realisasi RAB.',
+        ],
+        'shots': ['Daftar pengeluaran dengan kategori dan akun'],
+    },
+    {
+        'title': '16. Gaji Bulanan Tutor',
+        'paras': ['Payroll tutor per bulan berdasarkan data mengajar.'],
+        'steps': [
+            'Pilih periode — sistem menarik sesi mengajar tiap tutor.',
+            'Periksa rincian work item: jumlah sesi, tarif, penyesuaian.',
+            'Generate slip/payroll — nominal bisa disesuaikan bila ada koreksi.',
+            'Tandai dibayar setelah transfer dilakukan.',
+        ],
+        'tips': ['Kehadiran tutor IZIN/SAKIT/ALFA tidak dihitung work item — HADIR/TERLAMBAT dihitung.'],
+        'shots': ['Tabel payroll per tutor dengan rincian sesi'],
+    },
+    {
+        'title': '17. Laporan',
+        'paras': ['Pusat laporan keuangan & operasional — tampil langsung di aplikasi, bisa dicetak/diekspor.'],
+        'bullets': [
+            'Laporan keuangan: pemasukan, pengeluaran, laba-rugi per periode.',
+            'Laporan piutang & aging tagihan.',
+            'Laporan per siswa/per program.',
+            'Semua laporan bisa dicetak untuk arsip.',
+        ],
+        'shots': ['Halaman laporan dengan pilihan jenis dan periode'],
+    },
+    {
+        'title': '18. Pustaka Media',
+        'paras': ['Gudang file gambar/media yang dipakai lintas modul (logo, foto hero, lampiran).'],
+        'bullets': [
+            'Unggah file gambar — deduplikasi otomatis berdasarkan isi file (SHA-256).',
+            'Salin URL untuk dipakai di pengaturan tampilan atau konten.',
+            'Hapus file yang tidak terpakai.',
+        ],
+        'shots': ['Pustaka media dengan pratinjau gambar'],
+    },
+    {
+        'title': '19. Antrean WA',
+        'paras': ['Monitor seluruh pesan WhatsApp yang dijadwalkan/dikirim sistem.'],
+        'bullets': [
+            'Status tiap pesan: antre, terkirim, gagal — beserta isi pesan & tujuan.',
+            'Pesan gagal bisa di-Retry; alasan kegagalan provider ditampilkan.',
+            'Pesan menggantung di provider (device offline) otomatis ditandai gagal setelah batas waktu.',
+        ],
+        'tips': ['Bila banyak "terkirim" tapi tidak sampai, periksa status device WhatsApp di dashboard provider (Fonnte).'],
+        'shots': ['Antrean WhatsApp dengan status per pesan'],
+    },
+    *SHARED_SYS_SECTIONS,
+    {
+        'title': 'Lampiran — Alur Kerja Harian yang Disarankan',
+        'steps': [
+            'Pagi: cek Dashboard → pembayaran menunggu verifikasi → proses bukti baru.',
+            'Kirim reminder tagihan ke piutang mendekati jatuh tempo.',
+            'Catat transaksi harian & pengeluaran segera setelah terjadi.',
+            'Akhir bulan: generate invoice massal → pantau piutang → payroll tutor.',
+            'Berkala: backup database (Pengaturan/Backup bila tersedia) dan cek Antrean WA.',
+        ],
+    },
+]
 
-    h1(doc, '8. Invoice')
-    para(doc, 'Menerbitkan dan mengelola tagihan siswa.')
-    steps(doc, [
-        'Buat invoice individual dari halaman detail siswa, atau generate massal per periode.',
-        'Setiap invoice punya nomor unik, tanggal jatuh tempo, rincian item, dan status (DRAFT/ISSUED/LUNAS/BATAL).',
-        'Invoice ISSUED otomatis tampil di portal orang tua.',
-        'Pembayaran yang diverifikasi otomatis menurunkan sisa tagihan; invoice LUNAS menampilkan riwayat pembayaran.',
-        'Invoice keliru bisa dibatalkan/dihapus selama belum ada pembayaran.',
-    ])
-    shot(doc, 'Daftar invoice dengan status dan sisa tagihan')
-    shot(doc, 'Detail invoice — rincian item dan riwayat pembayaran')
-
-    h1(doc, '9. Pembayaran')
-    para(doc, 'Mencatat pembayaran dan memverifikasi pembayaran yang dikirim orang tua lewat gateway/bukti transfer.')
-    bullets(doc, [
-        'Pembayaran manual (tunai/transfer yang dicek manual): input nominal, metode, tanggal, invoice tujuan.',
-        'Verifikasi pembayaran online: cocokkan dengan bukti, lalu setujui atau tolak.',
-        'Riwayat pembayaran per invoice & per siswa dapat ditelusuri.',
-        'Struk pembayaran dapat dicetak/diunduh sebagai bukti untuk orang tua.',
-    ])
-    shot(doc, 'Form input pembayaran dan daftar yang menunggu verifikasi')
-
-    h1(doc, '10. Bukti Pembayaran')
-    para(doc, 'Antrean bukti transfer/payment yang diunggah orang tua dari portal.')
-    steps(doc, [
-        'Buka bukti baru — tampil foto/scan transfer beserta invoice terkait.',
-        'Cocokkan nominal & pengirim dengan mutasi/invoice.',
-        'Setujui → saldo invoice otomatis berkurang dan status diperbarui.',
-        'Tolak dengan alasan → orang tua mendapat notifikasi untuk mengunggah ulang.',
-    ])
-    shot(doc, 'Antrean bukti pembayaran dengan pratinjau gambar')
-
-    h1(doc, '11. Transaksi Harian')
-    para(doc, 'Buku kas harian: seluruh mutasi masuk/keluar per akun kas & bank dalam satu tampilan.')
-    bullets(doc, [
-        'Filter per tanggal dan per akun (kas tunai, rekening bank, e-wallet).',
-        'Saldo berjalan per akun.',
-        'Mencatat transaksi non-invoice (mis. penjualan modul, penerimaan lain).',
-    ])
-    shot(doc, 'Transaksi harian per akun kas/bank')
-
-    h1(doc, '12. Penagihan & Reminder (Piutang)')
-    para(doc, 'Kontrol piutang: daftar invoice belum lunas beserta umur tagihan, plus pengiriman reminder WhatsApp.')
-    steps(doc, [
-        'Lihat piutang per siswa/invoice, urutkan berdasarkan jatuh tempo atau umur.',
-        'Kirim reminder WA ke orang tua satu per satu atau massal — isi pesan mengikuti template di Pengaturan.',
-        'Status reminder (terkirim/terakhir dikirim) tercatat di tiap baris piutang.',
-        'Tagihan yang sudah lunas otomatis hilang dari daftar.',
-    ])
-    shot(doc, 'Daftar piutang dengan tombol kirim reminder WhatsApp')
-
-    h1(doc, '13. Kas/Bank')
-    para(doc, 'Master akun keuangan: kas tunai dan rekening bank tempat pembayaran diterima.')
-    bullets(doc, [
-        'Tambah/ubah akun: nama, jenis (kas/bank/e-wallet), nomor rekening, atas nama.',
-        'Akun aktif tampil sebagai pilihan saat mencatat pembayaran.',
-        'Informasi rekening ini juga yang dilihat orang tua saat membayar.',
-    ])
-    shot(doc, 'Daftar akun kas dan bank beserta nomor rekening')
-
-    h1(doc, '14. RAB (Rencana Anggaran Biaya)')
-    para(doc, 'Perencanaan anggaran per periode — pembanding antara rencana dan realisasi pengeluaran.')
-    bullets(doc, [
-        'Buat RAB per periode dengan item anggaran dan plafon.',
-        'Pantau realisasi vs anggaran per item.',
-        'Status RAB: draft, disetujui, berjalan, ditutup.',
-    ])
-    shot(doc, 'Daftar RAB dan detail item anggaran')
-
-    h1(doc, '15. Pengeluaran')
-    para(doc, 'Mencatat seluruh pengeluaran operasional selain gaji tutor.')
-    bullets(doc, [
-        'Input pengeluaran: tanggal, kategori, nominal, akun sumber, bukti/nota.',
-        'Kategori pengeluaran dapat dikelola.',
-        'Pengeluaran masuk ke laporan laba-rugi dan realisasi RAB.',
-    ])
-    shot(doc, 'Daftar pengeluaran dengan kategori dan akun')
-
-    h1(doc, '16. Gaji Bulanan Tutor (Payroll)')
-    para(doc, 'Menghitung dan memproses penggajian tutor per bulan berdasarkan data mengajar.')
-    steps(doc, [
-        'Pilih periode — sistem menarik sesi mengajar tiap tutor (kehadiran mengajar ikut dihitung).',
-        'Periksa rincian work item per tutor: jumlah sesi, tarif, penyesuaian.',
-        'Generate slip/payroll — nominal bisa disesuaikan bila ada koreksi.',
-        'Tandai sebagai dibayar setelah transfer dilakukan.',
-    ])
-    tip(doc, 'Kehadiran tutor IZIN/SAKIT/ALFA di sesi tidak dihitung sebagai work item — absen HADIR/TERLAMBAT dihitung.')
-    shot(doc, 'Tabel payroll per tutor dengan rincian sesi')
-
-    h1(doc, '17. Laporan')
-    para(doc, 'Pusat laporan keuangan & operasional — ditampilkan langsung di aplikasi, bisa difilter periode dan dicetak/diekspor.')
-    bullets(doc, [
-        'Laporan keuangan: pemasukan, pengeluaran, laba-rugi per periode.',
-        'Laporan piutang & aging tagihan.',
-        'Laporan per siswa/per program.',
-        'Semua laporan bisa dicetak untuk arsip.',
-    ])
-    shot(doc, 'Halaman laporan dengan pilihan jenis dan periode')
-
-    h1(doc, '18. Pustaka Media')
-    para(doc, 'Gudang file gambar/media yang dipakai lintas modul (logo, foto hero, lampiran).')
-    bullets(doc, [
-        'Unggah file gambar — didedupelikasi otomatis berdasarkan isi file.',
-        'Salin URL untuk dipakai di pengaturan tampilan atau konten.',
-        'Hapus file yang tidak terpakai.',
-    ])
-    shot(doc, 'Pustaka media dengan pratinjau gambar')
-
-    h1(doc, '19. Antrean WhatsApp')
-    para(doc, 'Monitor seluruh pesan WhatsApp yang dijadwalkan/dikirim sistem.')
-    bullets(doc, [
-        'Status tiap pesan: antre, terkirim, gagal — beserta isi pesan & tujuan.',
-        'Pesan gagal bisa di-Retry; alasan kegagalan dari provider ditampilkan.',
-        'Pesan yang menggantung di provider (device offline) otomatis ditandai gagal setelah batas waktu.',
-    ])
-    tip(doc, 'Jika banyak pesan "terkirim" tapi tidak sampai, periksa status device WhatsApp di dashboard provider (Fonnte).')
-    shot(doc, 'Antrean WhatsApp dengan status per pesan')
-
-    h1(doc, '20. Pengaturan')
-    para(doc, 'Konfigurasi sistem — sebagian bagian hanya tampil sesuai wewenang role.')
-    bullets(doc, [
-        'Identitas bimbel: nama, logo (rekomendasi 1:1 min. 512px, PNG/WebP transparan), foto hero (21:9 desktop / 16:10 mobile).',
-        'Template pesan WhatsApp: reminder tagihan, jadwal mingguan, performa bulanan, feedback, tutor berhalangan.',
-        'Akun kas/bank (bagian ini khusus wewenang finance).',
-        'Pengaturan pembayaran/gateway dan parameter sistem lainnya.',
-    ])
-    shot(doc, 'Halaman pengaturan — identitas dan template pesan')
-
-    h1(doc, '21. Manajemen Akun')
-    para(doc, 'Kelola akun pengguna sistem.')
-    bullets(doc, [
-        'Buat akun baru, atur ulang password, aktif/nonaktifkan akun.',
-        'Kelola role akun lewat dialog "Kelola Role" — tombol Tambah/Hapus per role.',
-        'Role OWNER hanya bisa diberikan/dicabut oleh Owner; akun sendiri tidak bisa dicabut rolenya.',
-        'Akun nonaktif tidak bisa login tetapi datanya tetap tersimpan.',
-    ])
-    shot(doc, 'Daftar akun dan dialog kelola role')
-
-    h1(doc, '22. Notifikasi & Profil')
-    bullets(doc, [
-        'Notifikasi: pusat pemberitahuan in-app (pembayaran masuk, pendaftaran baru, dll.) — tandai dibaca, klik untuk menuju halaman terkait.',
-        'Profil: ubah nama, foto, nomor HP, password sendiri; atur preferensi notifikasi (in-app & WhatsApp).',
-    ])
-    shot(doc, 'Panel notifikasi dan halaman profil')
-
-    doc.save('docs/Manual-Pengguna-Admin-Finance.docx')
-    print('Manual-Pengguna-Admin-Finance.docx dibuat')
 
 # ============================================================ ACADEMIC
-def build_academic():
-    doc = Document()
-    cover(doc, 'ADMIN ACADEMIC', 'Manual Pengguna', 'Sistem Manajemen Bimbel GFS — Modul Akademik & Operasional')
-    intro(doc,
-        'Manual ini ditujukan untuk staf Admin Academic. Role ini menangani seluruh sisi akademik & '
-        'operasional: data siswa/orang tua/tutor, kelompok & penempatan, jadwal & sesi per siswa, '
-        'absensi, bank soal, materi, latsol, ujian & proctoring, analisis nilai, ranking, pengumuman, '
-        'feedback, serta antrean WhatsApp dan pengaturan sistem.')
+ACADEMIC_SECTIONS = [
+    {
+        'title': '1. Dashboard',
+        'paras': ['Ringkasan operasional akademik hari ini — dirancang sebagai pusat kendali harian.'],
+        'bullets': [
+            'Aksi Cepat: Jadwal & Sesi, Kelompok Baru, Buat Ujian, Buat Materi, Pendaftaran, Absensi.',
+            'Kartu KPI: jumlah siswa/tutor/kelompok aktif.',
+            'Strip notifikasi penting: siswa sedang ujian, attempt terkunci (butuh unlock), pesan WA antre/gagal.',
+            'Sesi Hari Ini (dengan jumlah siswa roster per sesi) + Sesi 7 Hari ke Depan.',
+            'Ujian Bulan Ini: tiap ujian menampilkan badge LIVE, jumlah submission/attempt, status.',
+            'Nilai per Kelompok — Bulan Ini dan Top Siswa — Bulan Ini.',
+            'Absensi belum diisi, pemakaian paket, funnel pendaftaran, tren kehadiran.',
+        ],
+        'shots': ['Dashboard Admin Academic — aksi cepat, sesi, ujian, dan nilai kelompok'],
+    },
+    {
+        'title': '2. Program',
+        'paras': [
+            'Kelola program bimbel dan jenjangnya: Kelas Reguler (multi-mapel), Kelas Extra, Kelas Privat. '
+            'Klik program untuk halaman detail berisi kartu-kartu jenjang.',
+        ],
+        'bullets': [
+            'Tambah Level di detail program: nama (otomatis dari Level Kelas bila dipilih), mapel, satuan harga, pricelist, dan mapel multi (khusus reguler).',
+            'Paket Populer: klik tombol bintang di samping nama paket (di dalam kartu jenjang) untuk '
+            'menandai paket tampil di slider "Paket Terpopuler" landing. Klik lagi untuk melepas.',
+            'Edit Program: nama, kategori, biaya pendaftaran, deskripsi, status aktif; Hapus program bila tidak terpakai.',
+        ],
+        'shots': ['Daftar program dan kartu jenjang', 'Tombol bintang populer di daftar paket'],
+    },
+    {
+        'title': '3. Kelompok',
+        'paras': ['Kelompok belajar = wadah siswa per program & jenjang — inti operasional harian.'],
+        'steps': [
+            'Buat kelompok: nama, kode, program, jenjang, kapasitas, tutor lead, dan mapel (reguler boleh multi).',
+            'Masukkan siswa lewat dialog "Tambah Siswa" — ada kolom pencarian, filter jenjang.',
+            'Tugaskan tutor — satu kelompok boleh beberapa tutor (multi-tutor untuk reguler multi-mapel).',
+            'Penjadwalan TIDAK dibuat di sini — dilakukan per tanggal dengan pilih siswa di menu Jadwal & Sesi.',
+            'Reminder WhatsApp ke orang tua seluruh anggota (tagihan, jadwal mingguan, performa).',
+        ],
+        'tips': ['Satu kelompok boleh dipecah ke beberapa sesi paralel (mis. 5 anak pagi, 5 anak siang) — pembagiannya diatur per sesi di Jadwal & Sesi.'],
+        'shots': ['Daftar kelompok dan detail kelompok', 'Dialog tambah siswa dengan pencarian'],
+    },
+    {
+        'title': '4. Siswa',
+        'bullets': [
+            'Daftar & detail siswa: profil, orang tua, kelompok, tagihan, kehadiran, nilai.',
+            'Pencarian & filter nama/kelompok/status.',
+            'Kirim reminder WhatsApp ke orang tua siswa.',
+            'Nonaktifkan siswa (histori tetap tersimpan).',
+        ],
+        'shots': ['Daftar dan detail siswa'],
+    },
+    {
+        'title': '5. Orang Tua',
+        'bullets': [
+            'Daftar orang tua beserta anak-anak yang terhubung.',
+            'Mengaitkan/memutuskan relasi orang tua ↔ siswa.',
+            'Kirim reminder WhatsApp langsung ke orang tua.',
+        ],
+        'shots': ['Daftar orang tua'],
+    },
+    {
+        'title': '6. Tutor',
+        'bullets': [
+            'Daftar tutor: status kepegawaian, kelompok yang diampu.',
+            'Detail tutor: kelompok, jadwal mengajar, kehadiran mengajar.',
+            'Nonaktifkan tutor — sesi mendatang perlu ditugaskan ulang ke tutor lain.',
+        ],
+        'shots': ['Daftar tutor dan detail penugasan'],
+    },
+    {
+        'title': '7. Master Data',
+        'paras': ['Data referensi sistem yang dipakai lintas modul.'],
+        'bullets': [
+            'Mapel: kode & nama — dipakai di jenjang, konten, jadwal.',
+            'Level kelas (grade level), tahun ajaran, dan referensi lain.',
+            'Data nonaktif tidak bisa dipilih pada data baru, histori tetap aman.',
+        ],
+        'shots': ['Halaman master data'],
+    },
+    {
+        'title': '8. Level',
+        'paras': ['Tampilan lintas program dari semua jenjang — flat, searchable, filterable.'],
+        'bullets': [
+            'Filter program, level kelas, status; cari nama level/program/mapel.',
+            'Edit jenjang dari sini atau dari detail Program — data sama.',
+            'Mapel per jenjang menentukan pilihan mapel di kelompok, soal, materi, jadwal.',
+        ],
+        'shots': ['Tabel level lintas program'],
+    },
+    {
+        'title': '9. Harga Program',
+        'paras': ['Lihat/atur tarif program & jenjang — dibagikan dengan Admin Finance.'],
+        'bullets': [
+            'Pricelist per satuan harga (tahun ajaran / bulan / pertemuan / paket).',
+            'Biaya pendaftaran per jenjang — kosong = ikut program.',
+            'Perubahan berlaku untuk invoice berikutnya.',
+        ],
+        'shots': ['Form harga program'],
+    },
+    {
+        'title': '10. Pendaftaran',
+        'paras': ['Proses pendaftar dari form publik maupun portal orang tua.'],
+        'steps': [
+            'Antrean pendaftar MENUNGGU tampil di atas.',
+            'Periksa data: nama, program & jenjang, kontak, status akun anak.',
+            'Setujui → akun siswa dibuat dan terhubung ke orang tua; lanjutkan penempatan kelompok.',
+            'Tolak dengan alasan bila data tidak valid.',
+        ],
+        'shots': ['Antrean pendaftaran'],
+    },
+    {
+        'title': '11. Jadwal & Sesi',
+        'paras': [
+            'Pusat penjadwalan. Sistem menjadwalkan PER TANGGAL dengan peserta PER SISWA — '
+            'satu kelompok boleh dipecah ke beberapa sesi paralel.',
+        ],
+        'subs': [
+            {
+                'title': 'Papan penugasan tutor (mingguan)',
+                'steps': [
+                    'Papan mingguan menampilkan semua sesi 7 hari — klik tanggal membuka editor hari itu.',
+                    'Di editor: lihat sesi hari itu, ganti pengajar lewat dropdown searchable, atau buat sesi baru.',
+                    'Buat sesi: pilih tutor → kelompok → mapel → ruangan → jam → centang siswa yang hadir.',
+                    'Semua anggota kelompok tercentang secara default; panel siswa punya kolom CARI plus '
+                    'aksi massal "Semua hasil"/"Bersihkan hasil" yang hanya memengaruhi siswa hasil filter.',
+                ],
+            },
+            {
+                'title': 'Edit sesi & roster peserta',
+                'bullets': [
+                    'Ikon pensil di tiap sesi membuka form edit: jam, mapel, ruangan, status — '
+                    'plus editor ROSTER di bawahnya (centang/hapus centang siswa, cari, pilih hasil, pindah sesi).',
+                    'Panel detail sesi dan halaman absensi tutor memakai editor roster yang sama — '
+                    'perubahan di satu tempat langsung terlihat di tempat lain.',
+                    'Siswa yang sudah diabsen tidak bisa di-uncheck (ditolak server — koreksi lewat absen).',
+                ],
+            },
+            {
+                'title': 'Pindah siswa antar sesi',
+                'steps': [
+                    'Di editor roster, baris siswa punya dropdown "Pindah ke sesi…" (searchable, label lengkap jam+mapel).',
+                    'Pilih sesi tujuan satu kelompok → tombol Pindah aktif → klik.',
+                    'Absensi yang sudah tercatat ikut berpindah; siswa mendapat notifikasi perubahan sesi.',
+                    'Tutor bisa memindahkan siswa ke sesi tutor lain dalam kelompok yang sama.',
+                ],
+            },
+            {
+                'title': 'Kalender, catatan tanggal & override',
+                'bullets': [
+                    'Kalender bulanan di bawah papan — klik tanggal/sesi membuka panel detail.',
+                    'Catatan tanggal (LIBUR/RAPAT/DARURAT/INFO) tampil di kalender & ikut reminder mingguan.',
+                    'Override per-siswa: ubah jam/ruang untuk 1 siswa tanpa mengubah sesi.',
+                    'Konflik otomatis dicek: tutor/ruangan/siswa tidak boleh dobel — dua sesi satu kelompok '
+                    'diperbolehkan selama pesertanya berbeda.',
+                    'Reminder mingguan dikirim per siswa sesuai roster — ortu hanya menerima sesi anaknya; '
+                    'reminder tutor merangkum sesi yang dia ampu.',
+                ],
+            },
+        ],
+        'shots': ['Papan penugasan tutor mingguan', 'Form buat sesi dengan cari & centang siswa', 'Editor roster dengan pindah sesi'],
+    },
+    {
+        'title': '12. Fasilitas',
+        'bullets': [
+            'Kelola gedung & ruangan tempat sesi berlangsung: nama, alamat, kapasitas, status.',
+            'Ruangan nonaktif tidak bisa dipilih pada jadwal baru.',
+            'Konflik ruangan dicek otomatis saat membuat sesi.',
+        ],
+        'shots': ['Daftar gedung dan ruangan'],
+    },
+    {
+        'title': '13. Absensi',
+        'paras': ['Pantau dan koreksi absensi siswa & kehadiran tutor per sesi.'],
+        'bullets': [
+            'Pilih sesi → daftar siswa = peserta sesi itu (roster), bukan seluruh anggota kelompok.',
+            'Status: HADIR, TERLAMBAT, IZIN, SAKIT, ALFA + catatan.',
+            'Panel "Atur peserta sesi" di halaman absen bisa mengubah roster sebelum mengisi absen.',
+            'Tutor mengisi sekali per sesi; koreksi setelahnya wewenang Admin Academic.',
+            'Absen siswa otomatis menandai tutor hadir mengajar (dipakai payroll); ALFA memicu notifikasi ke ortu & siswa.',
+        ],
+        'shots': ['Form absensi satu sesi dengan panel atur peserta'],
+    },
+    {
+        'title': '14. Materi',
+        'paras': ['Bank materi terstruktur: tingkat → jenjang → mapel → kategori.'],
+        'bullets': [
+            'Buat materi: judul, pilih Tingkat → Jenjang → Mapel → Kategori → isi konten/lampiran.',
+            'Filter & drill-down di daftar; mapel tanpa materi tetap tampil di filter.',
+            'Materi tampil di portal siswa sesuai cakupan jenjangnya.',
+        ],
+        'shots': ['Daftar materi dengan filter dan form buat materi'],
+    },
+    {
+        'title': '15. Pustaka Media',
+        'paras': ['Gudang gambar lintas modul — unggah, dedup otomatis (SHA-256), salin URL, hapus.'],
+        'shots': ['Pustaka media'],
+    },
+    {
+        'title': '16. Soal (Bank Soal)',
+        'paras': ['Kelola soal per jenjang/mapel untuk dipakai Latsol & Ujian.'],
+        'bullets': [
+            'Tipe: pilihan ganda, benar-salah, pilihan ganda kompleks, benar-salah kompleks, isian.',
+            'Buat/edit/hapus soal dengan pembahasan; import massal dari file.',
+            'Bacaan (stimulus) bisa dilampirkan dan dipilih saat membuat soal.',
+            'Filter jenjang, tingkat, mapel — semua dropdown searchable.',
+        ],
+        'shots': ['Bank soal dengan filter dan editor soal'],
+    },
+    {
+        'title': '17. Latsol',
+        'paras': ['Paket latihan soal mandiri untuk siswa.'],
+        'steps': [
+            'Buat paket: isi Judul, pilih Tingkat → Jenjang → Mapel (opsional, boleh campur) → Kategori → Simpan Paket.',
+            'Setelah paket dibuat, sistem mengarah ke halaman "Kelola Soal" untuk memilih soalnya.',
+            'Edit paket: detail yang sama bisa diubah; soal dikelola terpisah.',
+            'Siswa mengerjakan kapan saja — hasil langsung keluar dengan pembahasan; riwayat attempt terekam.',
+        ],
+        'tips': ['Mapel boleh dikosongkan untuk paket campuran (soal lintas mapel).'],
+        'shots': ['Form buat paket latsol — tingkat, jenjang, mapel, kategori', 'Halaman kelola soal paket'],
+    },
+    {
+        'title': '18. Ujian',
+        'paras': ['Ujian terjadwal dengan pengaturan lengkap — reguler maupun peserta luar.'],
+        'bullets': [
+            'Buat ujian: judul, jadwal mulai/selesai, durasi, mapel/jenjang, peserta (kelompok, atau kode akses untuk peserta luar/tryout).',
+            'Multi-subtes: tiap subtes durasi sendiri dan dikerjakan berurutan.',
+            'Acak urutan soal — acakan tersimpan per attempt (konsisten saat refresh/resume, hanya di dalam subtes).',
+            'Proteksi: batasi tab & screenshot, deteksi pelanggaran (pindah tab, keluar fullscreen); '
+            'Wake Lock mencegah layar mati di browser yang mendukung (Chrome/Edge).',
+            'Kunci jawaban & pengaturan rilis hasil; unlock attempt terkunci dengan sisa waktu subtes utuh.',
+            'Ujian publik ditandai "tampil di /tryout" — muncul di halaman Try Out landing untuk promosi.',
+        ],
+        'shots': ['Form buat ujian', 'Daftar ujian dengan status dan badge LIVE'],
+    },
+    {
+        'title': '19. Proctoring',
+        'paras': ['Monitor pelanggaran selama ujian berlangsung, real-time.'],
+        'bullets': [
+            'Daftar attempt: jumlah/jenis pelanggaran, status (berjalan/terkunci/selesai).',
+            'Unlock attempt terkunci setelah verifikasi — siswa lanjut dari posisi terakhir, sisa waktu utuh.',
+        ],
+        'shots': ['Papan proctoring dengan status attempt'],
+    },
+    {
+        'title': '20. Pembahasan',
+        'paras': ['Kelola pembahasan soal ujian — rilis per ujian ketika dibuka untuk siswa.'],
+        'shots': ['Daftar pembahasan per ujian'],
+    },
+    {
+        'title': '21. Analisis',
+        'paras': ['Analisis hasil ujian & latsol: rekap nilai, rekap jawaban per soal, statistik.'],
+        'bullets': [
+            'Rekap Nilai: tabel siswa × skor — cari nama/sekolah/kelompok, filter kategori nilai, urutkan, statistik rata-rata/tertinggi/terendah.',
+            'Rekap Jawaban: akurasi per soal; kolom nama tetap terlihat saat geser.',
+            'Paginasi 10/20/50/100/semua — aman untuk ratusan peserta.',
+            'Cetak analisis ujian untuk dokumentasi.',
+        ],
+        'shots': ['Analisis — rekap nilai dengan toolbar filter'],
+    },
+    {
+        'title': '22. Ranking',
+        'paras': ['Papan podium poin siswa + konfigurasi Score Rules.'],
+        'bullets': [
+            'Podium per kelompok, per gedung, dan seluruh GFS — filter periode (bulan) atau semua waktu.',
+            'Semua filter (kelompok, level, program, gedung) searchable dan bisa dikosongkan.',
+            'Score Rules: poin per ujian/latsol/tipe soal — data-driven, perubahan tidak retroaktif.',
+            'Poin diberikan otomatis saat attempt selesai.',
+        ],
+        'shots': ['Papan ranking tiga kolom dan score rules'],
+    },
+    {
+        'title': '23. Laporan',
+        'paras': ['Laporan akademik & performa — tampil langsung di aplikasi, bisa dicetak.'],
+        'bullets': [
+            'Rekap kehadiran siswa (per siswa/kelompok/periode) termasuk sesi yang seharusnya dihadiri.',
+            'Laporan hasil belajar per siswa — pilih anak, tipe ujian, tes kemampuan dasar.',
+            'Laporan aktivitas kelompok & utilisasi; ekspor feedback & laporan cetak lainnya.',
+        ],
+        'shots': ['Halaman laporan akademik'],
+    },
+    {
+        'title': '24. Antrean WA',
+        'bullets': [
+            'Monitor semua pesan WA sistem: status antre/terkirim/gagal, isi, tujuan.',
+            'Retry pesan gagal; alasan kegagalan provider ditampilkan.',
+        ],
+        'shots': ['Antrean WhatsApp'],
+    },
+    *SHARED_SYS_SECTIONS,
+    {
+        'title': 'Lampiran — Alur Kerja Harian yang Disarankan',
+        'steps': [
+            'Pagi: Dashboard → pendaftar baru → setujui & tempatkan; cek sesi hari ini (tutor & roster benar).',
+            'Buat sesi susulan/perubahan; pindahkan siswa berhalangan ke sesi lain bila perlu.',
+            'Siang/sore: pantau absensi masuk; koreksi bila tutor salah isi.',
+            'Pantau strip notifikasi dashboard: attempt ujian terkunci → unlock bila sah; WA gagal → retry.',
+            'Mingguan: kirim Reminder Jadwal (otomatis per-siswa sesuai roster); siapkan konten/ujian minggu berikutnya.',
+            'Berkala: pantau Analisis & Ranking; tandai paket unggulan untuk landing; terbitkan pengumuman bila perlu.',
+        ],
+    },
+]
 
-    h1(doc, '1. Dashboard')
-    para(doc, 'Ringkasan operasional akademik hari ini.')
-    bullets(doc, [
-        'Sesi yang berjalan hari ini dan yang belum diabsen.',
-        'Pendaftar baru yang menunggu diproses.',
-        'Aktivitas terbaru: ujian aktif, feedback masuk, pengumuman.',
-        'Shortcut ke fungsi yang paling sering dipakai.',
-    ])
-    shot(doc, 'Dashboard Admin Academic — ringkasan sesi dan pendaftaran')
-
-    h1(doc, '2. Program')
-    para(doc, 'Kelola program bimbel dan jenjangnya.')
-    bullets(doc, [
-        'Tiga kategori program: Kelas Reguler (multi-mapel), Kelas Extra, Kelas Privat.',
-        'Tiap program memiliki daftar jenjang (kelas sekolah) yang tersedia.',
-        'Program & jenjang menjadi dasar struktur kelompok, konten, dan harga.',
-    ])
-    shot(doc, 'Daftar program dengan jenjang')
-
-    h1(doc, '3. Kelompok')
-    para(doc, 'Kelompok belajar = wadah siswa per program & jenjang. Inti pengelolaan operasional.')
-    steps(doc, [
-        'Buat kelompok: nama, kode, program, jenjang, kapasitas, tutor lead.',
-        'Masukkan siswa ke kelompok lewat dialog "Tambah Siswa" — pencarian bisa diketik, filter berdasarkan jenjang.',
-        'Tugaskan tutor ke kelompok — satu kelompok boleh punya beberapa tutor (multi-tutor, kelas reguler multi-mapel).',
-        'Jadwal TIDAK dibuat di sini — sesi dibuat per tanggal di menu Jadwal & Sesi.',
-        'Kirim reminder WhatsApp ke orang tua seluruh anggota (tagihan, jadwal mingguan, performa).',
-    ])
-    tip(doc, 'Satu kelompok bisa dipecah ke beberapa sesi paralel — misal 5 siswa sesi pagi, 5 siswa sesi siang. Pembagiannya diatur per sesi di Jadwal & Sesi.')
-    shot(doc, 'Daftar kelompok dan halaman detail kelompok')
-    shot(doc, 'Dialog tambah siswa ke kelompok dengan pencarian')
-
-    h1(doc, '4. Data Siswa')
-    bullets(doc, [
-        'Daftar & detail siswa: profil, orang tua, kelompok, tagihan, kehadiran, nilai.',
-        'Pencarian & filter berdasarkan nama/kelompok/status.',
-        'Kirim reminder WhatsApp ke orang tua siswa.',
-        'Menonaktifkan siswa (histori tetap tersimpan).',
-    ])
-    shot(doc, 'Daftar dan detail siswa')
-
-    h1(doc, '5. Data Orang Tua')
-    bullets(doc, [
-        'Daftar orang tua beserta anak-anak yang terhubung.',
-        'Mengaitkan/memutuskan relasi orang tua ↔ siswa.',
-        'Kirim reminder WhatsApp langsung ke orang tua.',
-    ])
-    shot(doc, 'Daftar orang tua')
-
-    h1(doc, '6. Data Tutor')
-    bullets(doc, [
-        'Daftar tutor beserta status kepegawaian dan kelompok yang diampu.',
-        'Detail tutor: kelompok, jadwal mengajar, kehadiran mengajar.',
-        'Menonaktifkan tutor — sesi mendatang perlu ditugaskan ulang.',
-    ])
-    shot(doc, 'Daftar tutor dan detail penugasan')
-
-    h1(doc, '7. Master Data')
-    para(doc, 'Data referensi sistem: mata pelajaran, gedung/ruangan, tahun ajaran, dan referensi lain.')
-    bullets(doc, [
-        'Mapel: kode & nama — dipakai di jenjang, konten, dan jadwal.',
-        'Gedung & ruangan — dipakai penjadwalan dan konflik ruangan.',
-        'Data nonaktif tidak bisa dipilih pada data baru tapi histori tetap aman.',
-    ])
-    shot(doc, 'Halaman master data')
-
-    h1(doc, '8. Level (Jenjang)')
-    para(doc, 'Struktur jenjang sekolah (TK → SD 1-6 → SMP 7-9 → SMA 10-12) beserta mapel per jenjang.')
-    bullets(doc, [
-        'Kelola jenjang dan urutannya.',
-        'Lampirkan mapel ke jenjang — menentukan mapel yang tersedia untuk kelompok, soal, materi, dan jadwal.',
-        'Struktur ini menjadi pohon filter di semua halaman konten.',
-    ])
-    shot(doc, 'Daftar jenjang dan pemetaan mapel')
-
-    h1(doc, '9. Harga Program')
-    para(doc, 'Melihat/mengatur tarif program & biaya tambahan (dibagikan dengan Admin Finance).')
-    bullets(doc, [
-        'Harga per program & jenjang, biaya tambahan per paket.',
-        'Perubahan berlaku untuk invoice berikutnya.',
-    ])
-    shot(doc, 'Tabel harga program')
-
-    h1(doc, '10. Pendaftaran')
-    para(doc, 'Memproses pendaftar baru dari form publik maupun portal orang tua.')
-    steps(doc, [
-        'Daftar pendaftar berstatus MENUNGGU tampil di antrean.',
-        'Periksa data: nama, program & jenjang, kontak.',
-        'Setujui → akun siswa dibuat dan terhubung ke orang tua; lanjutkan penempatan ke kelompok.',
-        'Tolak dengan alasan bila data tidak valid.',
-    ])
-    shot(doc, 'Antrean pendaftaran')
-
-    h1(doc, '11. Jadwal & Sesi')
-    para(doc, 'Pusat penjadwalan. Sistem baru: jadwal dibuat PER TANGGAL dan pesertanya PER SISWA — bukan satu jadwal untuk seluruh kelompok.')
-    h3(doc, '11.1 Papan Penugasan Tutor (mingguan)')
-    steps(doc, [
-        'Papan mingguan menampilkan semua sesi 7 hari — klik tanggal untuk membuka editor hari itu.',
-        'Di dalam editor: lihat sesi hari itu, ganti pengajar lewat dropdown, atau buat sesi baru.',
-        'Buat sesi baru: pilih tutor → pilih kelompok → mapel → ruangan → jam mulai/selesai → centang siswa yang hadir.',
-        'Defaultnya semua anggota kelompok tercentang; hilangkan centang untuk siswa yang tidak ikut sesi itu.',
-    ])
-    shot(doc, 'Papan penugasan tutor mingguan')
-    shot(doc, 'Form buat sesi dengan daftar centang siswa')
-    h3(doc, '11.2 Kalender sesi & Detail sesi')
-    bullets(doc, [
-        'Kalender bulanan di bawah papan — klik tanggal/sesi untuk membuka panel detail.',
-        'Panel detail: pengajar sesi, PESERTA SESI (centang siswa yang dijadwalkan), absensi, override per-siswa, hapus sesi.',
-        'Peserta sesi menentukan siapa yang muncul di absensi dan di jadwal siswa/orang tua.',
-    ])
-    h3(doc, '11.3 Memindahkan siswa antar sesi')
-    steps(doc, [
-        'Buka detail sesi asal → bagian "Peserta sesi".',
-        'Pada baris siswa, pilih "Pindah ke sesi…" → pilih sesi tujuan (kelompok yang sama) → klik Pindah.',
-        'Absensi yang sudah tercatat ikut berpindah — histori mengikuti siswa.',
-        'Berguna saat siswa berhalangan di sesi awal dan ingin ikut sesi lain.',
-    ])
-    h3(doc, '11.4 Catatan tanggal & override')
-    bullets(doc, [
-        'Catatan tanggal (LIBUR/RAPAT/DARURAT/INFO) tampil di kalender dan ikut di reminder jadwal mingguan.',
-        'Override per-siswa: ubah jam/ruang untuk 1 siswa saja tanpa mengubah sesi (mis. siswa susulan).',
-        'Konflik otomatis dicek: tutor, ruangan, dan siswa tidak boleh terjadwal dobel di jam sama — dua sesi kelompok yang sama diperbolehkan selama pesertanya berbeda.',
-        'Reminder mingguan: tombol "Kirim Reminder Jadwal" mengantrekan WA ke semua tutor dan bisa juga ke orang tua per kelompok.',
-    ])
-    shot(doc, 'Panel detail sesi — peserta, absensi, dan pindah sesi')
-
-    h1(doc, '12. Fasilitas')
-    para(doc, 'Kelola gedung dan ruangan tempat sesi berlangsung.')
-    bullets(doc, [
-        'Tambah/ubah gedung & ruangan, kapasitas, status aktif.',
-        'Ruangan nonaktif tidak bisa dipilih pada jadwal baru.',
-    ])
-    shot(doc, 'Daftar gedung dan ruangan')
-
-    h1(doc, '13. Absensi')
-    para(doc, 'Koreksi dan pantau absensi siswa & kehadiran tutor per sesi.')
-    bullets(doc, [
-        'Pilih sesi → daftar siswa yang muncul = peserta sesi itu (bukan seluruh anggota kelompok).',
-        'Status: HADIR, TERLAMBAT, IZIN, SAKIT, ALFA + catatan.',
-        'Tutor mengisi absen sekali per sesi; koreksi setelahnya wewenang Admin Academic.',
-        'Mengisi absen siswa otomatis menandai tutor hadir mengajar (dipakai payroll).',
-        'Siswa ALFA memicu notifikasi ke orang tua & siswa.',
-    ])
-    shot(doc, 'Form absensi satu sesi')
-
-    h1(doc, '14. Materi')
-    para(doc, 'Bank materi pembelajaran terstruktur: jenjang → tingkat/kelas → mapel → kategori.')
-    bullets(doc, [
-        'Buat materi berisi teks/format + lampiran file.',
-        'Filter & drill-down per jenjang, tingkat, mapel, kategori.',
-        'Materi tampil di portal siswa sesuai cakupan jenjangnya.',
-    ])
-    shot(doc, 'Daftar materi dengan filter jenjang/mapel')
-
-    h1(doc, '15. Pustaka Media')
-    para(doc, 'Gudang gambar yang dipakai konten & pengaturan (unggah, dedup otomatis, salin URL).')
-    shot(doc, 'Pustaka media')
-
-    h1(doc, '16. Bank Soal')
-    para(doc, 'Kelola soal per jenjang/mapel: pilihan ganda, benar-salah, pilihan ganda kompleks, benar-salah kompleks, dan isian.')
-    bullets(doc, [
-        'Buat/edit/hapus soal dengan pembahasan.',
-        'Import massal dari file (docx) atau isi satu per satu.',
-        'Filter per jenjang, tingkat, mapel — mapel tanpa soal tetap tampil di filter.',
-        'Soal dipakai oleh paket Latsol dan Ujian.',
-    ])
-    shot(doc, 'Bank soal dengan filter dan editor soal')
-
-    h1(doc, '17. Latsol (Latihan Soal)')
-    para(doc, 'Paket latihan soal mandiri untuk siswa.')
-    bullets(doc, [
-        'Buat paket: pilih soal, atur cakupan jenjang/mapel.',
-        'Siswa mengerjakan kapan saja; hasil langsung keluar dengan pembahasan.',
-        'Riwayat & statistik attempt terekam untuk analisis.',
-    ])
-    shot(doc, 'Daftar paket latsol dan rekap attempt')
-
-    h1(doc, '18. Ujian')
-    para(doc, 'Ujian terjadwal dengan pengaturan lengkap.')
-    bullets(doc, [
-        'Buat ujian: judul, jadwal mulai/selesai, durasi, mapel/jenjang, dan peserta (kelompok atau kode akses untuk peserta luar/TO).',
-        'Multi-subtes: ujian bisa dibagi beberapa subtes, tiap subtes durasi sendiri dan dikerjakan berurutan.',
-        'Centang "Acak urutan soal" — urutan acak tersimpan per attempt (konsisten saat refresh/resume, dan acak hanya di dalam tiap subtes).',
-        'Proteksi ujian: batasi tab & screenshot, deteksi pelanggaran (pindah tab, keluar fullscreen).',
-        'Kunci jawaban & pengaturan rilis hasil.',
-        'Unlock attempt yang terkunci karena pelanggaran — sisa waktu subtes yang sedang berjalan otomatis dipertahankan.',
-    ])
-    shot(doc, 'Form buat ujian dengan opsi acak soal dan proteksi')
-    shot(doc, 'Daftar ujian dengan status')
-
-    h1(doc, '19. Proctoring')
-    para(doc, 'Monitor pelanggaran selama ujian berlangsung.')
-    bullets(doc, [
-        'Daftar attempt beserta jumlah/jenis pelanggaran dan status (berjalan/terkunci/selesai).',
-        'Unlock attempt terkunci setelah verifikasi — siswa melanjutkan dari posisi terakhir dengan sisa waktu utuh.',
-        'Layar mati otomatis dicegah lewat Wake Lock di perangkat siswa (browser yang mendukung).',
-    ])
-    shot(doc, 'Papan proctoring dengan status attempt')
-
-    h1(doc, '20. Pembahasan')
-    para(doc, 'Kelola pembahasan soal ujian — rilis per ujian ketika waktunya dibuka untuk siswa.')
-    shot(doc, 'Daftar pembahasan per ujian')
-
-    h1(doc, '21. Analisis')
-    para(doc, 'Analisis hasil ujian & latsol: rekap nilai, rekap jawaban per soal, dan statistik.')
-    bullets(doc, [
-        'Rekap Nilai: tabel siswa × skor — cari nama/sekolah/kelompok, filter kategori nilai (tinggi/sedang/rendah/belum mengumpulkan), urutkan, statistik rata-rata/tertinggi/terendah.',
-        'Rekap Jawaban: akurasi per soal dengan kolom nama yang tetap terlihat saat geser.',
-        'Paginasi 10/20/50/100/semua — aman untuk ratusan peserta.',
-        'Cetak analisis ujian untuk dokumentasi.',
-    ])
-    shot(doc, 'Analisis — rekap nilai dengan toolbar filter dan paginasi')
-
-    h1(doc, '22. Ranking')
-    para(doc, 'Papan podium poin siswa: per kelompok, per gedung, dan seluruh GFS + konfigurasi Score Rules.')
-    bullets(doc, [
-        'Filter periode (bulan) atau semua waktu; filter kelompok & gedung bisa dikosongkan.',
-        'Score Rules menentukan poin per ujian/latsol/tipe soal — data-driven, perubahan tidak retroaktif.',
-        'Poin diberikan otomatis saat attempt diselesaikan.',
-    ])
-    shot(doc, 'Papan ranking tiga kolom dan daftar score rules')
-
-    h1(doc, '23. Laporan')
-    para(doc, 'Laporan akademik & performa — langsung tampil di aplikasi, bisa dicetak.')
-    bullets(doc, [
-        'Rekap kehadiran siswa (per siswa/kelompok/periode) termasuk sesi yang seharusnya dihadiri.',
-        'Laporan performa belajar per siswa.',
-        'Laporan aktivitas kelompok & utilisasi.',
-        'Ekspor feedback & laporan cetak lainnya.',
-    ])
-    shot(doc, 'Halaman laporan akademik')
-
-    h1(doc, '24. Antrean WhatsApp')
-    bullets(doc, [
-        'Monitor semua pesan WA sistem: status antre/terkirim/gagal, isi, tujuan.',
-        'Retry pesan gagal; alasan kegagalan provider ditampilkan.',
-        'Pesan menggantung (device provider offline) otomatis ditandai gagal.',
-    ])
-    shot(doc, 'Antrean WhatsApp')
-
-    h1(doc, '25. Pengaturan')
-    bullets(doc, [
-        'Identitas bimbel & tampilan landing (logo, foto hero).',
-        'Template pesan WhatsApp (reminder jadwal, performa, feedback, tutor berhalangan).',
-        'Parameter akademik & sistem lainnya — bagian kas/bank hanya untuk Admin Finance.',
-    ])
-    shot(doc, 'Halaman pengaturan')
-
-    h1(doc, '26. Manajemen Akun, Notifikasi & Profil')
-    bullets(doc, [
-        'Manajemen Akun: buat akun, reset password, aktif/nonaktif, kelola role (OWNER dibatasi).',
-        'Notifikasi: pusat pemberitahuan in-app — pendaftar baru, absensi, pembayaran, dll.',
-        'Profil: data diri, foto, password, preferensi notifikasi.',
-    ])
-    shot(doc, 'Manajemen akun dan panel notifikasi')
-
-    h1(doc, 'Lampiran — Alur Kerja Harian yang Disarankan')
-    steps(doc, [
-        'Pagi: cek Dashboard → pendaftar baru → setujui & tempatkan.',
-        'Cek sesi hari ini di Jadwal & Sesi; pastikan tiap sesi punya tutor dan peserta yang benar.',
-        'Buat sesi susulan/perubahan; pindahkan siswa berhalangan ke sesi lain bila perlu.',
-        'Siang/sore: pantau absensi masuk; koreksi bila tutor salah isi.',
-        'Mingguan: kirim Reminder Jadwal ke tutor & orang tua; siapkan konten/ujian minggu berikutnya.',
-        'Berkala: pantau Analisis nilai & Ranking; terbitkan pengumuman bila perlu.',
-    ])
-
-    doc.save('docs/Manual-Pengguna-Admin-Academic.docx')
-    print('Manual-Pengguna-Admin-Academic.docx dibuat')
 
 if __name__ == '__main__':
-    build_finance()
-    build_academic()
+    build_doc(
+        'ADMIN FINANCE',
+        'Sistem Manajemen Bimbel GFS — Modul Keuangan & Administrasi',
+        [
+            'Manual ini ditujukan untuk staf Admin Finance. Role ini menangani seluruh siklus keuangan '
+            'bimbel: pendaftaran & tagihan siswa, pembayaran, penagihan piutang, kas/bank, pengeluaran, '
+            'RAB (anggaran), payroll tutor, hingga laporan keuangan.',
+            'Admin Finance juga mengelola data siswa/orang tua, program & paket unggulan, pengaturan '
+            'sistem, akun pengguna, dan antrean notifikasi WhatsApp.',
+        ],
+        FINANCE_SECTIONS,
+        'docs/Manual-Pengguna-Admin-Finance.docx',
+    )
+    build_doc(
+        'ADMIN ACADEMIC',
+        'Sistem Manajemen Bimbel GFS — Modul Akademik & Operasional',
+        [
+            'Manual ini ditujukan untuk staf Admin Academic. Role ini menangani seluruh sisi akademik & '
+            'operasional: data siswa/orang tua/tutor, kelompok & penempatan, jadwal & sesi per siswa, '
+            'absensi, bank soal, materi, latsol, ujian & proctoring, analisis nilai, ranking, '
+            'feedback, serta antrean WhatsApp dan pengaturan sistem.',
+        ],
+        ACADEMIC_SECTIONS,
+        'docs/Manual-Pengguna-Admin-Academic.docx',
+    )

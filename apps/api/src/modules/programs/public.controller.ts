@@ -18,7 +18,7 @@ export class PublicController {
 
   @Get('landing')
   async landing() {
-    const [students, tutors, programCount, packageCount, catalog, rooms, buildings, pkgGroups, displayRow] =
+    const [students, tutors, programCount, packageCount, catalog, rooms, buildings, pkgGroups, displayRow, companyRow] =
       await Promise.all([
         this.prisma.student.count({ where: { isActive: true } }),
         this.prisma.tutor.count({ where: { isActive: true } }),
@@ -48,6 +48,8 @@ export class PublicController {
         }),
         // Pengaturan tampilan landing — foto hero + link formulir pendaftaran.
         this.prisma.appSetting.findUnique({ where: { key: 'display' } }),
+        // Kontak perusahaan — fallback link "Hubungi Kami" bila display.contactUrl kosong.
+        this.prisma.appSetting.findUnique({ where: { key: 'company' } }),
       ]);
 
     const pkgStudents = new Map<string, number>();
@@ -100,6 +102,19 @@ export class PublicController {
           displayVal.registrationUrl
             ? displayVal.registrationUrl
             : 'https://s.id/info-daftarGFS2627',
+        // Link "Hubungi Kami" — eksplisit dari pengaturan; bila kosong,
+        // fallback wa.me dari nomor HP perusahaan (company.phone).
+        contactUrl:
+          typeof displayVal.contactUrl === 'string' &&
+          displayVal.contactUrl
+            ? displayVal.contactUrl
+            : (() => {
+                const phone = (
+                  ((companyRow?.value ?? {}) as Record<string, unknown>)
+                    .phone as string | undefined
+                )?.replace(/\D/g, '');
+                return phone ? `https://wa.me/${phone}` : '';
+              })(),
         heroBadge: dstr('heroBadge'),
         heroTitle: dstr('heroTitle'),
         heroHighlight: dstr('heroHighlight'),

@@ -7,6 +7,7 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import ExcelJS from 'exceljs';
+import katex from 'katex';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TutorScopeService } from '../../common/tutor-scope/tutor-scope.service';
 import { PERMISSION_CODES } from '../rbac/permissions.constants';
@@ -21,16 +22,47 @@ function esc(s: unknown): string {
     .replace(/"/g, '&quot;');
 }
 
+/** Render satu segmen matematika `$…$`/`$$…$$` ke HTML KaTeX (cetak soal). */
+function mathHtml(tex: string, display: boolean): string {
+  try {
+    return `<span class="math${display ? ' math-block' : ''}">` +
+      katex.renderToString(tex, { throwOnError: true, displayMode: display }) +
+      `</span>`;
+  } catch {
+    // Gagal parse — tampilkan raw apa adanya supaya soal tidak hilang.
+    return esc(display ? `$$${tex}$$` : `$${tex}$`);
+  }
+}
+
+/**
+ * Teks biasa → HTML cetak: escape + newline jadi <br> + inline `$…$` dan
+ * display `$$…$$` dirender sebagai KaTeX (sama seperti MathContent di web).
+ */
+function richTextInline(s: string): string {
+  const re = /\$\$([^$]+?)\$\$|\$([^$\n]+?)\$/g;
+  let out = '';
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) !== null) {
+    if (m.index > last) out += esc(s.slice(last, m.index));
+    out += m[1] !== undefined ? mathHtml(m[1], true) : mathHtml(m[2], false);
+    last = m.index + m[0].length;
+  }
+  if (last < s.length) out += esc(s.slice(last));
+  return out.replace(/\n/g, '<br>');
+}
+
 /**
  * Teks soal/opsi → HTML cetak: blok `[TABEL]…[/TABEL]` (hasil import Word)
- * jadi <table> asli; teks lain di-escape dan newline jadi <br>.
+ * jadi <table> asli; teks lain di-escape, newline jadi <br>, dan rumus
+ * KaTeX `$…$`/`$$…$$` dirender (bukan tampil mentah).
  */
 function richText(s: unknown): string {
   return String(s ?? '')
     .split(/(\[TABEL\][\s\S]*?\[\/TABEL\])/g)
     .map((part) => {
       const m = part.match(/^\[TABEL\]\s*\n([\s\S]*?)\n?\s*\[\/TABEL\]$/);
-      if (!m) return esc(part).replace(/\n/g, '<br>');
+      if (!m) return richTextInline(part);
       const rows = m[1]
         .split('\n')
         .map((l) => l.split('|').map((c) => c.trim()))
@@ -998,14 +1030,18 @@ export class AnalyticsService {
         type: item.question.type,
         content: item.question.content,
         imageUrl: item.question.imageUrl,
+        stimulus: item.question.stimulus,
+        stimulusImageUrl: item.question.stimulusImageUrl,
         points: item.points,
         options: item.question.options.map((o, oi) => ({
           letter: optionLetter(oi),
           content: o.content,
+          imageUrl: o.imageUrl,
           isCorrect: o.isCorrect,
         })),
         answerKey: item.question.answerKey,
         explanation: withKey ? item.question.explanation : null,
+        explanationImageUrl: withKey ? item.question.explanationImageUrl : null,
       })),
       withKey,
     };
@@ -1033,7 +1069,8 @@ export class AnalyticsService {
       .join(' · ');
     ws.getCell('A3').value = `Tanggal: ${fmtDateId(recap.exam.scheduledStartAt)} · Peserta: ${recap.participantCount}`;
 
-    // Header 2 baris: nama kolom + BENAR/SKOR per kolom (seperti PDF hasil TO).
+    // Header 2 baris: nama kolom + BENAR/SKOR/NILAI per subtes; kolom akhir
+    // TOTAL: BENAR + NILAI RATA-RATA (rerata NILAI tiap subtes).
     const head1 = ws.getRow(5);
     const head2 = ws.getRow(6);
     const fixed = ['No', 'Nama', 'Asal Sekolah', 'Kelompok'];
@@ -1045,17 +1082,16 @@ export class AnalyticsService {
     let col = fixed.length + 1;
     for (const c of recap.columns) {
       head1.getCell(col).value = c.label;
-      ws.mergeCells(5, col, 5, col + 1);
+      ws.mergeCells(5, col, 5, col + 2);
       head2.getCell(col).value = 'BENAR';
       head2.getCell(col + 1).value = 'SKOR';
-      col += 2;
+      head2.getCell(col + 2).value = 'NILAI';
+      col += 3;
     }
     head1.getCell(col).value = 'TOTAL';
     ws.mergeCells(5, col, 5, col + 1);
     head2.getCell(col).value = 'BENAR';
-    head2.getCell(col + 1).value = 'SKOR';
-    head1.getCell(col + 2).value = 'NILAI %';
-    ws.mergeCells(5, col + 2, 6, col + 2);
+    head2.getCell(col + 1).value = 'NILAI RATA-RATA';
     head1.font = { bold: true };
     head2.font = { bold: true };
 
@@ -1067,8 +1103,21 @@ export class AnalyticsService {
         r.school,
         r.groups.join('\n'),
       ];
-      for (const cell of r.cells) values.push(cell.correct, cell.score);
-      values.push(r.totalCorrect, r.totalScore, r.percentage);
+      const nilaiPerSubtes: number[] = [];
+      for (const cell of r.cells) {
+        const nilai =
+          cell.maxScore > 0
+            ? Math.round((cell.score / cell.maxScore) * 100)
+            : 0;
+        nilaiPerSubtes.push(nilai);
+        values.push(cell.correct, cell.score, nilai);
+      }
+      const avg = nilaiPerSubtes.length
+        ? Math.round(
+            nilaiPerSubtes.reduce((s, v) => s + v, 0) / nilaiPerSubtes.length,
+          )
+        : 0;
+      values.push(r.totalCorrect, avg);
       row.values = values;
       row.getCell(4).alignment = { wrapText: true, vertical: 'top' };
     });
@@ -1077,7 +1126,7 @@ export class AnalyticsService {
     ws.getColumn(2).width = 26;
     ws.getColumn(3).width = 22;
     ws.getColumn(4).width = 20;
-    for (let i = fixed.length + 1; i <= col + 2; i++) ws.getColumn(i).width = 9;
+    for (let i = fixed.length + 1; i <= col + 1; i++) ws.getColumn(i).width = 9;
 
     const buffer = await wb.xlsx.writeBuffer();
     const safe = recap.exam.title.replace(/[^a-zA-Z0-9-_]+/g, '-').toLowerCase();
@@ -1175,6 +1224,7 @@ th{background:#eee;font-size:11px}.num{text-align:center;width:26px}.ctr{text-al
 .opts{margin:4px 0 0 34px}.opt{margin:2px 0}.opt .ltr{font-weight:bold;display:inline-block;width:16px}
 .key{background:#f3f6ff;padding:6px 8px;margin:6px 0 0 34px;font-size:11px}
 img{max-width:320px;max-height:200px;display:block;margin:6px 0}
+.math-block{display:block;max-width:100%;overflow-x:auto;margin:4px 0}
 table.dt{border-collapse:collapse;font-size:11px;margin:4px 0}
 .dt th,.dt td{border:1px solid #999;padding:2px 6px;text-align:left}
 .hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #999;padding-bottom:8px;margin-bottom:12px}
@@ -1190,14 +1240,19 @@ table.dt{border-collapse:collapse;font-size:11px;margin:4px 0}
    * path media relatif (/api/media/…) tetap resolve saat dokumen dibuka
    * lewat blob object URL.
    */
-  private async printAssets() {
+  private async printAssets(origin?: string) {
     const [companyRow, brandingRow] = await Promise.all([
       this.prisma.appSetting.findUnique({ where: { key: 'company' } }),
       this.prisma.appSetting.findUnique({ where: { key: 'branding' } }),
     ]);
     const company = (companyRow?.value ?? {}) as Record<string, unknown>;
     const branding = (brandingRow?.value ?? {}) as Record<string, unknown>;
-    const appUrl = ((branding.appUrl as string) || '').replace(/\/+$/, '');
+    // branding.appUrl prioritas; bila kosong pakai origin request (host API
+    // yang dipakai admin saat mencetak) supaya <img src="/api/media/…">
+    // tetap resolve saat dokumen dibuka lewat blob/object URL.
+    const appUrl = (
+      ((branding.appUrl as string) || '') || (origin ?? '')
+    ).replace(/\/+$/, '');
     const name =
       (company.name as string) || (branding.appName as string) || 'Bimbel GFS';
     const logoUrl = (branding.logoUrl as string) || '';
@@ -1221,14 +1276,18 @@ table.dt{border-collapse:collapse;font-size:11px;margin:4px 0}
     return { html, base: appUrl ? `${appUrl}/` : '' };
   }
 
-  private async printDoc(title: string, body: string, extraCss = '') {
-    const assets = await this.printAssets();
+  private async printDoc(title: string, body: string, extraCss = '', origin?: string) {
+    const assets = await this.printAssets(origin);
     const baseTag = assets.base ? `<base href="${esc(assets.base)}">` : '';
-    return `<!doctype html><html><head><meta charset="utf-8">${baseTag}<title>${esc(title)}</title><style>${this.printCss()}</style>${extraCss ? `<style>${extraCss}</style>` : ''}</head><body>${assets.html}${body}<script>window.onload=()=>setTimeout(()=>window.print(),300)</script></body></html>`;
+    // KaTeX CSS+font dari CDN — dibutuhkan untuk rumus yang dirender
+    // server-side oleh richText() (dokumen dibuka di browser yang online).
+    const katexCss =
+      '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">';
+    return `<!doctype html><html><head><meta charset="utf-8">${baseTag}<title>${esc(title)}</title>${katexCss}<style>${this.printCss()}</style>${extraCss ? `<style>${extraCss}</style>` : ''}</head><body>${assets.html}${body}<script>window.onload=()=>setTimeout(()=>window.print(),300)</script></body></html>`;
   }
 
   /** HTML cetak soal ujian. */
-  async renderQuestionSheetHtml(sheet: Awaited<ReturnType<typeof this.getExamQuestionSheet>>) {
+  async renderQuestionSheetHtml(sheet: Awaited<ReturnType<typeof this.getExamQuestionSheet>>, origin?: string) {
     const e = sheet.exam;
     const meta = [
       e.programName,
@@ -1243,24 +1302,30 @@ table.dt{border-collapse:collapse;font-size:11px;margin:4px 0}
         const opts = q.options
           .map(
             (o) =>
-              `<div class="opt"><span class="ltr">${o.letter}.</span> ${richText(o.content)}${sheet.withKey && o.isCorrect ? ' <b class="ok">✓</b>' : ''}</div>`,
+              `<div class="opt"><span class="ltr">${o.letter}.</span> ${o.content ? richText(o.content) : ''}${o.imageUrl ? `<img class="optimg" src="${esc(o.imageUrl)}">` : ''}${sheet.withKey && o.isCorrect ? ' <b class="ok">✓</b>' : ''}</div>`,
           )
           .join('');
-        const key =
-          sheet.withKey && (q.answerKey || q.explanation)
-            ? `<div class="key">${q.answerKey ? `<b>Kunci:</b> ${esc(q.answerKey)}<br>` : ''}${q.explanation ? `<b>Pembahasan:</b> ${esc(q.explanation)}` : ''}</div>`
+        const stim =
+          q.stimulus || q.stimulusImageUrl
+            ? `<div class="stim">${q.stimulus ? richText(q.stimulus) : ''}${q.stimulusImageUrl ? `<img src="${esc(q.stimulusImageUrl)}">` : ''}</div>`
             : '';
-        return `<div class="q"><div class="qh"><span class="qn">${q.no}.</span><div><div>${richText(q.content)}</div>${q.imageUrl ? `<img src="${esc(q.imageUrl)}">` : ''}<div class="opts">${opts}</div>${key}</div></div></div>`;
+        const key =
+          sheet.withKey && (q.answerKey || q.explanation || q.explanationImageUrl)
+            ? `<div class="key">${q.answerKey ? `<b>Kunci:</b> ${esc(q.answerKey)}<br>` : ''}${q.explanation ? `<b>Pembahasan:</b> ${richText(q.explanation)}` : ''}${q.explanationImageUrl ? `<img src="${esc(q.explanationImageUrl)}">` : ''}</div>`
+            : '';
+        return `<div class="q"><div class="qh"><span class="qn">${q.no}.</span><div>${stim}<div>${richText(q.content)}</div>${q.imageUrl ? `<img src="${esc(q.imageUrl)}">` : ''}<div class="opts">${opts}</div>${key}</div></div></div>`;
       })
       .join('');
     return this.printDoc(
       `Soal — ${e.title}`,
       `<div class="hdr"><div><h1>${esc(e.title)}</h1><div class="sub">${esc(meta)} · ${fmtDateId(e.scheduledStartAt)} · ${sheet.questions.length} soal${sheet.withKey ? ' · DENGAN KUNCI' : ''}</div></div></div>${qs}`,
+      '.stim{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px 10px;margin-bottom:8px}.optimg{display:inline-block;max-width:220px;max-height:140px;vertical-align:middle;margin:2px 0}',
+      origin,
     );
   }
 
   /** HTML rekap jawaban siswa per nomor (baris KUNCI + jawaban tiap siswa). */
-  async renderAnswerRecapHtml(recap: Awaited<ReturnType<typeof this.getExamAnswerRecap>>) {
+  async renderAnswerRecapHtml(recap: Awaited<ReturnType<typeof this.getExamAnswerRecap>>, origin?: string) {
     const e = recap.exam;
     const head =
       `<tr><th class="num">NO</th><th>NAMA</th><th>ASAL SEKOLAH</th>` +
@@ -1289,34 +1354,44 @@ table.dt{border-collapse:collapse;font-size:11px;margin:4px 0}
       // Sel benar/salah diwarnai; kolom nomor rapat agar banyak soal tetap muat.
       `td.ok{background:#e7f6ec}td.bad{background:#fdecec}
 td,th{padding:2px 4px;font-size:10px}`,
+      origin,
     );
   }
 
-  /** HTML rekap nilai semua siswa (kolom BENAR/SKOR per mapel/bab — PDF1). */
-  async renderScoreRecapHtml(recap: Awaited<ReturnType<typeof this.getExamScoreRecap>>) {
+  /** HTML rekap nilai semua siswa (BENAR/SKOR/NILAI per subtes + NILAI RATA-RATA — sama dengan Excel). */
+  async renderScoreRecapHtml(recap: Awaited<ReturnType<typeof this.getExamScoreRecap>>, origin?: string) {
     const e = recap.exam;
     const cols = recap.columns;
     const head1 =
       `<tr><th class="num" rowspan="2">NO</th><th rowspan="2">NAMA</th><th rowspan="2">ASAL SEKOLAH</th>` +
-      cols.map((c) => `<th colspan="2" class="ctr">${esc(c.label)}</th>`).join('') +
-      `<th colspan="2" class="ctr">TOTAL</th><th rowspan="2" class="ctr">%</th></tr>`;
+      cols.map((c) => `<th colspan="3" class="ctr">${esc(c.label)}</th>`).join('') +
+      `<th colspan="2" class="ctr">TOTAL</th></tr>`;
     const head2 =
       `<tr>` +
-      cols.map(() => `<th class="ctr">BENAR</th><th class="ctr">SKOR</th>`).join('') +
-      `<th class="ctr">BENAR</th><th class="ctr">SKOR</th></tr>`;
+      cols.map(() => `<th class="ctr">BENAR</th><th class="ctr">SKOR</th><th class="ctr">NILAI</th>`).join('') +
+      `<th class="ctr">BENAR</th><th class="ctr">NILAI RATA-RATA</th></tr>`;
     const rows = recap.rows
-      .map(
-        (r, i) =>
+      .map((r, i) => {
+        const nilai = r.cells.map((c) =>
+          c.maxScore > 0 ? Math.round((c.score / c.maxScore) * 100) : 0,
+        );
+        const avg = nilai.length
+          ? Math.round(nilai.reduce((s, v) => s + v, 0) / nilai.length)
+          : 0;
+        return (
           `<tr><td class="ctr">${i + 1}</td><td>${esc(r.name)}</td><td>${esc(r.school)}</td>` +
           r.cells
-            .map((c) => `<td class="ctr">${c.correct}/${c.total}</td><td class="ctr">${c.score}</td>`)
+            .map((c, ci) => `<td class="ctr">${c.correct}/${c.total}</td><td class="ctr">${c.score}</td><td class="ctr">${nilai[ci]}</td>`)
             .join('') +
-          `<td class="ctr">${r.totalCorrect}</td><td class="ctr"><b>${r.totalScore}</b></td><td class="ctr">${r.percentage}</td></tr>`,
-      )
+          `<td class="ctr">${r.totalCorrect}</td><td class="ctr"><b>${avg}</b></td></tr>`
+        );
+      })
       .join('');
     return this.printDoc(
       `Hasil — ${e.title}`,
       `<div class="hdr"><div><h1>HASIL ${esc(e.title)}</h1><div class="sub">${esc([e.programName, e.levelName, e.subjectName].filter(Boolean).join(' · '))} · ${fmtDateId(e.scheduledStartAt)} · ${recap.participantCount} peserta</div></div></div><table>${head1}${head2}${rows}</table>`,
+      '',
+      origin,
     );
   }
 
@@ -1780,6 +1855,7 @@ td,th{padding:2px 4px;font-size:10px}`,
   /** HTML cetak laporan hasil belajar — letterhead + tabel + grafik + ttd. */
   async renderLearningReportHtml(
     report: Awaited<ReturnType<typeof this.getStudentLearningReport>>,
+    origin?: string,
   ) {
     const [companyRow, brandingRow, financeRow] = await Promise.all([
       this.prisma.appSetting.findUnique({ where: { key: 'company' } }),
@@ -1796,7 +1872,10 @@ td,th{padding:2px 4px;font-size:10px}`,
     const tagline = (branding.tagline as string) || '';
     // Media path relatif (/api/media/…) dijadikan absolut — dokumen ini dibuka
     // lewat blob object URL, jadi path relatif tidak akan resolve.
-    const appUrl = ((branding.appUrl as string) || '').replace(/\/+$/, '');
+    // branding.appUrl prioritas; bila kosong pakai origin request (host API).
+    const appUrl = (
+      ((branding.appUrl as string) || '') || (origin ?? '')
+    ).replace(/\/+$/, '');
     const absUrl = (u: string) =>
       u.startsWith('/api/') && appUrl ? `${appUrl}${u}` : u;
     const logoUrl = absUrl((branding.logoUrl as string) || '');
@@ -1999,7 +2078,7 @@ ${report.main && report.main.rows.length ? sectionTable(report.main) : '<p><i>Be
   }
 
   /** HTML cetak analisis soal: chart akurasi + tabel termudah/tersulit. */
-  async renderQuestionAnalysisHtml(analysis: Awaited<ReturnType<typeof this.getQuestionAnalysisItems>>) {
+  async renderQuestionAnalysisHtml(analysis: Awaited<ReturnType<typeof this.getQuestionAnalysisItems>>, origin?: string) {
     const byAcc = [...analysis.items].sort((a, b) => a.accuracy - b.accuracy);
     const hardest = byAcc.slice(0, Math.min(10, byAcc.length));
     const easiest = [...analysis.items].sort((a, b) => b.accuracy - a.accuracy).slice(0, Math.min(10, byAcc.length));
@@ -2023,6 +2102,8 @@ ${report.main && report.main.rows.length ? sectionTable(report.main) : '<p><i>Be
         tbl('Soal paling sulit (akurasi terendah)', hardest) +
         tbl('Soal paling bisa (akurasi tertinggi)', easiest) +
         tbl('Semua soal (urut nomor)', analysis.items),
+      '',
+      origin,
     );
   }
 

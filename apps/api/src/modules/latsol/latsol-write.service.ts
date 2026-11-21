@@ -7,6 +7,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { ContentCategoriesService } from '../content-categories/content-categories.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { ensureStudentProfile } from '../../common/utils/student-profile';
 import { PhoneVerificationService } from '../../common/phone-verification/phone-verification.service';
 import { PointTransactionsService } from '../point-transactions/point-transactions.service';
 import { POINT_AWARD_QUEUE } from '../point-transactions/point-award.consumer';
@@ -186,10 +187,7 @@ export class LatsolWriteService {
   }
 
   async requireStudent(userId: string) {
-    const s = await this.prisma.student.findUnique({ where: { userId } });
-    if (!s)
-      throw new ForbiddenException('Akun ini tidak terhubung ke data siswa.');
-    return s;
+    return ensureStudentProfile(this.prisma, userId);
   }
 
   async start(userId: string, packageId: string) {

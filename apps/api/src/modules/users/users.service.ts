@@ -26,6 +26,10 @@ export interface CreateUserForPersonInput {
    *  sebelum bisa melakukan aksi bernilai. Default true (dibuat admin/ortu
    *  dianggap terpercaya). */
   phoneVerified?: boolean;
+  /** User-id yang BOLEH berbagi nomor HP dengan akun baru (mis. nomor
+   *  keluarga: akun ortu + akun anak-anaknya). Login-by-HP tetap aman
+   *  karena pencocokan akun dilakukan lewat kombinasi nomor + sandi. */
+  allowPhoneUserIds?: string[];
 }
 
 export interface CreatedUserForPerson {
@@ -517,6 +521,9 @@ export class UsersService {
         where: {
           phone: { in: UsersService.phoneVariants(input.phone) },
           isActive: true,
+          ...(input.allowPhoneUserIds?.length
+            ? { id: { notIn: input.allowPhoneUserIds } }
+            : {}),
         },
         select: { id: true },
       });

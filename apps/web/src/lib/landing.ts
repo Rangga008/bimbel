@@ -93,6 +93,8 @@ export interface LandingDisplay {
   heroImages: Array<LandingHeroImage | string>;
   /** Link formulir info/pendaftaran (buku tamu Google Form). */
   registrationUrl: string;
+  /** Link tombol "Hubungi Kami" — wa.me/…; kosong = tombol disembunyikan. */
+  contactUrl?: string;
   heroBadge?: string;
   heroTitle?: string;
   heroHighlight?: string;

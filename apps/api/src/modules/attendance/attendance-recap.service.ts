@@ -1,6 +1,7 @@
 // Rekap 4 dimensi Fase 1d (siswa/kelompok/tutor/periode) + rekap milik sendiri.
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { ensureStudentProfile } from '../../common/utils/student-profile';
 import { ATTENDANCE_INCLUDE } from './attendance.service';
 import { AttendanceRecapQueryDto } from './dto/attendance.dto';
 
@@ -31,8 +32,7 @@ export class AttendanceRecapService {
 
   /** Rekap milik siswa login. */
   async recapMineStudent(userId: string, q: { from?: string; to?: string }) {
-    const student = await this.prisma.student.findUnique({ where: { userId } });
-    if (!student) throw new ForbiddenException('Akun ini tidak terhubung ke data siswa.');
+    const student = await ensureStudentProfile(this.prisma, userId);
     return this.recap({ studentId: student.id, ...(q.from ? { from: q.from } : {}), ...(q.to ? { to: q.to } : {}) });
   }
 

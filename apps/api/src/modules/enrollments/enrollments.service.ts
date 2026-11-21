@@ -117,12 +117,23 @@ export class EnrollmentsService {
   private async myParentOrThrow(userId: string) {
     const parent = await this.prisma.parent.findUnique({
       where: { userId },
-      select: { id: true, isActive: true },
+      select: { id: true, isActive: true, userId: true },
     });
     if (!parent || !parent.isActive) {
       throw new ForbiddenException('Fitur ini khusus akun orang tua.');
     }
     return parent;
+  }
+
+  /** User-id satu keluarga (ortu + semua anak tertaut) — anggota keluarga
+   *  boleh berbagi nomor HP untuk akun anak (anak sering belum punya HP
+   *  sendiri; login-by-HP tetap unik lewat kombinasi nomor + sandi). */
+  private async familyUserIds(parentId: string, parentUserId: string) {
+    const links = await this.prisma.parentStudent.findMany({
+      where: { parentId },
+      select: { student: { select: { userId: true } } },
+    });
+    return [parentUserId, ...links.map((l) => l.student.userId)];
   }
 
   private async generateInvoiceNumber(tx: Prisma.TransactionClient) {
@@ -270,6 +281,11 @@ export class EnrollmentsService {
           phone: dto.childPhone?.trim() || undefined,
           roleName: ROLE_NAMES.SISWA,
           tempPassword: childPassword,
+          // Anak boleh memakai nomor HP ortu/kakak-adiknya — orang tua
+          // sering mengisi nomor sendiri untuk anak yang belum punya HP.
+          allowPhoneUserIds: dto.childPhone?.trim()
+            ? await this.familyUserIds(parent.id, parent.userId)
+            : undefined,
         });
         studentLogin = {
           email: childEmail,
@@ -940,6 +956,29 @@ export class EnrollmentsService {
       throw new NotFoundException('Anak tidak ditemukan di akun Anda.');
     }
     const userId = link.student.userId;
+
+    // No HP baru: boleh berbagi dengan akun keluarga (ortu + anak lain
+    // milik ortu ini), tapi tidak boleh menabrak nomor orang lain.
+    const newPhone = dto.phone?.trim();
+    if (newPhone) {
+      const allowed = new Set(
+        await this.familyUserIds(parent.id, parent.userId),
+      );
+      allowed.add(userId);
+      const phoneTaken = await this.prisma.user.findFirst({
+        where: {
+          phone: { in: UsersService.phoneVariants(newPhone) },
+          isActive: true,
+          id: { notIn: [...allowed] },
+        },
+        select: { id: true },
+      });
+      if (phoneTaken) {
+        throw new ConflictException(
+          'Nomor HP sudah dipakai akun aktif lain di luar keluarga Anda.',
+        );
+      }
+    }
 
     const email = dto.email?.trim();
     if (email) {

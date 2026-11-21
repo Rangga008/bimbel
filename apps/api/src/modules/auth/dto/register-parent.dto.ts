@@ -1,5 +1,6 @@
 import {
   IsEmail,
+  IsOptional,
   IsString,
   MaxLength,
   MinLength,
@@ -35,4 +36,15 @@ export class RegisterParentDto {
   @MinLength(8, { message: 'Kata sandi minimal 8 karakter.' })
   @MaxLength(100)
   password: string;
+
+  /** Token anti-bot dari GET /auth/register-token — wajib, masa berlaku
+   *  terbatas. Bot yang menembak endpoint langsung tidak punya token ini. */
+  @IsString({ message: 'Token pendaftaran tidak valid — muat ulang halaman.' })
+  regToken: string;
+
+  /** Honeypot — field tersembunyi yang hanya diisi bot; harus kosong. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  website?: string;
 }

@@ -224,6 +224,108 @@ export class PeopleService {
     });
   }
 
+  /** Jumlah jejak akademik/finance sebuah profil siswa. */
+  private async studentTraceCount(studentId: string) {
+    const [attendances, invoices, enrollments, examAttempts, latsolAttempts] =
+      await Promise.all([
+        this.prisma.attendance.count({ where: { studentId } }),
+        this.prisma.invoice.count({ where: { studentId } }),
+        this.prisma.enrollment.count({ where: { studentId } }),
+        this.prisma.examAttempt.count({ where: { studentId } }),
+        this.prisma.latsolAttempt.count({ where: { studentId } }),
+      ]);
+    return attendances + invoices + enrollments + examAttempts + latsolAttempts;
+  }
+
+  /**
+   * Kandidat akun siswa untuk "Hubungkan Akun" — cari by nama/email/HP.
+   * `student.id` ikut dikirim supaya UI bisa menandai akun yang sudah
+   * punya profil siswa (profil kosong boleh ditukar, yang berjejak ditolak).
+   */
+  async findStudentAccountCandidates(search: string) {
+    const term = search.trim();
+    if (term.length < 2) return [];
+    return this.prisma.user.findMany({
+      where: {
+        isActive: true,
+        userRoles: { some: { role: { name: ROLE_NAMES.SISWA } } },
+        OR: [
+          { name: { contains: term, mode: 'insensitive' } },
+          { email: { contains: term, mode: 'insensitive' } },
+          { phone: { contains: term } },
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        student: { select: { id: true } },
+      },
+      orderBy: { name: 'asc' },
+      take: 15,
+    });
+  }
+
+  /**
+   * Hubungkan ulang akun login ke data siswa ini — untuk kasus siswa yang
+   * mendaftar sendiri (akun baru + profil eksternal kosong) padahal data
+   * akademiknya ada di baris siswa yang dibuat admin/ortu.
+   * Syarat: akun target berrole SISWA, dan profil siswa yang saat ini
+   * dimiliki akun itu (bila ada) tidak punya jejak akademik — profil kosong
+   * itu dihapus dalam transaksi yang sama supaya histori tidak tertukar.
+   * Akun lama siswa ini tetap ada; bila dipakai login, profil eksternal
+   * baru dibuat otomatis oleh ensureStudentProfile.
+   */
+  async linkAccount(id: string, userId: string) {
+    const student = await this.prisma.student.findUnique({
+      where: { id },
+      include: { user: { select: { id: true, name: true } } },
+    });
+    if (!student) throw new NotFoundException('Data siswa tidak ditemukan.');
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { userRoles: { select: { role: { select: { name: true } } } } },
+    });
+    if (!user) throw new NotFoundException('Akun tidak ditemukan.');
+    if (!user.userRoles.some((ur) => ur.role.name === ROLE_NAMES.SISWA)) {
+      throw new BadRequestException('Akun tersebut bukan akun siswa.');
+    }
+    if (student.userId === userId) {
+      throw new BadRequestException('Akun itu sudah terhubung ke siswa ini.');
+    }
+    const existing = await this.prisma.student.findUnique({
+      where: { userId },
+    });
+    if (existing) {
+      const traces = await this.studentTraceCount(existing.id);
+      if (traces > 0) {
+        throw new ConflictException(
+          'Akun ini sudah memakai profil siswa lain yang punya jejak data (absensi/invoice/ujian). Tidak bisa ditukar otomatis.',
+        );
+      }
+    }
+    return this.prisma.$transaction(async (tx) => {
+      if (existing) {
+        await tx.groupMember.deleteMany({ where: { studentId: existing.id } });
+        await tx.sessionStudentOverride.deleteMany({
+          where: { studentId: existing.id },
+        });
+        await tx.parentStudent.deleteMany({ where: { studentId: existing.id } });
+        await tx.feedbackEntry.deleteMany({ where: { studentId: existing.id } });
+        await tx.pointTransaction.deleteMany({
+          where: { studentId: existing.id },
+        });
+        await tx.student.delete({ where: { id: existing.id } });
+      }
+      return tx.student.update({
+        where: { id },
+        data: { userId },
+        include: studentInclude,
+      });
+    });
+  }
+
   /**
    * Hapus siswa — hanya bila belum ada jejak akademik/finance
    * (absensi, invoice, pendaftaran, ujian, latsol). Kalau ada,
@@ -232,16 +334,7 @@ export class PeopleService {
   async deleteStudent(id: string) {
     const student = await this.prisma.student.findUnique({ where: { id } });
     if (!student) throw new NotFoundException('Data siswa tidak ditemukan.');
-    const [attendances, invoices, enrollments, examAttempts, latsolAttempts] =
-      await Promise.all([
-        this.prisma.attendance.count({ where: { studentId: id } }),
-        this.prisma.invoice.count({ where: { studentId: id } }),
-        this.prisma.enrollment.count({ where: { studentId: id } }),
-        this.prisma.examAttempt.count({ where: { studentId: id } }),
-        this.prisma.latsolAttempt.count({ where: { studentId: id } }),
-      ]);
-    const total =
-      attendances + invoices + enrollments + examAttempts + latsolAttempts;
+    const total = await this.studentTraceCount(id);
     if (total > 0) {
       throw new BadRequestException(
         `Siswa masih punya ${total} jejak data (absensi/invoice/pendaftaran/ujian). Nonaktifkan saja agar histori tidak hilang.`,

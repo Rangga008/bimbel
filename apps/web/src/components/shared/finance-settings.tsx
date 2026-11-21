@@ -110,6 +110,8 @@ interface LocationEntry {
 interface DisplaySettings {
 	heroImages: HeroImageEntry[];
 	registrationUrl: string;
+	/** Link tombol "Hubungi Kami" (wa.me/…) — opsional, setting lama belum punya. */
+	contactUrl?: string;
 	heroBadge: string;
 	heroTitle: string;
 	heroHighlight: string;
@@ -797,6 +799,25 @@ export function FinanceSettings() {
 										setDisplay({ ...display, registrationUrl: e.target.value })
 									}
 									placeholder="https://s.id/info-daftarGFS2627"
+								/>
+							</LandingSubSection>
+
+							{/* ---- Link hubungi kami ---- */}
+							<LandingSubSection
+								title="Link Hubungi Kami"
+								hint="Tombol 'Hubungi Kami' di hero & section ajakan landing — biasanya link WhatsApp (wa.me/62xxxxxxxxxx). Kosongkan untuk memakai nomor telepon di Pengaturan Perusahaan; bila itu juga kosong tombol disembunyikan."
+								saving={saving}
+								onSave={() =>
+									saveMutation.mutate({ key: "display", value: display })
+								}
+							>
+								<Input
+									type="url"
+									value={display.contactUrl ?? ""}
+									onChange={(e) =>
+										setDisplay({ ...display, contactUrl: e.target.value })
+									}
+									placeholder="https://wa.me/6281234567890"
 								/>
 							</LandingSubSection>
 

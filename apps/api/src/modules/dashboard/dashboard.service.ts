@@ -1,6 +1,7 @@
 // Service Fase 1d: Beranda tiap role berisi DATA NYATA Fase 1.
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { ensureStudentProfile } from '../../common/utils/student-profile';
 import { ExamsService } from '../exams/exams.service';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 
@@ -117,7 +118,17 @@ export class DashboardService {
   /** Siswa: jadwal terdekat + ringkasan kehadiran + ujian yang terbuka untuknya. */
   async siswaHome(actor: AuthenticatedUser) {
     const userId = actor.id;
-    const student = await this.prisma.student.findUnique({ where: { userId }, include: { user: { select: { name: true } } } });
+    let student = await this.prisma.student.findUnique({ where: { userId }, include: { user: { select: { name: true } } } });
+    if (!student) {
+      // Profil siswa hilang padahal akun berrole SISWA — pulihkan otomatis
+      // (akun lama/impor); akun non-siswa tetap dapat dashboard kosong.
+      try {
+        await ensureStudentProfile(this.prisma, userId);
+        student = await this.prisma.student.findUnique({ where: { userId }, include: { user: { select: { name: true } } } });
+      } catch {
+        /* tetap kosong */
+      }
+    }
     if (!student) return { role: 'SISWA', empty: true };
     const { start } = this.weekRange();
     const [upcoming, attendances, groups, recentAttempts, pointsAgg, latsolDone, unread] = await Promise.all([
