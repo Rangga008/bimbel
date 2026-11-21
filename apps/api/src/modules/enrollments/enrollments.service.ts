@@ -1169,8 +1169,29 @@ export class EnrollmentsService {
     }
     await this.prisma.$transaction(async (tx) => {
       if (invoiceIds.length) {
+        const refunds = await tx.refund.count({
+          where: { invoiceId: { in: invoiceIds } },
+        });
+        if (refunds > 0) {
+          throw new BadRequestException(
+            'Ada catatan refund pada tagihannya — tidak bisa dihapus.',
+          );
+        }
         await tx.paymentAllocation.deleteMany({
           where: { invoiceId: { in: invoiceIds } },
+        });
+        await tx.payment.deleteMany({
+          where: {
+            invoiceId: { in: invoiceIds },
+            status: { not: 'VERIFIED' },
+            allocations: { none: {} },
+            receipts: { none: {} },
+            ledgerEntries: { none: {} },
+          },
+        });
+        await tx.payment.updateMany({
+          where: { invoiceId: { in: invoiceIds } },
+          data: { invoiceId: null },
         });
         await tx.invoiceItem.deleteMany({
           where: { invoiceId: { in: invoiceIds } },

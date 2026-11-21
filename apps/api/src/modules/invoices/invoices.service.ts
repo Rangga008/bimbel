@@ -412,8 +412,32 @@ export class InvoicesService {
       );
     }
     await this.prisma.$transaction(async (tx) => {
+      // Refund menahan invoice via onDelete: Restrict — tolak jelas.
+      const refunds = await tx.refund.count({ where: { invoiceId: id } });
+      if (refunds > 0) {
+        throw new BadRequestException(
+          'Invoice ini punya catatan refund — tidak bisa dihapus.',
+        );
+      }
       await tx.paymentAllocation.deleteMany({ where: { invoiceId: id } });
-      await tx.payment.deleteMany({ where: { invoiceId: id } });
+      // Hapus hanya pengajuan pembayaran yang belum terverifikasi & tanpa
+      // alokasi/kwitansi/ledger — payment VERIFIED yang menunjuk invoice ini
+      // (mis. split ke invoice lain) TIDAK ikut terhapus.
+      await tx.payment.deleteMany({
+        where: {
+          invoiceId: id,
+          status: { not: 'VERIFIED' },
+          allocations: { none: {} },
+          receipts: { none: {} },
+          ledgerEntries: { none: {} },
+        },
+      });
+      // Sisanya (payment terverifikasi milik invoice lain) dilepas linknya —
+      // Payment.invoiceId scalar tanpa FK sehingga aman.
+      await tx.payment.updateMany({
+        where: { invoiceId: id },
+        data: { invoiceId: null },
+      });
       await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
       // enrollment.invoiceId & enrollmentId auto-SetNull via schema.
       await tx.invoice.delete({ where: { id } });

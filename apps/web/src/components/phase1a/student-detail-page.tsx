@@ -881,7 +881,14 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                     key={m.id}
                     type="button"
                     className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${payMode === m.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
-                    onClick={() => setPayMode(m.id)}
+                    onClick={() => {
+                      setPayMode(m.id);
+                      if (m.id === 'total' && payTarget) {
+                        setPayAmount(String(Math.round(payTarget.paid + payTarget.remaining)));
+                      } else if (m.id === 'sebagian') {
+                        setPayAmount('');
+                      }
+                    }}
                   >
                     {m.label}
                   </button>
@@ -1025,6 +1032,16 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
         submitLabel="Simpan Perubahan"
         excludeUserId={s?.user.id}
       />
+      <ConfirmDialog
+        open={!!removeTarget}
+        onOpenChange={(o) => !o && setRemoveTarget(null)}
+        title={`Hapus program ${removeTarget?.program.name ?? ''} — ${removeTarget?.level.name ?? ''}?`}
+        description="Pendaftaran dan seluruh tagihannya yang belum dibayar ikut dihapus dari siswa ini. Ditolak bila program sudah diproses atau ada tagihan yang sudah dibayar."
+        confirmLabel="Ya, hapus program"
+        pending={removeEnrollM.isPending}
+        onConfirm={() => removeEnrollM.mutate()}
+      />
+
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
