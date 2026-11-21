@@ -131,7 +131,8 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkSearch, setLinkSearch] = useState('');
   const [linkUserId, setLinkUserId] = useState('');
-  const [payTarget, setPayTarget] = useState<{ id: string; number: string; remaining: number } | null>(null);
+  const [payTarget, setPayTarget] = useState<{ id: string; number: string; remaining: number; paid: number } | null>(null);
+  const [payMode, setPayMode] = useState<'lunas' | 'sebagian' | 'total'>('lunas');
   const [payAmount, setPayAmount] = useState('');
   const [payDate, setPayDate] = useState('');
   const [payNote, setPayNote] = useState('');
@@ -265,13 +266,19 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
 
   // "Catat Bayar" — pembayaran tunai/transfer yang SUDAH diterima (bisa
   // backdate lewat kolom tanggal) langsung terverifikasi ke invoice.
+  // Tiga mode: 'lunas' = lunasi sisa, 'sebagian' = tambah pembayaran
+  // sebesar nominal, 'total' = set total terbayar (sistem mencatat
+  // selisihnya sebagai satu pembayaran).
+  const payAmountNum = payMode === 'lunas'
+    ? (payTarget?.remaining ?? 0)
+    : Number(payAmount.replace(/\D/g, '')) - (payMode === 'total' ? (payTarget?.paid ?? 0) : 0);
   const payM = useMutation({
     mutationFn: () =>
       apiFetch('/payments/cash', {
         method: 'POST',
         body: {
           invoiceId: payTarget?.id,
-          amount: Number(payAmount.replace(/\D/g, '')),
+          amount: payAmountNum,
           receivedAt: payDate || undefined,
           note: payNote.trim() || undefined,
         },
@@ -627,7 +634,8 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                                   variant="secondary"
                                   className="h-6 px-2 text-[11px]"
                                   onClick={() => {
-                                    setPayTarget({ id: inv.id, number: inv.number, remaining });
+                                    setPayTarget({ id: inv.id, number: inv.number, remaining, paid });
+                                    setPayMode('lunas');
                                     setPayAmount(String(Math.round(remaining)));
                                     setPayDate('');
                                     setPayNote('');
@@ -845,6 +853,97 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
               onClick={() => discountM.mutate()}
             >
               {discountM.isPending ? 'Menerapkan…' : 'Terapkan Diskon'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!payTarget} onOpenChange={(o) => !o && setPayTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Set Pembayaran</DialogTitle>
+            <DialogDescription>
+              {payTarget
+                ? `Invoice ${payTarget.number} — terbayar ${rp(payTarget.paid)} · sisa ${rp(payTarget.remaining)}. Pembayaran dicatat langsung terverifikasi dan masuk ke kas.`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label>Status pembayaran</Label>
+              <div className="grid grid-cols-3 gap-1 rounded-lg border p-1">
+                {([
+                  { id: 'lunas', label: 'Lunas' },
+                  { id: 'sebagian', label: 'Bayar sebagian' },
+                  { id: 'total', label: 'Set total terbayar' },
+                ] as const).map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${payMode === m.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+                    onClick={() => setPayMode(m.id)}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {payMode === 'lunas' ? (
+              <p className="rounded-md bg-muted px-3 py-2 text-sm">
+                Mencatat pelunasan <strong>{rp(payTarget?.remaining ?? 0)}</strong> — invoice
+                ini langsung berstatus lunas.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                <CurrencyInput
+                  id="pay-amount"
+                  label={payMode === 'sebagian' ? 'Nominal dibayar sekarang' : 'Total yang sudah dibayar'}
+                  placeholder={payMode === 'sebagian' ? 'mis. 250.000' : `lebih dari ${rp(payTarget?.paid ?? 0)}`}
+                  value={payAmount}
+                  onChange={setPayAmount}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {payMode === 'sebagian'
+                    ? `Maks ${rp(payTarget?.remaining ?? 0)} — dicatat sebagai pembayaran tambahan.`
+                    : `Sudah terbayar ${rp(payTarget?.paid ?? 0)} — sistem mencatat selisihnya (${rp(Math.max(0, payAmountNum))}) sebagai satu pembayaran.`}
+                </p>
+              </div>
+            )}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="pay-date">Tanggal bayar (opsional)</Label>
+              <Input
+                id="pay-date"
+                type="date"
+                max={new Date().toISOString().slice(0, 10)}
+                value={payDate}
+                onChange={(e) => setPayDate(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Kosongkan untuk tanggal hari ini — isi tanggal lama bila pembayaran sudah terjadi sebelumnya.
+              </p>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="pay-note">Catatan (opsional)</Label>
+              <Input
+                id="pay-note"
+                placeholder="mis. Transfer BCA 12 Jan, tunai di kantor"
+                value={payNote}
+                onChange={(e) => setPayNote(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPayTarget(null)}>Batal</Button>
+            <Button
+              disabled={
+                payM.isPending ||
+                !payTarget ||
+                payAmountNum <= 0 ||
+                payAmountNum > payTarget.remaining + 0.009
+              }
+              onClick={() => payM.mutate()}
+            >
+              {payM.isPending ? 'Mencatat…' : `Catat ${rp(Math.max(0, payAmountNum))}`}
             </Button>
           </DialogFooter>
         </DialogContent>
