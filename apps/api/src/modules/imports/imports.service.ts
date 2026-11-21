@@ -46,34 +46,35 @@ const TEMPLATES: Record<
   { header: string; samples: string[]; notes: string }
 > = {
   students: {
-    header: 'email;name;phone;dateOfBirth;address;gender;schoolOrigin;parentEmails;parentPhones',
+    header:
+      'email;name;phone;password;dateOfBirth;address;gender;schoolOrigin;parentEmails;parentPhones',
     samples: [
-      'siswa.contoh1@email.com;Siswa Contoh Satu;081200001111;2012-05-14;Jl. Merdeka 1;M;SMPN 1 Jakarta;ortu.contoh@email.com;',
-      'siswa.contoh2@email.com;Siswa Contoh Dua;081200002222;2013-08-20;Jl. Sudirman 5;F;;;081300001111|081300002222',
-      ';Siswa Contoh Tiga;081200003333;2014-01-10;;M;;;081300001111',
+      'siswa.contoh1@email.com;Siswa Contoh Satu;081200001111;;2012-05-14;Jl. Merdeka 1;M;SMPN 1 Jakarta;ortu.contoh@email.com;',
+      'siswa.contoh2@email.com;Siswa Contoh Dua;081200002222;;2013-08-20;Jl. Sudirman 5;F;;;081300001111|081300002222',
+      ';Siswa Contoh Tiga;;;2014-01-10;;M;;;081300001111',
     ],
     notes:
-      'email opsional (kosong → digenerate otomatis dari no HP) · name wajib (min 3) · isi email ATAU phone minimal satu (phone dipakai login) · dateOfBirth format YYYY-MM-DD (opsional) · gender: M/F/OTHER (opsional) · schoolOrigin opsional · parentEmails/parentPhones: email/no HP ortu yang sudah terdaftar, pisahkan dengan | (opsional)',
+      'email opsional (kosong → digenerate otomatis, termasuk saat no HP juga kosong) · name wajib (min 3) · phone opsional (dipakai login & notifikasi) · password opsional (min 8 karakter; kosong → digenerate otomatis, tampil sekali di hasil import) · dateOfBirth format YYYY-MM-DD (opsional) · gender: M/F/OTHER (opsional) · schoolOrigin opsional · parentEmails/parentPhones: email/no HP ortu yang sudah terdaftar, pisahkan dengan | (opsional)',
   },
   parents: {
-    header: 'email;name;phone;studentEmails;studentPhones',
+    header: 'email;name;phone;password;studentEmails;studentPhones',
     samples: [
-      'ortu.contoh@email.com;Ortu Contoh;081300001111;siswa.contoh1@email.com;',
-      ';Ortu Contoh Dua;081300002222;;081200001111|081200002222',
-      'ortu.contoh3@email.com;Ortu Contoh Tiga;081300003333;;',
+      'ortu.contoh@email.com;Ortu Contoh;081300001111;;siswa.contoh1@email.com;',
+      ';Ortu Contoh Dua;081300002222;;;081200001111|081200002222',
+      'ortu.contoh3@email.com;Ortu Contoh Tiga;081300003333;;;',
     ],
     notes:
-      'email opsional (kosong → digenerate otomatis dari no HP) · name wajib (min 3) · phone WAJIB (dipakai ortu untuk login via No. HP & notifikasi WhatsApp) · studentEmails/studentPhones: email/no HP siswa yang sudah terdaftar, pisahkan dengan | (opsional)',
+      'email opsional (kosong → digenerate otomatis, termasuk saat no HP juga kosong) · name wajib (min 3) · phone opsional tapi disarankan (dipakai ortu untuk login via No. HP & notifikasi WhatsApp) · password opsional (min 8 karakter; kosong → digenerate otomatis, tampil sekali di hasil import) · studentEmails/studentPhones: email/no HP siswa yang sudah terdaftar, pisahkan dengan | (opsional)',
   },
   tutors: {
-    header: 'email;name;phone;specialization;bio',
+    header: 'email;name;phone;password;specialization;bio',
     samples: [
-      'tutor.contoh@email.com;Tutor Contoh;081400001111;Matematika;"Lulusan FMIPA, pengalaman 5 tahun"',
-      ';Tutor Contoh Dua;081400002222;Bahasa Inggris;',
-      'tutor.contoh3@email.com;Tutor Contoh Tiga;081400003333;Fisika;"Guru SMA, 3 tahun"',
+      'tutor.contoh@email.com;Tutor Contoh;081400001111;;Matematika;"Lulusan FMIPA, pengalaman 5 tahun"',
+      ';Tutor Contoh Dua;081400002222;;Bahasa Inggris;',
+      'tutor.contoh3@email.com;Tutor Contoh Tiga;081400003333;;Fisika;"Guru SMA, 3 tahun"',
     ],
     notes:
-      'email opsional (kosong → digenerate otomatis dari no HP) · name wajib (min 3) · phone WAJIB (ditampilkan ke ortu & dipakai reminder jadwal) · specialization & bio opsional · pakai tanda kutip bila isi mengandung koma',
+      'email opsional (kosong → digenerate otomatis, termasuk saat no HP juga kosong) · name wajib (min 3) · phone opsional tapi disarankan (ditampilkan ke ortu & dipakai reminder jadwal) · password opsional (min 8 karakter; kosong → digenerate otomatis, tampil sekali di hasil import) · specialization & bio opsional',
   },
 };
 
@@ -161,27 +162,59 @@ export class ImportsService {
     return String(v);
   }
 
-  /** Sheet pertama file .xlsx → array objek berkunci header (sama bentuk
-   *  dengan hasil parseCsv). Baris kosong & diawali "#" di-skip. */
+  /** File .xlsx → array objek berkunci header (sama bentuk dengan hasil
+   *  parseCsv). Memindai SEMUA sheet dan memilih yang baris pertamanya
+   *  memuat kolom "name" — jadi data yang ditulis di sheet lain tetap
+   *  terbaca. Baris kosong & diawali "#" di kolom pertama di-skip. */
   private async parseXlsx(
     buffer: Buffer,
   ): Promise<Array<Record<string, string>>> {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buffer as unknown as ArrayBuffer);
-    const ws = wb.worksheets.find((s) => s.rowCount > 0);
-    if (!ws) return [];
-    // Header = baris pertama yang berisi sel tak kosong.
-    let headerRowIdx = 0;
+    let headerRow: ExcelJS.Row | undefined;
+    let ws: ExcelJS.Worksheet | undefined;
     let headers: string[] = [];
-    ws.eachRow((row, rowNumber) => {
-      if (headerRowIdx) return;
-      const cells = (row.values as ExcelJS.CellValue[]).slice(1);
-      if (cells.some((c) => this.cellText(c).trim())) {
-        headerRowIdx = rowNumber;
-        headers = cells.map((c) => this.cellText(c).trim().toLowerCase());
+    // Pass 1: cari sheet yang baris non-kosong pertamanya mengandung "name".
+    for (const cand of wb.worksheets) {
+      let found: ExcelJS.Row | undefined;
+      let heads: string[] = [];
+      cand.eachRow((row) => {
+        if (found) return;
+        const cells = (row.values as ExcelJS.CellValue[]).slice(1);
+        const texts = cells.map((c) => this.cellText(c).trim().toLowerCase());
+        if (texts.some((t) => t !== '')) {
+          if (texts.includes('name')) {
+            found = row;
+            heads = texts;
+          } else {
+            // Baris non-kosong pertama tanpa kolom name → bukan sheet data.
+            found = row; // tetap catat agar loop berhenti
+            heads = [];
+          }
+        }
+      });
+      if (found && heads.includes('name')) {
+        ws = cand;
+        headerRow = found;
+        headers = heads;
+        break;
       }
-    });
-    if (!headerRowIdx) return [];
+    }
+    // Pass 2 (fallback): sheet non-kosong pertama — header = baris pertamanya.
+    if (!ws) {
+      ws = wb.worksheets.find((s) => s.rowCount > 0);
+      if (!ws) return [];
+      ws.eachRow((row) => {
+        if (headerRow) return;
+        const cells = (row.values as ExcelJS.CellValue[]).slice(1);
+        if (cells.some((c) => this.cellText(c).trim())) {
+          headerRow = row;
+          headers = cells.map((c) => this.cellText(c).trim().toLowerCase());
+        }
+      });
+    }
+    if (!headerRow) return [];
+    const headerRowIdx = headerRow.number;
     const out: Array<Record<string, string>> = [];
     ws.eachRow((row, rowNumber) => {
       if (rowNumber <= headerRowIdx) return;
@@ -279,6 +312,14 @@ export class ImportsService {
   ) {
     const email = row.email?.trim() || undefined;
     if (!row.name?.trim()) throw new BadRequestException('Kolom name wajib diisi.');
+    // password opsional — bila diisi harus ≥8 karakter (aturan sama dengan
+    // form biasa); bila kosong service generate tempPassword otomatis.
+    const password = row.password?.trim() || undefined;
+    if (password && password.length < 8) {
+      throw new BadRequestException('Kolom password minimal 8 karakter.');
+    }
+    // Email & no HP boleh dua-duanya kosong — service membuat email
+    // placeholder otomatis supaya kolom unik users.email tetap terisi.
 
     if (entity === 'students') {
       const parentIds = this.resolveIds(
@@ -293,15 +334,11 @@ export class ImportsService {
       if (gender && !['M', 'F', 'OTHER'].includes(gender)) {
         throw new BadRequestException('gender harus M, F, atau OTHER.');
       }
-      if (!email && !row.phone?.trim()) {
-        throw new BadRequestException(
-          'Isi kolom email ATAU phone — minimal satu (phone dipakai login).',
-        );
-      }
       const created = await this.people.createStudent({
         email,
         name: row.name.trim(),
         phone: row.phone || undefined,
+        password,
         dateOfBirth: row.dateofbirth || undefined,
         address: row.address || undefined,
         gender: (gender || undefined) as 'M' | 'F' | 'OTHER' | undefined,
@@ -320,29 +357,21 @@ export class ImportsService {
         ],
         'siswa',
       );
-      if (!row.phone?.trim()) {
-        throw new BadRequestException(
-          'Kolom phone wajib untuk ortu (dipakai login & notifikasi WA).',
-        );
-      }
       const created = await this.parents.create({
         email,
         name: row.name.trim(),
-        phone: row.phone.trim(),
+        phone: (row.phone?.trim() || undefined) as string,
+        password,
         studentIds,
       });
       return { email: created.user.email, name: created.user.name, tempPassword: created.tempPassword };
     }
 
-    if (!row.phone?.trim()) {
-      throw new BadRequestException(
-        'Kolom phone wajib untuk tutor (ditampilkan ke ortu & dipakai reminder).',
-      );
-    }
     const created = await this.tutors.create({
       email,
       name: row.name.trim(),
-      phone: row.phone.trim(),
+      phone: (row.phone?.trim() || undefined) as string,
+      password,
       specialization: row.specialization || undefined,
       bio: row.bio || undefined,
     });
@@ -373,7 +402,7 @@ export class ImportsService {
     }
     if (!rows.length) {
       throw new BadRequestException(
-        'CSV tidak berisi baris data (hanya header atau kosong).',
+        'File tidak berisi baris data — hanya header atau baris contoh (baris contoh diawali "#" di kolom pertama tidak ikut diimport). Isi data asli mulai baris ke-2.',
       );
     }
     if (rows.length > 500) {
