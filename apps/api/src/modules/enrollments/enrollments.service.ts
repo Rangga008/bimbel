@@ -1325,6 +1325,11 @@ export class EnrollmentsService {
         create: { groupId: group.id, studentId: e.studentId },
         update: {},
       });
+      // Placement resmi oleh staff → siswa daftar-mandiri menjadi siswa GFS.
+      await tx.student.updateMany({
+        where: { id: e.studentId, isExternal: true },
+        data: { isExternal: false },
+      });
       return tx.enrollment.update({
         where: { id },
         data: { status: 'PLACED', groupId: group.id },

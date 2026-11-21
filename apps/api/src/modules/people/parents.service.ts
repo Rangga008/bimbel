@@ -114,6 +114,12 @@ export class ParentsService {
           })),
           skipDuplicates: true,
         });
+        // Siswa daftar-mandiri yang dihubungkan ke orang tua oleh staff
+        // → statusnya menjadi siswa GFS.
+        await tx.student.updateMany({
+          where: { id: { in: dto.studentIds }, isExternal: true },
+          data: { isExternal: false },
+        });
       }
       const full = await tx.parent.findUniqueOrThrow({
         where: { id: parent.id },

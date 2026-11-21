@@ -346,10 +346,19 @@ export class GroupsService {
         throw new BadRequestException('Kapasitas kelompok sudah penuh.');
       }
     }
-    return this.prisma.groupMember.upsert({
-      where: { groupId_studentId: { groupId, studentId: dto.studentId } },
-      create: { groupId, studentId: dto.studentId },
-      update: {},
+    return this.prisma.$transaction(async (tx) => {
+      const member = await tx.groupMember.upsert({
+        where: { groupId_studentId: { groupId, studentId: dto.studentId } },
+        create: { groupId, studentId: dto.studentId },
+        update: {},
+      });
+      // Siswa "daftar mandiri" yang resmi ditempatkan ke kelompok oleh
+      // staff → statusnya menjadi siswa GFS.
+      await tx.student.updateMany({
+        where: { id: dto.studentId, isExternal: true },
+        data: { isExternal: false },
+      });
+      return member;
     });
   }
 

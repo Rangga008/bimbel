@@ -10,6 +10,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import ExcelJS from 'exceljs';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PeopleService } from '../people/people.service';
 import { ParentsService } from '../people/parents.service';
@@ -497,10 +498,13 @@ export class ImportsService {
     return result;
   }
 
-  /** Export .xlsx seluruh data entitas — kolom administrasi saja,
-   *  tanpa kredensial/hash. Email sintetis (wa.*@hp.bimbel.local)
-   *  ditandai "(otomatis)" supaya tidak dikira email asli user. */
-  async exportXlsx(entity: ImportEntity): Promise<Buffer> {
+  /** Export .xlsx data entitas — kolom administrasi saja, tanpa
+   *  kredensial/hash. Email sintetis (wa.*@hp.bimbel.local) dikosongkan.
+   *  Siswa mendukung filter asal daftar/kelompok/jenjang. */
+  async exportXlsx(
+    entity: ImportEntity,
+    filters?: { origin?: 'external' | 'internal'; groupId?: string; levelId?: string },
+  ): Promise<Buffer> {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('DATA');
     const fmtDate = (d?: Date | null) =>
@@ -521,14 +525,41 @@ export class ImportsService {
         { header: 'asalDaftar', key: 'origin', width: 16 },
         { header: 'orangTua', key: 'parents', width: 30 },
         { header: 'phoneOrangTua', key: 'parentPhones', width: 22 },
+        { header: 'kelompok', key: 'groups', width: 28 },
       ];
+      const where: Prisma.StudentWhereInput = {};
+      if (filters?.origin === 'external') where.isExternal = true;
+      if (filters?.origin === 'internal') where.isExternal = false;
+      if (filters?.groupId) {
+        where.groupMembers = { some: { groupId: filters.groupId } };
+      }
+      if (filters?.levelId) {
+        where.groupMembers = {
+          ...(where.groupMembers ?? {}),
+          some: {
+            ...(where.groupMembers?.some ?? {}),
+            group: { levelId: filters.levelId },
+          },
+        };
+      }
       const rows = await this.prisma.student.findMany({
+        where,
         orderBy: { user: { name: 'asc' } },
         include: {
           user: true,
           parentStudents: {
             include: {
               parent: { include: { user: { select: { name: true, phone: true } } } },
+            },
+          },
+          groupMembers: {
+            include: {
+              group: {
+                select: {
+                  name: true,
+                  level: { select: { name: true } },
+                },
+              },
             },
           },
         },
@@ -551,6 +582,13 @@ export class ImportsService {
           parentPhones: s.parentStudents
             .map((ps) => ps.parent.user.phone ?? '')
             .filter(Boolean)
+            .join('; '),
+          groups: s.groupMembers
+            .map((gm) =>
+              gm.group.level?.name
+                ? `${gm.group.name} (${gm.group.level.name})`
+                : gm.group.name,
+            )
             .join('; '),
         });
       }

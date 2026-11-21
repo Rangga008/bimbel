@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
 	CircleCheck,
@@ -451,7 +451,8 @@ export function ImportDialog({
 	);
 }
 
-/** Tombol "Export Excel" — unduh seluruh data entitas sebagai .xlsx. */
+/** Tombol "Export Excel" — unduh data entitas sebagai .xlsx.
+ *  Untuk siswa: buka dialog filter (asal daftar, kelompok, jenjang). */
 export function ExportButton({
 	entity,
 	className,
@@ -460,35 +461,148 @@ export function ExportButton({
 	className?: string;
 }) {
 	const [downloading, setDownloading] = useState(false);
-	const download = async () => {
+	const [filterOpen, setFilterOpen] = useState(false);
+	const [origin, setOrigin] = useState("");
+	const [groupId, setGroupId] = useState("");
+	const [levelId, setLevelId] = useState("");
+
+	const groupsQ = useQuery({
+		queryKey: ["export-groups"],
+		queryFn: () =>
+			apiFetch<Array<{ id: string; name: string; level?: { name: string } | null }>>(
+				"/groups",
+			),
+		enabled: filterOpen && entity === "students",
+	});
+	const levelsQ = useQuery({
+		queryKey: ["export-levels"],
+		queryFn: () =>
+			apiFetch<Array<{ id: string; name: string }>>("/levels"),
+		enabled: filterOpen && entity === "students",
+	});
+
+	const download = async (qs = "") => {
 		setDownloading(true);
 		try {
-			const blob = await apiFetchBlob(`/import/export/${entity}`);
+			const blob = await apiFetchBlob(`/import/export/${entity}${qs}`);
 			const url = URL.createObjectURL(blob);
 			const a = document.createElement("a");
 			a.href = url;
 			a.download = `export-${entity}-${new Date().toISOString().slice(0, 10)}.xlsx`;
 			a.click();
 			URL.revokeObjectURL(url);
+			setFilterOpen(false);
 		} catch (e) {
 			toast.error(err(e, "Gagal mengunduh export."));
 		} finally {
 			setDownloading(false);
 		}
 	};
+
+	const downloadFiltered = () => {
+		const p = new URLSearchParams();
+		if (origin) p.set("origin", origin);
+		if (groupId) p.set("groupId", groupId);
+		if (levelId) p.set("levelId", levelId);
+		const qs = p.toString();
+		void download(qs ? `?${qs}` : "");
+	};
+
+	const sel =
+		"h-9 w-full rounded-md border border-input bg-background px-3 text-sm";
+
 	return (
-		<Button
-			variant="outline"
-			className={className}
-			disabled={downloading}
-			onClick={() => void download()}
-		>
-			{downloading ? (
-				<LoaderCircle className="size-4 animate-spin" />
-			) : (
-				<Download className="size-4" />
-			)}
-			Export
-		</Button>
+		<>
+			<Button
+				variant="outline"
+				className={className}
+				disabled={downloading}
+				onClick={() =>
+					entity === "students" ? setFilterOpen(true) : void download()
+				}
+			>
+				{downloading ? (
+					<LoaderCircle className="size-4 animate-spin" />
+				) : (
+					<Download className="size-4" />
+				)}
+				Export
+			</Button>
+			<Dialog open={filterOpen} onOpenChange={setFilterOpen}>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle>Export Siswa ke Excel</DialogTitle>
+						<DialogDescription>
+							Pilih filter (opsional) — kosongkan untuk export semua siswa.
+						</DialogDescription>
+					</DialogHeader>
+					<div className="flex flex-col gap-3">
+						<div>
+							<p className="mb-1 text-xs font-medium text-muted-foreground">
+								Asal daftar
+							</p>
+							<select
+								className={sel}
+								value={origin}
+								onChange={(e) => setOrigin(e.target.value)}
+							>
+								<option value="">Semua</option>
+								<option value="external">Daftar mandiri / orang luar</option>
+								<option value="internal">Siswa GFS</option>
+							</select>
+						</div>
+						<div>
+							<p className="mb-1 text-xs font-medium text-muted-foreground">
+								Jenjang
+							</p>
+							<select
+								className={sel}
+								value={levelId}
+								onChange={(e) => setLevelId(e.target.value)}
+							>
+								<option value="">Semua jenjang</option>
+								{(levelsQ.data ?? []).map((l) => (
+									<option key={l.id} value={l.id}>
+										{l.name}
+									</option>
+								))}
+							</select>
+						</div>
+						<div>
+							<p className="mb-1 text-xs font-medium text-muted-foreground">
+								Kelompok
+							</p>
+							<select
+								className={sel}
+								value={groupId}
+								onChange={(e) => setGroupId(e.target.value)}
+							>
+								<option value="">Semua kelompok</option>
+								{(groupsQ.data ?? []).map((g) => (
+									<option key={g.id} value={g.id}>
+										{g.name}
+										{g.level?.name ? ` (${g.level.name})` : ""}
+									</option>
+								))}
+							</select>
+						</div>
+						<Button
+							disabled={downloading}
+							onClick={downloadFiltered}
+						>
+							{downloading ? (
+								<>
+									<LoaderCircle className="size-4 animate-spin" /> Mengunduh...
+								</>
+							) : (
+								<>
+									<Download className="size-4" /> Unduh Excel
+								</>
+							)}
+						</Button>
+					</div>
+				</DialogContent>
+			</Dialog>
+		</>
 	);
 }

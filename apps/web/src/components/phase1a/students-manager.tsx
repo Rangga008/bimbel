@@ -58,6 +58,7 @@ const EDIT_FIELDS: Phase1aField[] = [
   { name: 'majorChoice2', label: 'Pilihan jurusan 2', placeholder: 'Gizi (Universitas ...)' },
   { name: 'gender', label: 'Jenis kelamin', options: [ { value: 'M', label: 'Laki-laki' }, { value: 'F', label: 'Perempuan' }, { value: 'OTHER', label: 'Lainnya' } ] },
   { name: 'isActive', label: 'Status akun', options: [ { value: 'true', label: 'Aktif' }, { value: 'false', label: 'Nonaktif' } ] },
+  { name: 'isExternal', label: 'Asal daftar', options: [ { value: 'true', label: 'Daftar mandiri / orang luar' }, { value: 'false', label: 'Siswa GFS' } ] },
 ];
 
 /** Halaman "Siswa" — data nyata untuk Admin Finance/Academic & Owner. */
@@ -143,6 +144,14 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
               : editForm.isActive === 'true'
                 ? true
                 : editForm.isActive === 'false'
+                  ? false
+                  : undefined,
+          isExternal:
+            editForm.isExternal === ''
+              ? undefined
+              : editForm.isExternal === 'true'
+                ? true
+                : editForm.isExternal === 'false'
                   ? false
                   : undefined,
         },
@@ -295,6 +304,7 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
                               majorChoice1: student.majorChoice1 ?? '',
                               majorChoice2: student.majorChoice2 ?? '',
                               isActive: String(student.isActive),
+                              isExternal: String(student.isExternal),
                             });
                           }}
                         >
@@ -368,16 +378,6 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
         isSubmitting={editMutation.isPending}
         submitLabel="Simpan Perubahan"
         excludeUserId={editTarget?.user.id}
-        extra={
-          <Phase1aSelectField
-            id="fase1a-student-edit-gender"
-            label="Jenis kelamin (opsional)"
-            value={editForm.gender ?? ''}
-            onChange={(v) => setEditForm((prev) => ({ ...prev, gender: v }))}
-            options={GENDER_OPTIONS}
-            placeholder="- Pilih -"
-          />
-        }
       />
 
       <ImportDialog

@@ -97,6 +97,7 @@ const EDIT_FIELDS: Phase1aField[] = [
   { name: 'schoolOrigin', label: 'Asal sekolah', placeholder: 'SMPN 1 ...' },
   { name: 'gender', label: 'Jenis kelamin', options: [ { value: 'M', label: 'Laki-laki' }, { value: 'F', label: 'Perempuan' }, { value: 'OTHER', label: 'Lainnya' } ] },
   { name: 'isActive', label: 'Status akun', options: [ { value: 'true', label: 'Aktif' }, { value: 'false', label: 'Nonaktif' } ] },
+  { name: 'isExternal', label: 'Asal daftar', options: [ { value: 'true', label: 'Daftar mandiri / orang luar' }, { value: 'false', label: 'Siswa GFS' } ] },
 ];
 
 function err(e: unknown, fb: string) {
@@ -239,6 +240,14 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                 : editForm.isActive === 'false'
                   ? false
                   : undefined,
+          isExternal:
+            editForm.isExternal === ''
+              ? undefined
+              : editForm.isExternal === 'true'
+                ? true
+                : editForm.isExternal === 'false'
+                  ? false
+                  : undefined,
         },
       }),
     onSuccess: () => {
@@ -299,6 +308,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
       address: s.address ?? '',
       schoolOrigin: s.schoolOrigin ?? '',
       isActive: String(s.isActive),
+      isExternal: String(s.isExternal),
     });
     setEditOpen(true);
   }
@@ -846,16 +856,6 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
         isSubmitting={editM.isPending}
         submitLabel="Simpan Perubahan"
         excludeUserId={s?.user.id}
-        extra={
-          <Phase1aSelectField
-            id="detail-student-edit-gender"
-            label="Jenis kelamin (opsional)"
-            value={editForm.gender ?? ''}
-            onChange={(v) => setEditForm((prev) => ({ ...prev, gender: v }))}
-            options={GENDER_OPTIONS}
-            placeholder="- Pilih -"
-          />
-        }
       />
       <ConfirmDialog
         open={deleteOpen}

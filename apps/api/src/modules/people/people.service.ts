@@ -218,6 +218,9 @@ export class PeopleService {
           ...(dto.majorChoice2 !== undefined ? { majorChoice2: dto.majorChoice2 } : {}),
           ...(dto.gender !== undefined ? { gender: dto.gender } : {}),
           ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+          ...(dto.isExternal !== undefined
+            ? { isExternal: dto.isExternal }
+            : {}),
         },
         include: studentInclude,
       });

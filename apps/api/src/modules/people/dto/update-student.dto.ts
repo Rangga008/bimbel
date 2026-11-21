@@ -62,4 +62,9 @@ export class UpdateStudentDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  /** Status asal daftar: true = daftar mandiri/orang luar, false = siswa resmi GFS. */
+  @IsOptional()
+  @IsBoolean()
+  isExternal?: boolean;
 }

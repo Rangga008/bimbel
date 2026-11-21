@@ -98,6 +98,9 @@ export class ImportsController {
   )
   async exportXlsx(
     @Param('entity') entity: string,
+    @Query('origin') origin: string | undefined,
+    @Query('groupId') groupId: string | undefined,
+    @Query('levelId') levelId: string | undefined,
     @Res() res: Response,
     @CurrentUser() actor: AuthenticatedUser,
     @Req() req: Request,
@@ -109,7 +112,12 @@ export class ImportsController {
       );
     }
     this.imports.assertEntity(entity);
-    const buffer = await this.imports.exportXlsx(entity);
+    const buffer = await this.imports.exportXlsx(entity, {
+      origin:
+        origin === 'external' || origin === 'internal' ? origin : undefined,
+      groupId: groupId || undefined,
+      levelId: levelId || undefined,
+    });
     await this.audit.log({
       actorId: actor.id,
       action: 'BULK_EXPORT',
