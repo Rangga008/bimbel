@@ -192,7 +192,7 @@ export function SessionOverrideBox({ sessionId, onDeleted }: { sessionId: string
             id="ovr-student"
             value={studentId}
             onChange={setStudentId}
-            options={(d?.group.members ?? []).map((m) => ({ value: m.studentId, label: m.student.user.name }))}
+            options={(d?.group.members ?? []).map((m) => ({ value: m.studentId, label: m.student?.user?.name }))}
             placeholder="- Pilih siswa -"
           /></div>
         <div className="flex flex-col gap-1.5"><Label>Mulai susulan (opsional)</Label>

@@ -94,11 +94,11 @@ export function GroupDetailBody({ groupId, canManage, onChanged }: { groupId: st
           {d.members.map((m) => (
             <div key={m.studentId} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
               <span className="flex min-w-0 items-center gap-2.5 truncate">
-                <UserAvatar name={m.student.user.name} avatarUrl={m.student.user.avatarUrl} className="size-7" />
-                <span className="truncate">{m.student.user.name}</span>
+                <UserAvatar name={m.student?.user?.name} avatarUrl={m.student?.user?.avatarUrl} className="size-7" />
+                <span className="truncate">{m.student?.user?.name}</span>
               </span>
               {canManage ? (
-                <Button variant="ghost" size="sm" onClick={() => setDelTarget({ kind: 'students', id: m.studentId, label: m.student.user.name })}>Keluarkan</Button>
+                <Button variant="ghost" size="sm" onClick={() => setDelTarget({ kind: 'students', id: m.studentId, label: m.student?.user?.name })}>Keluarkan</Button>
               ) : null}
             </div>
           ))}

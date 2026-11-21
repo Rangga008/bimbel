@@ -95,22 +95,22 @@ export function ParentLinkManager({
               <tr key={parent.id} className="border-b last:border-0">
                 <td className={td}>
                   <span className="flex items-center gap-2.5">
-                    <UserAvatar name={parent.user.name} avatarUrl={parent.user.avatarUrl} className="size-8" />
+                    <UserAvatar name={parent?.user?.name} avatarUrl={parent?.user?.avatarUrl} className="size-8" />
                     <span className="min-w-0">
-                      <span className="block truncate font-medium">{parent.user.name}</span>
-                      <span className="block truncate text-xs text-muted-foreground">{parent.user.email}</span>
+                      <span className="block truncate font-medium">{parent?.user?.name}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{parent?.user?.email}</span>
                     </span>
                   </span>
                 </td>
                 <td className={`${td} whitespace-nowrap text-muted-foreground`}>
-                  {parent.user.phone ?? '—'}
+                  {parent?.user?.phone ?? '—'}
                 </td>
                 <td className={td}>
                   <span className="flex flex-wrap gap-1.5">
                     {parent.parentStudents.map((l) => (
                       <span key={l.student.id} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
                         <Link href={`${basePath}/siswa/${l.student.id}`} className="hover:underline">
-                          {l.student.user.name}
+                          {l.student?.user?.name}
                         </Link>
                         <button
                           type="button"
@@ -120,7 +120,7 @@ export function ParentLinkManager({
                             setUnlinkTarget({
                               parentId: parent.id,
                               studentId: l.student.id,
-                              label: `${l.student.user.name} ↔ ${parent.user.name}`,
+                              label: `${l.student?.user?.name} ↔ ${parent?.user?.name}`,
                             })
                           }
                         >

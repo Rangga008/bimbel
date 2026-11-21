@@ -205,11 +205,11 @@ export function ParentsManager({ canManage, basePath }: { canManage: boolean; ba
               ? (parent) => {
                   setEditTarget(parent);
                   setEditForm({
-                    name: parent.user.name,
-                    email: parent.user.email?.endsWith('@hp.bimbel.local')
+                    name: parent?.user?.name,
+                    email: parent?.user?.email?.endsWith('@hp.bimbel.local')
                       ? ''
-                      : parent.user.email,
-                    phone: parent.user.phone ?? '',
+                      : parent?.user?.email,
+                    phone: parent?.user?.phone ?? '',
                     isActive: String(parent.isActive),
                   });
                 }

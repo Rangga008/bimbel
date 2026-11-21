@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Ban, BadgePercent, Eye, FileCheck2, FileText, Search } from 'lucide-react';
+import { Ban, BadgePercent, Eye, FileCheck2, FileText, Search, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -84,6 +84,7 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
   const [extraItems, setExtraItems] = useState<{ description: string; unitPrice: string }[]>([]);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [voidTarget, setVoidTarget] = useState<InvoiceListItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<InvoiceListItem | null>(null);
   const [discountTarget, setDiscountTarget] = useState<InvoiceListItem | null>(null);
   const [discountAmount, setDiscountAmount] = useState('');
   const [discountReason, setDiscountReason] = useState('');
@@ -196,6 +197,15 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
     onError: (e) => toast.error(err(e, 'Gagal membatalkan invoice.')),
   });
 
+  const deleteM = useMutation({
+    mutationFn: (id: string) => apiFetch(`/invoices/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      toast.success('Invoice dihapus.');
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal menghapus invoice.')),
+  });
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -301,11 +311,11 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
                       href={`/admin-finance/siswa/${inv.student.id}`}
                       className="flex items-center gap-2 rounded hover:text-primary"
                     >
-                      <UserAvatar name={inv.student.user.name} avatarUrl={inv.student.user.avatarUrl} className="size-7" />
+                      <UserAvatar name={inv.student?.user?.name} avatarUrl={inv.student?.user?.avatarUrl} className="size-7" />
                       <span className="min-w-0">
-                        <span className="block truncate underline-offset-2 hover:underline">{inv.student.user.name}</span>
+                        <span className="block truncate underline-offset-2 hover:underline">{inv.student?.user?.name}</span>
                         <span className="block truncate text-xs text-muted-foreground">
-                          {(inv.student.parentStudents ?? []).map((p) => p.parent.user.name).join(', ') || '—'}
+                          {(inv.student.parentStudents ?? []).map((p) => p.parent?.user?.name).join(', ') || '—'}
                         </span>
                       </span>
                     </Link>
@@ -367,6 +377,18 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
                           disabled={voidM.isPending}
                         >
                           <Ban className="size-4 text-destructive" />
+                        </Button>
+                      ) : null}
+                      {canManage && Number(inv.amountPaid) === 0 ? (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Hapus ${inv.number}`}
+                          title="Hapus permanen (hanya bila belum ada pembayaran)"
+                          onClick={() => setDeleteTarget(inv)}
+                          disabled={deleteM.isPending}
+                        >
+                          <Trash2 className="size-4 text-destructive" />
                         </Button>
                       ) : null}
                     </span>
@@ -499,8 +521,8 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
                     {STATUS_LABEL[detailQ.data.displayStatus ?? detailQ.data.status] ?? detailQ.data.status}
                   </Badge>
                   <span className="inline-flex items-center gap-1.5">
-                    <UserAvatar name={detailQ.data.student.user.name} avatarUrl={detailQ.data.student.user.avatarUrl} className="size-6" />
-                    <Badge variant="outline">{detailQ.data.student.user.name}</Badge>
+                    <UserAvatar name={detailQ.data.student?.user?.name} avatarUrl={detailQ.data.student?.user?.avatarUrl} className="size-6" />
+                    <Badge variant="outline">{detailQ.data.student?.user?.name}</Badge>
                   </span>
                   {detailQ.data.package ? <Badge variant="outline">{detailQ.data.package.name}</Badge> : null}
                 </CardContent>
@@ -585,6 +607,19 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
         onConfirm={() => {
           if (voidTarget) voidM.mutate(voidTarget.id);
           setVoidTarget(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
+        title={`Hapus invoice ${deleteTarget?.number ?? ''} permanen?`}
+        description="Invoice beserta item dan pengajuan pembayaran yang belum terverifikasi ikut terhapus. Hanya bisa bila belum ada pembayaran masuk — kalau sudah ada, gunakan Batalkan."
+        confirmLabel="Ya, hapus permanen"
+        pending={deleteM.isPending}
+        onConfirm={() => {
+          if (deleteTarget) deleteM.mutate(deleteTarget.id);
+          setDeleteTarget(null);
         }}
       />
     </div>

@@ -194,11 +194,11 @@ export function ArManager({ canRefund }: { canRefund: boolean }) {
     const program = enr
       ? [enr.program?.name, enr.level?.name, enr.group?.name].filter(Boolean).join(' · ')
       : (inv.package?.name ?? '—');
-    const parent = (inv.student.parentStudents ?? []).map((p) => p.parent.user.name).join(', ') || '—';
+    const parent = (inv.student.parentStudents ?? []).map((p) => p.parent?.user?.name).join(', ') || '—';
     return (
       <tr key={inv.id} className="border-b last:border-0">
         <td className="px-3 py-2 align-top font-medium whitespace-nowrap">{inv.number}</td>
-        <td className="px-3 py-2 align-top whitespace-nowrap">{inv.student.user.name}</td>
+        <td className="px-3 py-2 align-top whitespace-nowrap">{inv.student?.user?.name}</td>
         <td className="px-3 py-2 align-top text-muted-foreground whitespace-nowrap">{parent}</td>
         <td className="max-w-52 px-3 py-2 align-top text-muted-foreground">
           <p className="truncate" title={program}>{program}</p>

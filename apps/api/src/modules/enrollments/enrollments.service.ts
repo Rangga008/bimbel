@@ -1130,6 +1130,58 @@ export class EnrollmentsService {
     return { deleted: true, name: link.student.user.name };
   }
 
+  /**
+   * Staff menghapus SATU pendaftaran paket dari siswa — hanya bila belum ada
+   * jejak bisnis: status belum PAID/ACCEPTED/PLACED dan invoice terkait
+   * belum dibayar sama sekali. Invoice-nya ikut terhapus (belum ada uang
+   * masuk, jadi tidak ada jejak keuangan yang hilang).
+   */
+  async removeEnrollment(id: string) {
+    const e = await this.prisma.enrollment.findUnique({
+      where: { id },
+      include: {
+        invoice: { select: { id: true, amountPaid: true } },
+        invoices: { select: { id: true, amountPaid: true } },
+      },
+    });
+    if (!e) throw new NotFoundException('Pendaftaran tidak ditemukan.');
+    if (['PAID', 'ACCEPTED', 'PLACED'].includes(e.status)) {
+      throw new BadRequestException(
+        'Pendaftaran sudah diproses — tidak bisa dihapus. Batalkan lewat alur keuangan/refund.',
+      );
+    }
+    const invoiceIds = [
+      ...new Set(
+        [e.invoice, ...(e.invoices ?? [])]
+          .filter((i): i is NonNullable<typeof i> => i != null)
+          .map((i) => i.id),
+      ),
+    ];
+    if (invoiceIds.length) {
+      const paid = await this.prisma.invoice.count({
+        where: { id: { in: invoiceIds }, amountPaid: { gt: 0 } },
+      });
+      if (paid > 0) {
+        throw new BadRequestException(
+          'Ada tagihan yang sudah dibayar — tidak bisa dihapus. Gunakan alur refund.',
+        );
+      }
+    }
+    await this.prisma.$transaction(async (tx) => {
+      if (invoiceIds.length) {
+        await tx.paymentAllocation.deleteMany({
+          where: { invoiceId: { in: invoiceIds } },
+        });
+        await tx.invoiceItem.deleteMany({
+          where: { invoiceId: { in: invoiceIds } },
+        });
+        await tx.invoice.deleteMany({ where: { id: { in: invoiceIds } } });
+      }
+      await tx.enrollment.delete({ where: { id } });
+    });
+    return { deleted: true };
+  }
+
   /** Staff (finance/academic/owner): daftar pendaftaran, filter status/siswa opsional. */
   list(query: { status?: string; studentId?: string }) {
     const where: Record<string, unknown> = {};

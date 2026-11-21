@@ -187,7 +187,7 @@ export function PaymentsTable({ items, canVerify, onVerify }: { items: PaymentLi
             const inv = p.allocations?.[0]?.invoice;
             const enr = inv?.enrollmentLink ?? inv?.enrollment;
             const kelas = enr?.group?.name ?? [enr?.program?.name, enr?.level?.name].filter(Boolean).join(' · ');
-            const parents = (inv?.student?.parentStudents ?? []).map((ps) => ps.parent.user.name).join(', ');
+            const parents = (inv?.student?.parentStudents ?? []).map((ps) => ps.parent?.user?.name).join(', ');
             return (
               <tr key={p.id} className="align-top hover:bg-muted/30">
                 <td className="px-3 py-2.5">

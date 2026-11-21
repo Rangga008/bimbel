@@ -165,7 +165,7 @@ export function AttendanceRecapBox() {
                   <div className="flex flex-col gap-1 border-t pb-3 pt-2">
                     {s.rows.map((r) => (
                       <div key={r.id} className="flex items-center justify-between gap-2 rounded px-1 py-1 text-sm">
-                        <span className="truncate">{r.student.user.name}</span>
+                        <span className="truncate">{r.student?.user?.name}</span>
                         <Badge variant={r.status === 'HADIR' || r.status === 'TERLAMBAT' ? 'secondary' : 'outline'}>
                           {ATTENDANCE_LABELS[r.status] ?? r.status}
                         </Badge>

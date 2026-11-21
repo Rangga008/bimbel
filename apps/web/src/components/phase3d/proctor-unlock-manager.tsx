@@ -107,8 +107,8 @@ export function ProctorUnlockPanel() {
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <p>
-                  <span className="text-muted-foreground">Siswa:</span> {a.student.user.name} (
-                  {a.student.user.email})
+                  <span className="text-muted-foreground">Siswa:</span> {a.student?.user?.name} (
+                  {a.student?.user?.email})
                 </p>
                 <p>
                   <span className="text-muted-foreground">Jumlah pelanggaran:</span> {a.violationCount}
@@ -140,7 +140,7 @@ export function ProctorUnlockPanel() {
           <DialogHeader>
             <DialogTitle>Unlock Attempt</DialogTitle>
             <DialogDescription>
-              {target && `Buka kembali attempt ${target.student.user.name} untuk ujian "${target.exam.title}".`}
+              {target && `Buka kembali attempt ${target.student?.user?.name} untuk ujian "${target.exam.title}".`}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-1.5">

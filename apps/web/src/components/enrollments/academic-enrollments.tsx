@@ -105,7 +105,7 @@ export function AcademicEnrollments() {
 		.filter((e) =>
 			q === ""
 				? true
-				: [e.childName, e.student.user.name, e.parent.user.name, e.group?.name]
+				: [e.childName, e.student?.user?.name, e.parent?.user?.name, e.group?.name]
 						.filter(Boolean)
 						.some((v) => String(v).toLowerCase().includes(q)),
 		);
@@ -182,7 +182,7 @@ export function AcademicEnrollments() {
 									<tr key={e.id} className="border-b last:border-0">
 										<td className={`${td} whitespace-nowrap`}>
 											<span className="font-medium">{e.childName}</span>
-											<p className="text-xs text-muted-foreground">ortu {e.parent.user.name}</p>
+											<p className="text-xs text-muted-foreground">ortu {e.parent?.user?.name}</p>
 											<p className="text-xs text-muted-foreground">
 												{new Date(e.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
 											</p>

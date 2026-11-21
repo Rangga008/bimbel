@@ -252,16 +252,16 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
                 <tr key={student.id} className="border-b last:border-0">
                   <td className={td}>
                     <span className="flex items-center gap-2.5">
-                      <UserAvatar name={student.user.name} avatarUrl={student.user.avatarUrl} className="size-8" />
+                      <UserAvatar name={student?.user?.name} avatarUrl={student?.user?.avatarUrl} className="size-8" />
                       <span className="min-w-0">
-                        <span className="block truncate font-medium">{student.user.name}</span>
-                        <span className="block truncate text-xs text-muted-foreground">{student.user.email}</span>
+                        <span className="block truncate font-medium">{student?.user?.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground">{student?.user?.email}</span>
                       </span>
                     </span>
                   </td>
                   <td className={`${td} text-muted-foreground`}>
                     {student.parentStudents.length > 0
-                      ? student.parentStudents.map((l) => l.parent.user.name).join(', ')
+                      ? student.parentStudents.map((l) => l.parent?.user?.name).join(', ')
                       : '—'}
                   </td>
                   <td className={`${td} whitespace-nowrap`}>
@@ -291,11 +291,11 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
                           onClick={() => {
                             setEditTarget(student);
                             setEditForm({
-                              name: student.user.name,
-                              email: student.user.email?.endsWith('@hp.bimbel.local')
+                              name: student?.user?.name,
+                              email: student?.user?.email?.endsWith('@hp.bimbel.local')
                                 ? ''
-                                : student.user.email,
-                              phone: student.user.phone ?? '',
+                                : student?.user?.email,
+                              phone: student?.user?.phone ?? '',
                               dateOfBirth: student.dateOfBirth ? String(student.dateOfBirth).slice(0, 10) : '',
                               gender: student.gender ?? '',
                               address: student.address ?? '',

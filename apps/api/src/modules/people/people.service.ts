@@ -32,7 +32,10 @@ export class PeopleService {
     isActive?: string;
     levelId?: string;
   }) {
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = {
+      // Akun yang dihapus (dianonimkan) tidak tampil di daftar.
+      NOT: { user: { email: { endsWith: '@deleted.local' } } },
+    };
     if (query.isActive === 'true') where.isActive = true;
     if (query.isActive === 'false') where.isActive = false;
     if (query.search) {

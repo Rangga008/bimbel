@@ -259,7 +259,7 @@ export function ParentAttendanceView() {
   const mergedRows = useMemo<MergedRow[]>(
     () =>
       (q.data?.children ?? []).flatMap((c) =>
-        c.rows.map((r) => ({ ...r, childName: c.student.user.name })),
+        c.rows.map((r) => ({ ...r, childName: c.student?.user?.name })),
       ),
     [q.data],
   );
@@ -318,7 +318,7 @@ export function ParentAttendanceView() {
                     variant={selected?.student.id === c.student.id ? 'default' : 'outline'}
                     onClick={() => setSelectedId(c.student.id)}
                   >
-                    {c.student.user.name}
+                    {c.student?.user?.name}
                   </Button>
                 ))}
               </div>

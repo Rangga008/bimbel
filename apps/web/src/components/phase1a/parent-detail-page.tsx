@@ -181,12 +181,12 @@ export function ParentDetailPage({ parentId, basePath, canManage = false }: { pa
             <Card key={l.student.id}>
               <CardContent className="flex flex-col gap-2 py-3">
                 <div className="flex items-center gap-2.5">
-                  <UserAvatar name={l.student.user.name} avatarUrl={l.student.user.avatarUrl} className="size-9" />
+                  <UserAvatar name={l.student?.user?.name} avatarUrl={l.student?.user?.avatarUrl} className="size-9" />
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium">{l.student.user.name}</p>
+                    <p className="font-medium">{l.student?.user?.name}</p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {l.student.user.email}
-                      {l.student.user.phone ? ` · ${l.student.user.phone}` : ''}
+                      {l.student?.user?.email}
+                      {l.student?.user?.phone ? ` · ${l.student?.user?.phone}` : ''}
                     </p>
                   </div>
                   <Link href={`${basePath}/siswa/${l.student.id}`}>

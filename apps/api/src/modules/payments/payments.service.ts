@@ -470,6 +470,12 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         throw new BadRequestException('Akun kas/bank tidak valid.');
     }
     const now = new Date();
+    // Backfill: staff bisa mengisi tanggal uang benar-benar diterima
+    // (receivedAt) — paidAt memakai tanggal itu, verifiedAt tetap sekarang.
+    const paidAt = dto.receivedAt ? new Date(dto.receivedAt) : now;
+    if (Number.isNaN(paidAt.getTime())) {
+      throw new BadRequestException('Tanggal terima tidak valid.');
+    }
     const result = await this.prisma.$transaction(async (tx) => {
       const payment = await tx.payment.create({
         data: {
@@ -482,7 +488,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
           status: 'VERIFIED',
           verifiedBy: actorId,
           verifiedAt: now,
-          paidAt: now,
+          paidAt,
           createdBy: actorId,
           proofNote: dto.note,
         },

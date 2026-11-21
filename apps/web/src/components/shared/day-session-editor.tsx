@@ -154,7 +154,7 @@ export function DaySessionEditor({
 	const filteredMembers = useMemo(() => {
 		const q = studentQuery.trim().toLowerCase();
 		if (!q) return groupMembers;
-		return groupMembers.filter((m) => m.student.user.name.toLowerCase().includes(q));
+		return groupMembers.filter((m) => m.student?.user?.name.toLowerCase().includes(q));
 	}, [groupMembers, studentQuery]);
 
 	const assignM = useMutation({
@@ -569,7 +569,7 @@ export function DaySessionEditor({
 												})
 											}
 										/>
-										<span className="truncate">{m.student.user.name}</span>
+										<span className="truncate">{m.student?.user?.name}</span>
 									</label>
 								);
 							})}

@@ -33,6 +33,11 @@ export class CreateCashPaymentDto {
   @IsString()
   @MaxLength(500, { message: 'Catatan maksimal 500 karakter.' })
   note?: string;
+
+  /** Tanggal uang diterima (backfill pembayaran lama) — default hari ini. */
+  @IsOptional()
+  @IsString()
+  receivedAt?: string;
 }
 
 /**

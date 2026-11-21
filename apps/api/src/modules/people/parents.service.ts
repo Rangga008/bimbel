@@ -20,7 +20,10 @@ export class ParentsService {
   ) {}
 
   list(query: { search?: string }) {
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = {
+      // Akun yang dihapus (dianonimkan) tidak tampil di daftar.
+      NOT: { user: { email: { endsWith: '@deleted.local' } } },
+    };
     if (query.search) {
       where.user = {
         OR: [

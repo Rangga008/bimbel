@@ -115,6 +115,18 @@ export class InvoicesController {
     return updated;
   }
 
+  /** Hapus invoice permanen — hanya bila belum ada pembayaran masuk. */
+  @Delete('invoices/:id')
+  @RequirePermissions(PERMISSION_CODES.INVOICE_MANAGE)
+  async remove(@Param('id') id: string, @CurrentUser() actor: AuthenticatedUser, @Req() req: Request) {
+    const out = await this.invoices.remove(id);
+    await this.audit.log({
+      actorId: actor.id, action: 'INVOICE_DELETED', entity: 'Invoice', entityId: id,
+      ...this.ctx(req),
+    });
+    return out;
+  }
+
   @Get('financial-accounts')
   @RequirePermissions(PERMISSION_CODES.INVOICE_VIEW)
   accounts() {

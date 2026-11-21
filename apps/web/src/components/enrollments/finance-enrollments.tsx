@@ -173,7 +173,7 @@ export function FinanceEnrollments() {
 		.filter((e) =>
 			q === ""
 				? true
-				: [e.childName, e.student.user.name, e.student.user.email, e.parent.user.name, e.group?.name, e.invoice?.number]
+				: [e.childName, e.student?.user?.name, e.student?.user?.email, e.parent?.user?.name, e.group?.name, e.invoice?.number]
 						.filter(Boolean)
 						.some((v) => String(v).toLowerCase().includes(q)),
 		);
@@ -263,7 +263,7 @@ export function FinanceEnrollments() {
 										<td className={`${td} whitespace-nowrap`}>
 											<span className="font-medium">{e.childName}</span>
 											<p className="text-xs text-muted-foreground">
-												ortu {e.parent.user.name}{e.parent.user.phone ? ` · ${e.parent.user.phone}` : ""}
+												ortu {e.parent?.user?.name}{e.parent?.user?.phone ? ` · ${e.parent?.user?.phone}` : ""}
 											</p>
 											<p className="text-xs text-muted-foreground">
 												{new Date(e.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}

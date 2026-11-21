@@ -519,7 +519,7 @@ export function ParentPayments() {
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <p className="text-sm text-muted-foreground">
-              {checkout.student.user.name} · Sisa tagihan{' '}
+              {checkout.student?.user?.name} · Sisa tagihan{' '}
               <span className="font-semibold text-foreground">
                 {rupiah(Number(checkout.totalAmount) - Number(checkout.amountPaid))}
               </span>
@@ -578,7 +578,7 @@ export function ParentPayments() {
               <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
                 <p className="font-medium">{checkout.number}</p>
                 <p className="text-xs text-muted-foreground">
-                  {checkout.student.user.name}
+                  {checkout.student?.user?.name}
                   {checkout.enrollmentLink
                     ? ` · ${[checkout.enrollmentLink.program?.name, checkout.enrollmentLink.level?.name].filter(Boolean).join(' · ')}`
                     : checkout.package?.name ? ` · ${checkout.package.name}` : ''}

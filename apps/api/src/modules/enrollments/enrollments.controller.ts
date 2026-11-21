@@ -194,6 +194,28 @@ export class EnrollmentsController {
     return this.enrollments.list({ status, studentId });
   }
 
+  /**
+   * Staff menghapus SATU pendaftaran paket dari siswa — hanya bila belum
+   * diproses & belum ada invoice yang dibayar.
+   */
+  @Delete('enrollments/:id')
+  @RequirePermissions(PERMISSION_CODES.ENROLLMENT_CREATE)
+  async removeEnrollment(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const out = await this.enrollments.removeEnrollment(id);
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'ENROLLMENT_DELETED',
+      entity: 'Enrollment',
+      entityId: id,
+      ...ctx(req),
+    });
+    return out;
+  }
+
   /** Admin: surat pernyataan tersimpan untuk satu pendaftaran (cetak arsip). */
   @Get('enrollments/:id/statement')
   @RequirePermissions(PERMISSION_CODES.ENROLLMENT_VIEW)

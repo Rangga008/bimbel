@@ -119,7 +119,7 @@ export function SessionRosterEditor({
   const members = d.group.members ?? [];
   const q = query.trim().toLowerCase();
   const filtered = q
-    ? members.filter((m) => m.student.user.name.toLowerCase().includes(q))
+    ? members.filter((m) => m.student?.user?.name.toLowerCase().includes(q))
     : members;
   return (
     <div className="flex flex-col gap-3">
@@ -201,7 +201,7 @@ export function SessionRosterEditor({
                 ) : (
                   <Square className="size-4 shrink-0 text-muted-foreground" />
                 )}
-                <span className="truncate text-sm">{m.student.user.name}</span>
+                <span className="truncate text-sm">{m.student?.user?.name}</span>
               </button>
               {on && moveTargets.length ? (
                 <div className="flex items-center gap-1.5 pl-6 sm:pl-0">

@@ -395,6 +395,33 @@ export class InvoicesService {
   }
 
   /**
+   * Hapus invoice permanen — HANYA bila belum ada uang masuk sama sekali
+   * (amountPaid = 0). Payment pending/rejected yang menunjuk invoice ini
+   * ikut dihapus. Invoice yang sudah dibayar wajib lewat alur
+   * void/refund, tidak boleh dihapus (jejak keuangan).
+   */
+  async remove(id: string) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id },
+      select: { id: true, amountPaid: true, status: true },
+    });
+    if (!invoice) throw new NotFoundException('Invoice tidak ditemukan.');
+    if (Number(invoice.amountPaid) > 0) {
+      throw new BadRequestException(
+        'Invoice sudah menerima pembayaran — tidak bisa dihapus. Gunakan void/refund.',
+      );
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.paymentAllocation.deleteMany({ where: { invoiceId: id } });
+      await tx.payment.deleteMany({ where: { invoiceId: id } });
+      await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
+      // enrollment.invoiceId & enrollmentId auto-SetNull via schema.
+      await tx.invoice.delete({ where: { id } });
+    });
+    return { deleted: true };
+  }
+
+  /**
    * Penyesuaian harga per siswa — diskon/bantuan/promo ditulis sebagai item
    * negatif pada invoice (paket/program tidak berubah; histori tetap utuh).
    * Tidak boleh melebihi sisa tagihan yang belum dibayar.

@@ -47,7 +47,7 @@ function GroupMembers({ groupId }: { groupId: string }) {
       ) : null}
       <ul className="divide-y rounded-lg border">
         {members.map((m, i) => {
-          const u = m.student.user;
+          const u = m.student?.user;
           return (
             <li key={m.studentId} className="flex items-center gap-2.5 px-3 py-2 text-sm">
               <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold tabular-nums">

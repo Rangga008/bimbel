@@ -131,6 +131,11 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkSearch, setLinkSearch] = useState('');
   const [linkUserId, setLinkUserId] = useState('');
+  const [payTarget, setPayTarget] = useState<{ id: string; number: string; remaining: number } | null>(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [payDate, setPayDate] = useState('');
+  const [payNote, setPayNote] = useState('');
+  const [removeTarget, setRemoveTarget] = useState<StaffEnrollment | null>(null);
 
   const studentQ = useQuery({
     queryKey: ['students', studentId],
@@ -256,6 +261,40 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
       qc.invalidateQueries({ queryKey: ['students'] });
     },
     onError: (e) => toast.error(err(e, 'Gagal memperbarui siswa.')),
+  });
+
+  // "Catat Bayar" — pembayaran tunai/transfer yang SUDAH diterima (bisa
+  // backdate lewat kolom tanggal) langsung terverifikasi ke invoice.
+  const payM = useMutation({
+    mutationFn: () =>
+      apiFetch('/payments/cash', {
+        method: 'POST',
+        body: {
+          invoiceId: payTarget?.id,
+          amount: Number(payAmount.replace(/\D/g, '')),
+          receivedAt: payDate || undefined,
+          note: payNote.trim() || undefined,
+        },
+      }),
+    onSuccess: () => {
+      toast.success('Pembayaran tercatat & terverifikasi.');
+      setPayTarget(null);
+      qc.invalidateQueries({ queryKey: ['students'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal mencatat pembayaran.')),
+  });
+
+  // Hapus satu program dari siswa — server menolak bila sudah diproses
+  // atau ada tagihan yang sudah dibayar.
+  const removeEnrollM = useMutation({
+    mutationFn: () =>
+      apiFetch(`/enrollments/${removeTarget?.id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      toast.success('Program dihapus dari siswa.');
+      setRemoveTarget(null);
+      qc.invalidateQueries({ queryKey: ['students'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal menghapus program.')),
   });
 
   // "Hubungkan Akun" — untuk siswa yang mendaftar sendiri padahal data
@@ -398,8 +437,8 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
             <div className="flex flex-wrap gap-2">
               {s.parentStudents.map((l) => (
                 <Badge key={l.parent.id} variant="secondary" className="gap-1.5 py-1.5">
-                  <UserAvatar name={l.parent.user.name} avatarUrl={l.parent.user.avatarUrl} className="size-5" />
-                  {l.parent.user.name}
+                  <UserAvatar name={l.parent?.user?.name} avatarUrl={l.parent?.user?.avatarUrl} className="size-5" />
+                  {l.parent?.user?.name}
                 </Badge>
               ))}
             </div>
@@ -533,25 +572,37 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                       <div className="flex shrink-0 items-center gap-1.5">
                         <Badge variant={statusMeta?.variant ?? 'outline'}>{statusMeta?.label ?? e.status}</Badge>
                         {canManage ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-1"
-                            onClick={() => {
-                              setDiscountTarget(e);
-                              setDiscountAmount('');
-                              setDiscountReason('');
-                              setDiscountMonths('');
-                            }}
-                          >
-                            <BadgePercent className="size-3.5" /> Diskon
-                          </Button>
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1"
+                              onClick={() => {
+                                setDiscountTarget(e);
+                                setDiscountAmount('');
+                                setDiscountReason('');
+                                setDiscountMonths('');
+                              }}
+                            >
+                              <BadgePercent className="size-3.5" /> Diskon
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1 text-destructive hover:text-destructive"
+                              title="Hapus program dari siswa"
+                              onClick={() => setRemoveTarget(e)}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </>
                         ) : null}
                       </div>
                     </div>
                     <div className="flex flex-col gap-1">
                       {invoices.map((inv) => {
                         const remaining = Number(inv.totalAmount) - Number(inv.amountPaid);
+                        const paid = Number(inv.amountPaid);
                         return (
                           <div key={inv.id} className="flex items-center justify-between gap-2 rounded border px-2.5 py-1.5 text-sm">
                             <span className="truncate text-muted-foreground">
@@ -560,12 +611,30 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                                 ? ` · ${new Date(String(inv.dueDate)).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`
                                 : ''}
                             </span>
-                            <span className="shrink-0 tabular-nums">
-                              {rp(inv.totalAmount)}
-                              {Number(inv.amountPaid) > 0 ? (
-                                <span className="ml-1.5 text-xs text-muted-foreground">
-                                  (sisa {rp(remaining)})
-                                </span>
+                            <span className="flex shrink-0 items-center gap-1.5 tabular-nums">
+                              <span>
+                                {rp(inv.totalAmount)}
+                                {paid > 0 ? (
+                                  <span className="ml-1.5 text-xs text-muted-foreground">
+                                    (terbayar {rp(paid)}
+                                    {remaining > 0.009 ? ` · sisa ${rp(remaining)}` : ', lunas'})
+                                  </span>
+                                ) : null}
+                              </span>
+                              {canManage && remaining > 0.009 && inv.status !== 'VOID' ? (
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  className="h-6 px-2 text-[11px]"
+                                  onClick={() => {
+                                    setPayTarget({ id: inv.id, number: inv.number, remaining });
+                                    setPayAmount(String(Math.round(remaining)));
+                                    setPayDate('');
+                                    setPayNote('');
+                                  }}
+                                >
+                                  Bayar
+                                </Button>
                               ) : null}
                             </span>
                           </div>
@@ -716,7 +785,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
             <DialogTitle>Diskon / Bantuan Paket</DialogTitle>
             <DialogDescription>
               {discountTarget
-                ? `${discountTarget.program.name} — ${discountTarget.level.name} (${discountTarget.student.user.name}). Nominal dipotong dari SETIAP angsuran yang masih berjalan; paket & jenjang tetap sama.`
+                ? `${discountTarget.program.name} — ${discountTarget.level.name} (${discountTarget.student?.user?.name}). Nominal dipotong dari SETIAP angsuran yang masih berjalan; paket & jenjang tetap sama.`
                 : ''}
             </DialogDescription>
           </DialogHeader>

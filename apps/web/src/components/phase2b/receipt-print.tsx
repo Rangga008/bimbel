@@ -106,7 +106,7 @@ function methodLabel(r: ReceiptDetail) {
  */
 export function buildReceiptHtml(r: ReceiptDetail, c: CompanyInfo | null): string {
 	const parents = (r.invoice?.student?.parentStudents ?? [])
-		.map((p) => p.parent.user.name)
+		.map((p) => p.parent?.user?.name)
 		.filter(Boolean);
 	const paidTo = parents.join(' & ') || r.student?.user?.name || r.invoice?.student?.user?.name || '-';
 	const enr = r.invoice?.enrollmentLink ?? r.invoice?.enrollment;
