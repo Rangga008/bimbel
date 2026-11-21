@@ -242,11 +242,18 @@ export class UsersService {
             },
           },
         },
+        // Asal-daftar akun siswa: isExternal = daftar sendiri/orang luar.
+        student: {
+          select: { id: true, isExternal: true, schoolOrigin: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
-    return users.map((u) => this.sanitize(u));
+    return users.map((u) => ({
+      ...this.sanitize(u),
+      student: u.student ?? null,
+    }));
   }
 
   async getUser(id: string) {

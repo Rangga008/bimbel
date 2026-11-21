@@ -43,6 +43,12 @@ export class RegisterStudentDto {
   @MaxLength(20)
   joinCode?: string;
 
+  /** Asal sekolah siswa (opsional) — tampil di data siswa admin. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  schoolOrigin?: string;
+
   /** Token anti-bot dari GET /auth/register-token — wajib, masa berlaku
    *  terbatas. Bot yang menembak endpoint langsung tidak punya token ini. */
   @IsString({ message: 'Token pendaftaran tidak valid — muat ulang halaman.' })

@@ -12,6 +12,7 @@ import {
 	Lock,
 	Mail,
 	Phone,
+	School,
 	Ticket,
 	Trophy,
 	User,
@@ -57,6 +58,7 @@ export default function DaftarSiswaPage() {
 	const router = useRouter();
 	const setSession = useAuthStore((state) => state.setSession);
 	const [name, setName] = useState("");
+	const [schoolOrigin, setSchoolOrigin] = useState("");
 	const [email, setEmail] = useState("");
 	const [phone, setPhone] = useState("");
 	const [password, setPassword] = useState("");
@@ -93,6 +95,7 @@ export default function DaftarSiswaPage() {
 					phone: phone.trim() || undefined,
 					password,
 					email: email.trim() || undefined,
+					schoolOrigin: schoolOrigin.trim() || undefined,
 					regToken,
 					website,
 				},
@@ -168,6 +171,21 @@ export default function DaftarSiswaPage() {
 									minLength={3}
 									value={name}
 									onChange={(e) => setName(e.target.value)}
+								/>
+							</div>
+						</div>
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="schoolOrigin">Asal Sekolah</Label>
+							<div className="relative">
+								<School className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+								<Input
+									id="schoolOrigin"
+									autoComplete="off"
+									placeholder="Contoh: SMPN 1 Bandung (opsional)"
+									className="pl-9"
+									maxLength={255}
+									value={schoolOrigin}
+									onChange={(e) => setSchoolOrigin(e.target.value)}
 								/>
 							</div>
 						</div>

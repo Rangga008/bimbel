@@ -10,6 +10,8 @@ export interface ManagedUser {
   createdAt: string;
   roles: string[];
   permissions: string[];
+  /** Profil siswa milik akun (bila role SISWA) — isExternal = daftar sendiri/orang luar. */
+  student?: { id: string; isExternal: boolean; schoolOrigin: string | null } | null;
 }
 
 export interface RoleItem {

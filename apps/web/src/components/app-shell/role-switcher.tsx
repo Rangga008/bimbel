@@ -6,6 +6,7 @@ import { Check, ChevronsUpDown } from "lucide-react";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuLabel,
 	DropdownMenuTrigger,
@@ -50,25 +51,27 @@ export function RoleSwitcher({
 				<ChevronsUpDown className="size-3 shrink-0" />
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="start" className="w-52">
-				<DropdownMenuLabel className="text-xs text-muted-foreground">
-					Tampil sebagai
-				</DropdownMenuLabel>
-				{owned.map((k) => (
-					<DropdownMenuItem key={k} render={<Link href={`/${k}`} />}>
-						<Check
-							className={cn(
-								"size-4",
-								k === role ? "opacity-100" : "opacity-0",
-							)}
-						/>
-						{ROLE_LABELS[k]}
-						{k === role ? (
-							<span className="ml-auto text-[10px] text-muted-foreground">
-								aktif
-							</span>
-						) : null}
-					</DropdownMenuItem>
-				))}
+				<DropdownMenuGroup>
+					<DropdownMenuLabel className="text-xs text-muted-foreground">
+						Tampil sebagai
+					</DropdownMenuLabel>
+					{owned.map((k) => (
+						<DropdownMenuItem key={k} render={<Link href={`/${k}`} />}>
+							<Check
+								className={cn(
+									"size-4",
+									k === role ? "opacity-100" : "opacity-0",
+								)}
+							/>
+							{ROLE_LABELS[k]}
+							{k === role ? (
+								<span className="ml-auto text-[10px] text-muted-foreground">
+									aktif
+								</span>
+							) : null}
+						</DropdownMenuItem>
+					))}
+				</DropdownMenuGroup>
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);

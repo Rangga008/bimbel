@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -349,7 +350,11 @@ export class AuthService {
         phoneVerified: false,
       });
       const student = await tx.student.create({
-        data: { userId: created.userId, isExternal: true },
+        data: {
+          userId: created.userId,
+          isExternal: true,
+          schoolOrigin: dto.schoolOrigin?.trim() || null,
+        },
       });
       if (group) {
         await tx.groupMember.create({
@@ -401,6 +406,36 @@ export class AuthService {
       refreshTokenExpiresAt: expiresAt,
       user: authUser,
     };
+  }
+
+  /**
+   * Login sebagai akun lain (impersonate) — khusus staff berizin
+   * users.manage lewat POST /auth/impersonate/:id. Menghasilkan access
+   * token akun target TANPA refresh token — sesi berakhir saat token
+   * kedaluwarsa atau tab ditutup (tidak bisa diperpanjang diam-diam).
+   * Aksi selalu dicatat audit oleh controller.
+   */
+  async impersonate(
+    targetUserId: string,
+  ): Promise<{ accessToken: string; user: AuthenticatedUser }> {
+    const user = await this.usersService.findByIdWithRoles(targetUserId);
+    if (!user) {
+      throw new NotFoundException('Akun target tidak ditemukan.');
+    }
+    if (!user.isActive) {
+      throw new BadRequestException(
+        'Akun target nonaktif — tidak bisa login sebagai.',
+      );
+    }
+    const { roles, permissions } =
+      this.usersService.buildRolesAndPermissions(user);
+    const authUser = this.toAuthenticatedUser(
+      user,
+      roles,
+      permissions,
+      await this.studentGrouplessFlag(user.id, roles),
+    );
+    return { accessToken: this.signAccessToken(authUser), user: authUser };
   }
 
   async refresh(

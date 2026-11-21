@@ -129,14 +129,15 @@ export function ImportDialog({
 	const fileRef = useRef<HTMLInputElement>(null);
 	const [fileName, setFileName] = useState("");
 	const [csv, setCsv] = useState("");
+	const [xlsx, setXlsx] = useState("");
 	const [preview, setPreview] = useState<PreviewRow[] | null>(null);
 	const [result, setResult] = useState<ImportResult | null>(null);
 
 	const importM = useMutation({
-		mutationFn: (text: string) =>
+		mutationFn: () =>
 			apiFetch<ImportResult>(`/import/${entity}`, {
 				method: "POST",
-				body: { csv: text },
+				body: xlsx ? { xlsx } : { csv },
 			}),
 		onSuccess: (data) => {
 			setResult(data);
@@ -164,7 +165,7 @@ export function ImportDialog({
 			const url = URL.createObjectURL(blob);
 			const a = document.createElement("a");
 			a.href = url;
-			a.download = `template-import-${entity}.csv`;
+			a.download = `template-import-${entity}.xlsx`;
 			a.click();
 			URL.revokeObjectURL(url);
 		} catch (e) {
@@ -177,15 +178,28 @@ export function ImportDialog({
 	const pickFile = async (file: File | undefined) => {
 		if (!file) return;
 		setFileName(file.name);
-		const text = await file.text();
-		setCsv(text);
-		setPreview(parsePreview(text));
 		setResult(null);
+		setCsv("");
+		setXlsx("");
+		setPreview(null);
+		if (/\.xlsx$/i.test(file.name)) {
+			const buf = new Uint8Array(await file.arrayBuffer());
+			let bin = "";
+			for (let i = 0; i < buf.length; i += 0x8000) {
+				bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+			}
+			setXlsx(btoa(bin));
+		} else {
+			const text = await file.text();
+			setCsv(text);
+			setPreview(parsePreview(text));
+		}
 	};
 
 	const reset = () => {
 		setFileName("");
 		setCsv("");
+		setXlsx("");
 		setPreview(null);
 		setResult(null);
 		if (fileRef.current) fileRef.current.value = "";
@@ -203,9 +217,9 @@ export function ImportDialog({
 				<DialogHeader>
 					<DialogTitle>Import {ENTITY_LABEL[entity]} Massal</DialogTitle>
 					<DialogDescription>
-						Unduh template CSV, isi datanya di Excel/Google Sheets (pemisah
-						koma atau titik-koma), lalu upload kembali di sini. Baris
-						redundan otomatis dilewati dengan peringatan.
+						Unduh template Excel (.xlsx), isi datanya di Excel/Google Sheets,
+						lalu upload kembali di sini. File CSV lama juga masih diterima.
+						Baris redundan otomatis dilewati dengan peringatan.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -219,13 +233,13 @@ export function ImportDialog({
 							onClick={() => void downloadTemplate()}
 						>
 							<Download className="size-4" />
-							Unduh Template CSV
+							Unduh Template Excel
 						</Button>
 						<div className="rounded-lg border border-dashed p-4 text-center">
 							<input
 								ref={fileRef}
 								type="file"
-								accept=".csv,text/csv"
+								accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
 								className="hidden"
 								onChange={(e) => void pickFile(e.target.files?.[0])}
 							/>
@@ -240,9 +254,15 @@ export function ImportDialog({
 								className="mt-2"
 								onClick={() => fileRef.current?.click()}
 							>
-								Pilih File CSV
+								Pilih File (.xlsx / .csv)
 							</Button>
 						</div>
+						{xlsx ? (
+							<p className="rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+								File Excel siap diimport — validasi tiap baris dilakukan
+								server, hasilnya tampil setelah proses selesai.
+							</p>
+						) : null}
 						{preview ? (
 							<div className="rounded-lg border">
 								<p className="border-b bg-muted/40 px-3 py-2 text-xs font-medium">
@@ -293,8 +313,8 @@ export function ImportDialog({
 							</div>
 						) : null}
 						<Button
-							disabled={!csv || importM.isPending}
-							onClick={() => importM.mutate(csv)}
+							disabled={(!csv && !xlsx) || importM.isPending}
+							onClick={() => importM.mutate()}
 						>
 							{importM.isPending ? (
 								<>
@@ -428,5 +448,47 @@ export function ImportDialog({
 				)}
 			</DialogContent>
 		</Dialog>
+	);
+}
+
+/** Tombol "Export Excel" — unduh seluruh data entitas sebagai .xlsx. */
+export function ExportButton({
+	entity,
+	className,
+}: {
+	entity: ImportEntity;
+	className?: string;
+}) {
+	const [downloading, setDownloading] = useState(false);
+	const download = async () => {
+		setDownloading(true);
+		try {
+			const blob = await apiFetchBlob(`/import/export/${entity}`);
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement("a");
+			a.href = url;
+			a.download = `export-${entity}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+			a.click();
+			URL.revokeObjectURL(url);
+		} catch (e) {
+			toast.error(err(e, "Gagal mengunduh export."));
+		} finally {
+			setDownloading(false);
+		}
+	};
+	return (
+		<Button
+			variant="outline"
+			className={className}
+			disabled={downloading}
+			onClick={() => void download()}
+		>
+			{downloading ? (
+				<LoaderCircle className="size-4 animate-spin" />
+			) : (
+				<Download className="size-4" />
+			)}
+			Export
+		</Button>
 	);
 }

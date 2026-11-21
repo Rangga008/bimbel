@@ -8,6 +8,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -50,35 +51,89 @@ export class ImportsController {
     PERMISSION_CODES.PEOPLE_PARENT_MANAGE,
     PERMISSION_CODES.PEOPLE_TUTOR_MANAGE,
   )
-  template(@Param('entity') entity: string, @Res() res: Response) {
+  async template(
+    @Param('entity') entity: string,
+    @Query('format') format: string | undefined,
+    @Res() res: Response,
+  ) {
     this.imports.assertEntity(entity);
     const t = this.imports.template(entity);
-    const comment = (s: string) => `# ${s}`;
-    // Baris "#" diabaikan parser — catatan aman ikut ter-upload.
-    // Baris `sep=;` diabaikan parser import tapi dibaca Excel sebagai petunjuk
-    // delimiter — template selalu terbuka sebagai kolom di semua locale.
-    // Baris contoh BUKAN komentar — langsung terlihat sebagai tabel di Excel
-    // dan bisa diimport apa adanya (hapus/ganti sesuai data asli).
-    const csv = [
-      'sep=;',
-      comment(`TEMPLATE IMPORT ${entity.toUpperCase()} — baris contoh di bawah header bisa langsung diimport; ganti dengan data asli`),
-      comment(`Format: ${t.notes}`),
-      t.header,
-      ...t.samples,
-      '',
-    ].join('\r\n');
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    if (format === 'csv') {
+      // Legacy — tetap tersedia untuk pengguna lama.
+      const comment = (s: string) => `# ${s}`;
+      const csv = [
+        'sep=;',
+        comment(`TEMPLATE IMPORT ${entity.toUpperCase()} — baris contoh di bawah header bisa langsung diimport; ganti dengan data asli`),
+        comment(`Format: ${t.notes}`),
+        t.header,
+        ...t.samples,
+        '',
+      ].join('\r\n');
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="template-import-${entity}.csv"`,
+      );
+      res.send(`﻿${csv}`);
+      return;
+    }
+    const buffer = await this.imports.templateXlsx(entity);
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="template-import-${entity}.csv"`,
+      `attachment; filename="template-import-${entity}.xlsx"`,
     );
-    res.send(`﻿${csv}`);
+    res.send(buffer);
+  }
+
+  /** Export data penuh sebagai .xlsx — siswa/orang tua/tutor. */
+  @Get('export/:entity')
+  @RequirePermissions(
+    PERMISSION_CODES.PEOPLE_STUDENT_MANAGE,
+    PERMISSION_CODES.PEOPLE_PARENT_MANAGE,
+    PERMISSION_CODES.PEOPLE_TUTOR_MANAGE,
+  )
+  async exportXlsx(
+    @Param('entity') entity: string,
+    @Res() res: Response,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const required = this.permissionFor(entity);
+    if (!actor.permissions.includes(required)) {
+      throw new NotFoundException(
+        `Anda tidak punya izin export untuk ${entity}.`,
+      );
+    }
+    this.imports.assertEntity(entity);
+    const buffer = await this.imports.exportXlsx(entity);
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'BULK_EXPORT',
+      entity: 'Import',
+      entityId: entity,
+      newData: { format: 'xlsx' },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="export-${entity}-${new Date().toISOString().slice(0, 10)}.xlsx"`,
+    );
+    res.send(buffer);
   }
 
   @Post(':entity')
   async run(
     @Param('entity') entity: string,
-    @Body() body: { csv?: string },
+    @Body() body: { csv?: string; xlsx?: string },
     @CurrentUser() actor: AuthenticatedUser,
     @Req() req: Request,
   ) {
@@ -90,7 +145,7 @@ export class ImportsController {
         `Anda tidak punya izin import untuk ${entity}.`,
       );
     }
-    const result = await this.imports.run(entity, body?.csv);
+    const result = await this.imports.run(entity, body ?? {});
     await this.audit.log({
       actorId: actor.id,
       action: 'BULK_IMPORT',

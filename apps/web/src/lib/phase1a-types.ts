@@ -14,6 +14,8 @@ export interface StudentItem {
   dateOfBirth: string | null;
   address: string | null;
   schoolOrigin?: string | null;
+  /** true = daftar sendiri lewat /daftar-siswa (orang luar); false = dibuat admin/ortu. */
+  isExternal?: boolean;
   nis?: string | null;
   majorChoice1?: string | null;
   majorChoice2?: string | null;

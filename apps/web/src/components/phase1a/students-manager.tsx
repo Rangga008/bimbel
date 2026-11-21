@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { SkeletonCards } from '@/components/shared/skeletons';
 import { EmptyState } from '@/components/shared/empty-state';
 import { ListPager } from '@/components/shared/list-pager';
-import { ImportDialog } from '@/components/shared/import-dialog';
+import { ImportDialog, ExportButton } from '@/components/shared/import-dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import type { ParentItem, StudentItem } from '@/lib/phase1a-types';
@@ -172,6 +172,7 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
             <Button variant="outline" onClick={() => setImportOpen(true)}>
               <Upload className="size-4" /> Import
             </Button>
+            <ExportButton entity="students" />
             <Button onClick={() => { setCreateOpen(true); setLastTempPassword(null); }}>Tambah Siswa</Button>
           </div>
         ) : null}
@@ -232,6 +233,7 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
               <tr className="border-b bg-muted/50">
                 <th className={th}>Siswa</th>
                 <th className={th}>Orang Tua</th>
+                <th className={th}>Asal Daftar</th>
                 <th className={th}>Status</th>
                 <th className={th}></th>
               </tr>
@@ -252,6 +254,16 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
                     {student.parentStudents.length > 0
                       ? student.parentStudents.map((l) => l.parent.user.name).join(', ')
                       : '—'}
+                  </td>
+                  <td className={`${td} whitespace-nowrap`}>
+                    <Badge variant={student.isExternal ? 'warning' : 'secondary'}>
+                      {student.isExternal ? 'Daftar sendiri' : 'Siswa GFS'}
+                    </Badge>
+                    {student.schoolOrigin ? (
+                      <span className="block max-w-40 truncate text-xs text-muted-foreground" title={student.schoolOrigin}>
+                        {student.schoolOrigin}
+                      </span>
+                    ) : null}
                   </td>
                   <td className={`${td} whitespace-nowrap`}>
                     <Badge variant={student.isActive ? 'success' : 'outline'}>

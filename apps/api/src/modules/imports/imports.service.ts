@@ -1,4 +1,4 @@
-// Fitur import massal (migrasi data) — students/parents/tutors via CSV.
+// Fitur import massal (migrasi data) — students/parents/tutors via Excel/CSV.
 // Setiap baris diproses lewat service create yang sama dengan form biasa
 // (validasi & pembuatan akun user identik, tempPassword digenerate otomatis),
 // tapi error per-baris tidak menggagalkan seluruh import — dikumpulkan ke
@@ -9,6 +9,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import ExcelJS from 'exceljs';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PeopleService } from '../people/people.service';
 import { ParentsService } from '../people/parents.service';
@@ -38,9 +39,8 @@ const ENTITIES: ImportEntity[] = ['students', 'parents', 'tutors'];
 // Tiap entitas: header + beberapa baris CONTOH dengan data berbeda supaya
 // jelas satu baris = satu record dan tiap kolom diisi nilainya sendiri.
 // Baris contoh & catatan diawali "#" — parser mengabaikannya saat import.
-// Template memakai ";" sebagai pemisah kolom — Excel locale Indonesia
-// memecah kolom CSV pada titik-koma, jadi template koma tampil menumpuk
-// dalam satu kolom. Parser import menerima dua-duanya (auto-detect).
+// Template .xlsx punya sheet PETUNJUK terpisah sehingga baris catatan tidak
+// menumpuk di sheet data.
 const TEMPLATES: Record<
   ImportEntity,
   { header: string; samples: string[]; notes: string }
@@ -96,6 +96,106 @@ export class ImportsService {
 
   template(entity: ImportEntity) {
     return TEMPLATES[entity];
+  }
+
+  /** Template .xlsx — sheet DATA berisi header + contoh, sheet PETUNJUK
+   *  menjelaskan tiap kolom. Baris contoh diawali "#" di kolom pertama
+   *  sehingga otomatis di-skip parser (boleh juga dihapus/diganti). */
+  async templateXlsx(entity: ImportEntity): Promise<Buffer> {
+    const t = TEMPLATES[entity];
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('DATA');
+    const cols = t.header.split(';').map((h) => ({
+      header: h,
+      key: h,
+      width: Math.max(14, h.length + 4),
+    }));
+    ws.columns = cols;
+    ws.getRow(1).font = { bold: true };
+    ws.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFF3F6FF' },
+    };
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+    t.samples.forEach((line) => {
+      const cells = line.split(';');
+      // Tandai baris contoh dengan "#" di kolom pertama — parser skip,
+      // user tinggal menimpanya dengan data asli.
+      cells[0] = `#${cells[0]}`;
+      ws.addRow(cells);
+    });
+    const guide = wb.addWorksheet('PETUNJUK');
+    guide.getColumn(1).width = 100;
+    guide.addRow([`TEMPLATE IMPORT ${entity.toUpperCase()}`]).font = {
+      bold: true,
+      size: 13,
+    };
+    guide.addRow(['']);
+    guide.addRow(['Cara pakai:']);
+    t.notes.split('·').forEach((note) => {
+      guide.addRow([`• ${note.trim()}`]);
+    });
+    guide.addRow(['']);
+    guide.addRow([
+      'Baris contoh (kolom pertama diawali "#") otomatis dilewati saat import — timpa saja dengan data asli.',
+    ]);
+    guide.addRow(['Maksimal 500 baris data per import.']);
+    return Buffer.from(await wb.xlsx.writeBuffer());
+  }
+
+  /** Nilai sel ExcelJS → string bersih (teks, angka, tanggal, formula). */
+  private cellText(v: ExcelJS.CellValue): string {
+    if (v === null || v === undefined) return '';
+    if (v instanceof Date) return v.toISOString().slice(0, 10);
+    if (typeof v === 'object') {
+      const o = v as unknown as Record<string, unknown>;
+      if (o.richText)
+        return (o.richText as Array<{ text: string }>)
+          .map((r) => r.text)
+          .join('');
+      if (o.result !== undefined) return this.cellText(o.result as ExcelJS.CellValue);
+      if (o.text !== undefined) return String(o.text);
+      return String(v);
+    }
+    return String(v);
+  }
+
+  /** Sheet pertama file .xlsx → array objek berkunci header (sama bentuk
+   *  dengan hasil parseCsv). Baris kosong & diawali "#" di-skip. */
+  private async parseXlsx(
+    buffer: Buffer,
+  ): Promise<Array<Record<string, string>>> {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer as unknown as ArrayBuffer);
+    const ws = wb.worksheets.find((s) => s.rowCount > 0);
+    if (!ws) return [];
+    // Header = baris pertama yang berisi sel tak kosong.
+    let headerRowIdx = 0;
+    let headers: string[] = [];
+    ws.eachRow((row, rowNumber) => {
+      if (headerRowIdx) return;
+      const cells = (row.values as ExcelJS.CellValue[]).slice(1);
+      if (cells.some((c) => this.cellText(c).trim())) {
+        headerRowIdx = rowNumber;
+        headers = cells.map((c) => this.cellText(c).trim().toLowerCase());
+      }
+    });
+    if (!headerRowIdx) return [];
+    const out: Array<Record<string, string>> = [];
+    ws.eachRow((row, rowNumber) => {
+      if (rowNumber <= headerRowIdx) return;
+      const cells = (row.values as ExcelJS.CellValue[]).slice(1);
+      const obj: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        obj[h] = this.cellText(cells[i]).trim();
+      });
+      const first = obj[headers[0]] ?? '';
+      if (!first.startsWith('#') && Object.values(obj).some((v) => v !== '')) {
+        out.push(obj);
+      }
+    });
+    return out;
   }
 
   /**
@@ -249,12 +349,28 @@ export class ImportsService {
     return { email: created.user.email, name: created.user.name, tempPassword: created.tempPassword };
   }
 
-  async run(entity: string, csv: string | undefined): Promise<ImportResult> {
+  async run(
+    entity: string,
+    body: { csv?: string; xlsx?: string },
+  ): Promise<ImportResult> {
     this.assertEntity(entity);
-    if (typeof csv !== 'string' || !csv.trim()) {
-      throw new BadRequestException('Body { csv } wajib berisi teks CSV.');
+    let rows: Array<Record<string, string>>;
+    if (body?.xlsx) {
+      // File .xlsx dikirim sebagai base64 dari browser.
+      try {
+        rows = await this.parseXlsx(Buffer.from(body.xlsx, 'base64'));
+      } catch {
+        throw new BadRequestException(
+          'File Excel tidak bisa dibaca — pastikan format .xlsx (bukan .xls lama).',
+        );
+      }
+    } else if (typeof body?.csv === 'string' && body.csv.trim()) {
+      rows = parseCsv(body.csv);
+    } else {
+      throw new BadRequestException(
+        'Body { csv } atau { xlsx } wajib berisi data import.',
+      );
     }
-    const rows = parseCsv(csv);
     if (!rows.length) {
       throw new BadRequestException(
         'CSV tidak berisi baris data (hanya header atau kosong).',
@@ -263,6 +379,15 @@ export class ImportsService {
     if (rows.length > 500) {
       throw new BadRequestException(
         'Maksimal 500 baris per import — pecah file bila lebih.',
+      );
+    }
+    // Pastikan kolom yang dibutuhkan ada — file dari template lama/lain
+    // yang kekurangan kolom wajib ditolak jelas, bukan gagal per-baris.
+    const requiredCols = TEMPLATES[entity].header.split(';').slice(0, 2);
+    const missing = requiredCols.filter((c) => !(c in rows[0]));
+    if (missing.length) {
+      throw new BadRequestException(
+        `Kolom wajib tidak ada di file: ${missing.join(', ')}. Unduh template terbaru lalu salin datanya.`,
       );
     }
 
@@ -341,5 +466,129 @@ export class ImportsService {
       }
     }
     return result;
+  }
+
+  /** Export .xlsx seluruh data entitas — kolom administrasi saja,
+   *  tanpa kredensial/hash. Email sintetis (wa.*@hp.bimbel.local)
+   *  ditandai "(otomatis)" supaya tidak dikira email asli user. */
+  async exportXlsx(entity: ImportEntity): Promise<Buffer> {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('DATA');
+    const fmtDate = (d?: Date | null) =>
+      d ? d.toISOString().slice(0, 10) : '';
+    const realEmail = (e?: string | null) =>
+      e && !e.endsWith('@hp.bimbel.local') ? e : '';
+    if (entity === 'students') {
+      ws.columns = [
+        { header: 'name', key: 'name', width: 26 },
+        { header: 'email', key: 'email', width: 28 },
+        { header: 'phone', key: 'phone', width: 16 },
+        { header: 'nis', key: 'nis', width: 12 },
+        { header: 'dateOfBirth', key: 'dob', width: 14 },
+        { header: 'gender', key: 'gender', width: 9 },
+        { header: 'schoolOrigin', key: 'school', width: 22 },
+        { header: 'address', key: 'address', width: 30 },
+        { header: 'status', key: 'status', width: 10 },
+        { header: 'asalDaftar', key: 'origin', width: 16 },
+        { header: 'orangTua', key: 'parents', width: 30 },
+        { header: 'phoneOrangTua', key: 'parentPhones', width: 22 },
+      ];
+      const rows = await this.prisma.student.findMany({
+        orderBy: { user: { name: 'asc' } },
+        include: {
+          user: true,
+          parentStudents: {
+            include: {
+              parent: { include: { user: { select: { name: true, phone: true } } } },
+            },
+          },
+        },
+      });
+      for (const s of rows) {
+        ws.addRow({
+          name: s.user.name,
+          email: realEmail(s.user.email),
+          phone: s.user.phone ?? '',
+          nis: s.nis ?? '',
+          dob: fmtDate(s.dateOfBirth),
+          gender: s.gender ?? '',
+          school: s.schoolOrigin ?? '',
+          address: s.address ?? '',
+          status: s.isActive ? 'Aktif' : 'Nonaktif',
+          origin: s.isExternal ? 'Daftar mandiri' : 'Terdaftar di GFS',
+          parents: s.parentStudents
+            .map((ps) => ps.parent.user.name)
+            .join('; '),
+          parentPhones: s.parentStudents
+            .map((ps) => ps.parent.user.phone ?? '')
+            .filter(Boolean)
+            .join('; '),
+        });
+      }
+    } else if (entity === 'parents') {
+      ws.columns = [
+        { header: 'name', key: 'name', width: 26 },
+        { header: 'email', key: 'email', width: 28 },
+        { header: 'phone', key: 'phone', width: 16 },
+        { header: 'status', key: 'status', width: 10 },
+        { header: 'anak', key: 'children', width: 32 },
+        { header: 'phoneAnak', key: 'childPhones', width: 24 },
+      ];
+      const rows = await this.prisma.parent.findMany({
+        orderBy: { user: { name: 'asc' } },
+        include: {
+          user: true,
+          parentStudents: {
+            include: {
+              student: { include: { user: { select: { name: true, phone: true } } } },
+            },
+          },
+        },
+      });
+      for (const p of rows) {
+        ws.addRow({
+          name: p.user.name,
+          email: realEmail(p.user.email),
+          phone: p.user.phone ?? '',
+          status: p.isActive ? 'Aktif' : 'Nonaktif',
+          children: p.parentStudents
+            .map((ps) => ps.student.user.name)
+            .join('; '),
+          childPhones: p.parentStudents
+            .map((ps) => ps.student.user.phone ?? '')
+            .filter(Boolean)
+            .join('; '),
+        });
+      }
+    } else {
+      ws.columns = [
+        { header: 'name', key: 'name', width: 26 },
+        { header: 'email', key: 'email', width: 28 },
+        { header: 'phone', key: 'phone', width: 16 },
+        { header: 'specialization', key: 'spec', width: 20 },
+        { header: 'status', key: 'status', width: 10 },
+      ];
+      const rows = await this.prisma.tutor.findMany({
+        orderBy: { user: { name: 'asc' } },
+        include: { user: true },
+      });
+      for (const t of rows) {
+        ws.addRow({
+          name: t.user.name,
+          email: realEmail(t.user.email),
+          phone: t.user.phone ?? '',
+          spec: t.specialization ?? '',
+          status: t.isActive ? 'Aktif' : 'Nonaktif',
+        });
+      }
+    }
+    ws.getRow(1).font = { bold: true };
+    ws.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFF3F6FF' },
+    };
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+    return Buffer.from(await wb.xlsx.writeBuffer());
   }
 }

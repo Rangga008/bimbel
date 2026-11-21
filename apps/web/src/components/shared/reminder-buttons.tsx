@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
@@ -67,17 +68,19 @@ export function ReminderButtons({
         {sendM.isPending ? 'Mengirim…' : 'Kirim Reminder'}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuLabel className="text-xs text-muted-foreground">
-          Kirim pengingat WA ke orang tua
-        </DropdownMenuLabel>
-        {REMINDER_TYPES.map((t) => (
-          <DropdownMenuItem
-            key={t.value}
-            onSelect={() => sendM.mutate(t.value)}
-          >
-            {t.label}
-          </DropdownMenuItem>
-        ))}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="text-xs text-muted-foreground">
+            Kirim pengingat WA ke orang tua
+          </DropdownMenuLabel>
+          {REMINDER_TYPES.map((t) => (
+            <DropdownMenuItem
+              key={t.value}
+              onSelect={() => sendM.mutate(t.value)}
+            >
+              {t.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

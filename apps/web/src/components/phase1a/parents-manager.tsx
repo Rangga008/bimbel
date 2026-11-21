@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { Search, Upload, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ImportDialog } from '@/components/shared/import-dialog';
+import { ImportDialog, ExportButton } from '@/components/shared/import-dialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { SkeletonCards } from '@/components/shared/skeletons';
 import { EmptyState } from '@/components/shared/empty-state';
@@ -140,6 +140,7 @@ export function ParentsManager({ canManage, basePath }: { canManage: boolean; ba
             <Button variant="outline" onClick={() => setImportOpen(true)}>
               <Upload className="size-4" /> Import
             </Button>
+            <ExportButton entity="parents" />
             <Button onClick={() => { setCreateOpen(true); setLastTempPassword(null); }}>Tambah Orang Tua</Button>
           </div>
         ) : null}

@@ -1,24 +1,57 @@
 "use client";
 
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Mail, Phone, ShieldCheck, UserCog } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { ArrowLeft, LoaderCircle, LogIn, Mail, Phone, ShieldCheck, UserCog } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/shared/empty-state';
 import { UserAvatar } from '@/components/shared/user-avatar';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, ApiError } from '@/lib/api-client';
+import { useAuthStore, type AuthUser } from '@/stores/auth-store';
+import { ROLE_KEY_BY_BACKEND_NAME } from '@/config/role-nav';
 import type { ManagedUser } from '@/lib/users-types';
 
 /** Halaman detail akun — profil lengkap (foto, kontak, role, permission). */
 export function AccountDetailPage({ userId, basePath }: { userId: string; basePath: string }) {
+  const router = useRouter();
+  const impersonate = useAuthStore((s) => s.impersonate);
   const userQ = useQuery({
     queryKey: ['users', userId],
     queryFn: () => apiFetch<ManagedUser>(`/users/${userId}`),
   });
   const u = userQ.data;
+
+  const impersonateM = useMutation({
+    mutationFn: () =>
+      apiFetch<{ accessToken: string; user: AuthUser }>(
+        `/auth/impersonate/${userId}`,
+        { method: 'POST' },
+      ),
+    onSuccess: (data) => {
+      impersonate(data.accessToken, data.user);
+      const roleKey = ROLE_KEY_BY_BACKEND_NAME[data.user.roles[0]];
+      toast.success(`Login sebagai ${data.user.name}.`);
+      router.push(roleKey ? `/${roleKey}` : '/');
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiError ? e.message : 'Gagal login sebagai.'),
+  });
+
+  const startImpersonate = () => {
+    if (!u) return;
+    if (
+      window.confirm(
+        `Login sebagai ${u.name}? Sesi Anda disimpan — klik "Kembali ke akun saya" di banner bawah untuk kembali.`,
+      )
+    ) {
+      impersonateM.mutate();
+    }
+  };
   return (
     <div className="flex flex-col gap-4">
       <div className="flex min-w-0 items-center gap-3">
@@ -55,7 +88,24 @@ export function AccountDetailPage({ userId, basePath }: { userId: string; basePa
                 Terdaftar {new Date(u.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
               </p>
             </div>
-            <Badge variant={u.isActive ? 'secondary' : 'outline'}>{u.isActive ? 'Aktif' : 'Nonaktif'}</Badge>
+            <div className="flex flex-col items-end gap-2">
+              <Badge variant={u.isActive ? 'secondary' : 'outline'}>{u.isActive ? 'Aktif' : 'Nonaktif'}</Badge>
+              {u.isActive ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={impersonateM.isPending}
+                  onClick={startImpersonate}
+                >
+                  {impersonateM.isPending ? (
+                    <LoaderCircle className="size-4 animate-spin" />
+                  ) : (
+                    <LogIn className="size-4" />
+                  )}
+                  Login sebagai
+                </Button>
+              ) : null}
+            </div>
           </CardContent>
         </Card>
       ) : null}

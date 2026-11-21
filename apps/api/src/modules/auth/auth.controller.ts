@@ -32,6 +32,9 @@ import { PhoneVerificationService } from '../../common/phone-verification/phone-
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './current-user.decorator';
 import type { AuthenticatedUser } from './types/authenticated-user.type';
+import { PermissionsGuard } from '../rbac/permissions.guard';
+import { RequirePermissions } from '../rbac/permissions.decorator';
+import { PERMISSION_CODES } from '../rbac/permissions.constants';
 
 const REFRESH_COOKIE_NAME = 'refresh_token';
 
@@ -309,6 +312,34 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   me(@CurrentUser() user: AuthenticatedUser) {
     return { user };
+  }
+
+  /**
+   * Login sebagai akun lain (impersonate) — hanya pemegang izin
+   * users.manage dari Manajemen Akun. Mengembalikan access token akun
+   * target TANPA refresh cookie (sesi pendek, tak bisa diperpanjang
+   * diam-diam) — selalu tercatat di audit log.
+   */
+  @Post('impersonate/:userId')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions(PERMISSION_CODES.USERS_MANAGE)
+  @HttpCode(HttpStatus.OK)
+  async impersonate(
+    @Param('userId') targetUserId: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const out = await this.authService.impersonate(targetUserId);
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'USER_IMPERSONATE',
+      entity: 'User',
+      entityId: targetUserId,
+      newData: { target: out.user.email },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return out;
   }
 
   /**

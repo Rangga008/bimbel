@@ -352,6 +352,9 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={s.isExternal ? 'warning' : 'secondary'} title={s.isExternal ? 'Mendaftar sendiri lewat halaman daftar siswa (orang luar)' : 'Dibuat lewat admin/orang tua'}>
+                {s.isExternal ? 'Daftar sendiri' : 'Siswa GFS'}
+              </Badge>
               <Badge variant={s.isActive ? 'secondary' : 'outline'}>{s.isActive ? 'Aktif' : 'Nonaktif'}</Badge>
               {canPrintReport ? (
                 <LearningReportButton

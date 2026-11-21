@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { RequireRole } from "./require-role";
 import { AppShellDesktop } from "./app-shell-desktop";
 import { AppShellMobile } from "./app-shell-mobile";
+import { ImpersonationBanner } from "./impersonation-banner";
 import type { RoleKey } from "@/config/role-nav";
 
 /**
@@ -19,6 +20,7 @@ export function AppShell({
 		<RequireRole role={role}>
 			<AppShellDesktop role={role}>{children}</AppShellDesktop>
 			<AppShellMobile role={role}>{children}</AppShellMobile>
+			<ImpersonationBanner />
 		</RequireRole>
 	);
 }

@@ -298,7 +298,20 @@ export function AccountsManager({ basePath }: { basePath: string }) {
                                 <Badge key={r} variant="outline">{r}</Badge>
                               ))
                             )}
+                            {u.student ? (
+                              <Badge
+                                variant={u.student.isExternal ? "warning" : "secondary"}
+                                title={u.student.isExternal ? "Mendaftar sendiri lewat halaman daftar siswa" : "Dibuat lewat admin/orang tua"}
+                              >
+                                {u.student.isExternal ? "Daftar sendiri" : "Siswa GFS"}
+                              </Badge>
+                            ) : null}
                           </span>
+                          {u.student?.schoolOrigin ? (
+                            <span className="mt-0.5 block max-w-48 truncate text-xs text-muted-foreground" title={u.student.schoolOrigin}>
+                              {u.student.schoolOrigin}
+                            </span>
+                          ) : null}
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           <Badge variant={u.isActive ? "secondary" : "outline"}>
