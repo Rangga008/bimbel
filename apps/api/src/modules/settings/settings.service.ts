@@ -90,6 +90,10 @@ export interface LandingTestimonial {
   /** Label di bawah nama — mis. sekolah/kampus alumni. */
   school: string;
   quote: string;
+  /** Foto profil narasumber — opsional; kosong = inisial nama. */
+  photo?: string;
+  /** Logo kampus/asal — opsional, tampil kecil di kanan kartu. */
+  logo?: string;
 }
 
 export interface DisplaySettings {
@@ -590,6 +594,20 @@ export const SETTING_DEFS: {
           `Kutipan testimoni ${i + 1}`,
           500,
         ),
+        photo: ((entry as Record<string, unknown>)?.photo ?? '') === ''
+          ? ''
+          : asString(
+              (entry as Record<string, unknown>)?.photo,
+              `Foto testimoni ${i + 1}`,
+              500,
+            ),
+        logo: ((entry as Record<string, unknown>)?.logo ?? '') === ''
+          ? ''
+          : asString(
+              (entry as Record<string, unknown>)?.logo,
+              `Logo kampus testimoni ${i + 1}`,
+              500,
+            ),
       }));
       const rawLocations = Array.isArray(o.locations) ? o.locations : [];
       if (rawLocations.length > 10) {

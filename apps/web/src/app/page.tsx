@@ -968,6 +968,13 @@ export default function LandingPage() {
 											{t.school}
 										</CardDescription>
 									</div>
+									{t.logo ? (
+										<img
+											src={resolveAssetUrl(t.logo)}
+											alt={`Logo ${t.school}`}
+											className="ml-auto size-10 shrink-0 object-contain"
+										/>
+									) : null}
 								</CardHeader>
 								<CardContent>
 									<p className="text-sm leading-relaxed text-muted-foreground italic">

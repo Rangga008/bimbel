@@ -133,8 +133,10 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
           phone: editForm.phone || undefined,
           dateOfBirth: editForm.dateOfBirth || null,
           gender: editForm.gender || null,
-          address: editForm.address || undefined,
-          schoolOrigin: editForm.schoolOrigin || undefined,
+          // null (bukan undefined) supaya field benar-benar dikosongkan —
+          // undefined berarti "jangan ubah" sehingga nilai lama tidak bisa dihapus.
+          address: editForm.address || null,
+          schoolOrigin: editForm.schoolOrigin || null,
           nis: editForm.nis || null,
           majorChoice1: editForm.majorChoice1 || null,
           majorChoice2: editForm.majorChoice2 || null,

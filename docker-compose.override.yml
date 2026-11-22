@@ -75,7 +75,9 @@ services:
         max-file: "3"
   redis:
     ports: !override
-      - "127.0.0.1:6379:6379"
+      # 6378 — hindari bentrok dengan redis project lain di host (mis. smpmuh3-redis
+      # yang memakai 6379). API tetap connect lewat nama service `redis:6379`.
+      - "127.0.0.1:6378:6379"
     mem_limit: 128m
     logging:
       driver: json-file

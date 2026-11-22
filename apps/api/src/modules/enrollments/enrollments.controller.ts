@@ -171,7 +171,7 @@ export class EnrollmentsController {
     @CurrentUser() actor: AuthenticatedUser,
     @Req() req: Request,
   ) {
-    const created = await this.enrollments.createForStudent(dto);
+    const created = await this.enrollments.createForStudent(dto, actor.id);
     await this.audit.log({
       actorId: actor.id,
       action: 'ENROLLMENT_CREATED_BY_STAFF',

@@ -780,6 +780,13 @@ export const ROLE_NAV: Record<RoleKey, NavItem[]> = {
 			group: "Sistem",
 		},
 		{
+			slug: "pengaturan",
+			label: "Backup & Restore",
+			icon: Database,
+			placement: "lainnya",
+			group: "Sistem",
+		},
+		{
 			slug: "notifikasi",
 			label: "Notifikasi",
 			icon: Bell,

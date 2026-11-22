@@ -23,6 +23,7 @@ import {
 import { basename, extname, join } from 'node:path';
 import { MediaService } from '../media/media.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { nextReceiptNumber } from '../../common/billing/receipt-number';
 import { PhoneVerificationService } from '../../common/phone-verification/phone-verification.service';
 import { NotificationEventsService } from '../notifications/notification-events.service';
 import { PERMISSION_CODES } from '../rbac/permissions.constants';
@@ -214,25 +215,8 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     return Number(invoice.totalAmount) - Number(invoice.amountPaid);
   }
 
-  private async receiptNumber(tx: Prisma.TransactionClient): Promise<string> {
-    const d = new Date();
-    const prefix = `KWT-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}-`;
-    for (let i = 0; i < 20; i += 1) {
-      const last = await tx.receipt.findFirst({
-        where: { number: { startsWith: prefix } },
-        orderBy: { number: 'desc' },
-        select: { number: true },
-      });
-      const seq = last
-        ? (Number(last.number.slice(prefix.length)) || 0) + 1
-        : 1;
-      const candidate = `${prefix}${String(seq).padStart(4, '0')}`;
-      const clash = await tx.receipt.findUnique({
-        where: { number: candidate },
-      });
-      if (!clash) return candidate;
-    }
-    return `${prefix}${String(Date.now()).slice(-4)}`;
+  private receiptNumber(tx: Prisma.TransactionClient): Promise<string> {
+    return nextReceiptNumber(tx);
   }
 
   // Inti Fase 2b: alokasi + update invoice.amountPaid + generate Receipt —

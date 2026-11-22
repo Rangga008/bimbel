@@ -236,4 +236,12 @@ export class CreateStaffEnrollmentDto {
   @Min(0)
   @Max(120)
   paidInstallments?: number;
+
+  /**
+   * Tanggal uang benar-benar diterima untuk angsuran backfill (migrasi data
+   * lama) — paidAt & ledger memakai tanggal ini; kosong = hari ini.
+   */
+  @IsOptional()
+  @IsDateString({}, { message: 'paidAt harus tanggal valid (YYYY-MM-DD).' })
+  paidAt?: string;
 }

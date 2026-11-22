@@ -35,6 +35,9 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-bimbel}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-bimbel_secret}
+      # Matikan scheduler busy-wait Erlang — di Docker Desktop (Windows) ini
+      # membuat RabbitMQ memakan >100% CPU walau idle tanpa satu koneksi pun.
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+sbwt none +sbwtdcpu none +sbwtdio none"
     ports:
       - "${RABBITMQ_PORT:-5672}:5672"       # AMQP
       - "${RABBITMQ_UI_PORT:-15672}:15672"  # Management UI (http://localhost:15672)

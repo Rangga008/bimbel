@@ -115,8 +115,9 @@ export function TutorsManager({ canManage }: { canManage: boolean }) {
           // '' → backend membuat placeholder dari no HP (hapus email login).
           email: editForm.email?.trim(),
           phone: editForm.phone || undefined,
-          specialization: editForm.specialization || undefined,
-          bio: editForm.bio || undefined,
+          // null → benar-benar dikosongkan; undefined berarti "jangan ubah".
+          specialization: editForm.specialization || null,
+          bio: editForm.bio || null,
           isActive:
             editForm.isActive === ''
               ? undefined

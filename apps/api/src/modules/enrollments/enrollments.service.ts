@@ -9,6 +9,7 @@ import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { nextReceiptNumber } from '../../common/billing/receipt-number';
 import { PhoneVerificationService } from '../../common/phone-verification/phone-verification.service';
 import { UsersService } from '../users/users.service';
 import { ROLE_NAMES } from '../rbac/permissions.constants';
@@ -360,7 +361,7 @@ export class EnrollmentsService {
    * berikutnya diterbitkan sebagai tagihan berjalan; sisanya tetap rencana
    * bulanan via billingPlan → ensureDueInstallments().
    */
-  async createForStudent(dto: CreateStaffEnrollmentDto) {
+  async createForStudent(dto: CreateStaffEnrollmentDto, actorId?: string) {
     const student = await this.prisma.student.findUnique({
       where: { id: dto.studentId },
       include: {
@@ -414,6 +415,12 @@ export class EnrollmentsService {
       plans.length,
     );
     const now = new Date();
+    // Migrasi: tanggal uang benar-benar diterima untuk angsuran yang
+    // ditandai lunas — paidAt & ledger pakai tanggal ini (default hari ini).
+    const backfillPaidAt = dto.paidAt ? new Date(dto.paidAt) : now;
+    if (Number.isNaN(backfillPaidAt.getTime())) {
+      throw new BadRequestException('Tanggal paidAt tidak valid.');
+    }
     return this.prisma.$transaction(async (tx) => {
       const enrollment = await tx.enrollment.create({
         data: {
@@ -437,26 +444,98 @@ export class EnrollmentsService {
           notes: 'Ditambahkan oleh admin/staff.',
         },
       });
+      // Backfill: angsuran yang ditandai "sudah lunas" dicatat sebagai
+      // pembayaran CASH VERIFIED + alokasi + kwitansi + ledger — replika
+      // PaymentsService.allocateAndReceipt supaya uangnya benar-benar
+      // tercatat masuk kas (Transaksi Harian), bukan cuma amountPaid di-set.
+      const kas =
+        paid > 0
+          ? await tx.financialAccount.findFirst({
+              where: { code: 'KAS', isActive: true },
+            })
+          : null;
+      const settle = async (inv: {
+        id: string;
+        number: string;
+        totalAmount: Prisma.Decimal;
+      }) => {
+        const payment = await tx.payment.create({
+          data: {
+            invoiceId: inv.id,
+            studentId: student.id,
+            accountId: kas?.id ?? null,
+            amount: inv.totalAmount,
+            method: 'CASH',
+            channel: 'CASH',
+            status: 'VERIFIED',
+            verifiedBy: actorId ?? null,
+            verifiedAt: now,
+            paidAt: backfillPaidAt,
+            createdBy: actorId ?? null,
+            proofNote:
+              'Angsuran ditandai lunas saat program ditambahkan (backfill).',
+          },
+        });
+        await tx.paymentAllocation.create({
+          data: {
+            paymentId: payment.id,
+            invoiceId: inv.id,
+            amount: inv.totalAmount,
+          },
+        });
+        await tx.invoice.update({
+          where: { id: inv.id },
+          data: { amountPaid: inv.totalAmount },
+        });
+        await tx.receipt.create({
+          data: {
+            number: await nextReceiptNumber(tx),
+            paymentId: payment.id,
+            invoiceId: inv.id,
+            studentId: student.id,
+            amount: inv.totalAmount,
+            method: 'CASH',
+            status: 'VERIFIED',
+            verifierId: actorId ?? null,
+          },
+        });
+        if (kas) {
+          await tx.ledgerEntry.create({
+            data: {
+              accountId: kas.id,
+              direction: 'IN',
+              amount: inv.totalAmount,
+              sourceType: 'PAYMENT',
+              sourceId: payment.id,
+              paymentId: payment.id,
+              description: `Pembayaran CASH invoice ${inv.number}`,
+              occurredAt: backfillPaidAt,
+            },
+          });
+        }
+      };
       const issue = async (idx: number, settled: boolean) => {
         const plan = plans[idx];
         const items = [...plan.items];
         const total = items.reduce((s, it) => s + it.amount, 0);
         const due = new Date(enrollment.createdAt.getTime() + 7 * 86400000);
         due.setMonth(due.getMonth() + plan.dueOffsetMonths);
-        return tx.invoice.create({
+        const inv = await tx.invoice.create({
           data: {
             number: await this.generateInvoiceNumber(tx),
             studentId: student.id,
             enrollmentId: enrollment.id,
             status: 'ISSUED',
             totalAmount: new Prisma.Decimal(total),
-            amountPaid: new Prisma.Decimal(settled ? total : 0),
+            amountPaid: new Prisma.Decimal(0),
             dueDate: due,
             issuedAt: now,
             notes: `${idx === 0 ? 'Pendaftaran ' : ''}${enrollment.childName} — ${program.name} / ${level.name} (${plan.label})`,
             items: { create: items },
           },
         });
+        if (settled) await settle(inv);
+        return inv;
       };
       const first = await issue(0, paid >= 1);
       await tx.enrollment.update({

@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Pencil, Send, Trash2, ChevronRight, ArrowLeft, UserRound, ImagePlus } from "lucide-react";
+import { Plus, Pencil, Send, Trash2, ChevronRight, ArrowLeft, UserRound, ImagePlus, School } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { BackupPanel } from "@/components/shared/backup-panel";
@@ -98,6 +98,8 @@ interface TestimonialEntry {
 	quote: string;
 	/** Foto profil narasumber — opsional; kosong = inisial nama. */
 	photo?: string;
+	/** Logo kampus/asal — opsional, tampil kecil di kanan kartu. */
+	logo?: string;
 }
 
 interface LocationEntry {
@@ -279,6 +281,60 @@ function TestimonialPhoto({
 					onClick={() => onPick("")}
 				>
 					Hapus foto
+				</button>
+			) : null}
+			<MediaLibraryDialog
+				open={open}
+				onOpenChange={setOpen}
+				onPick={(url) => {
+					onPick(url);
+					setOpen(false);
+				}}
+				kind="image"
+				category="BRANDING"
+			/>
+		</div>
+	);
+}
+
+/** Logo kampus/asal testimoni — kotak kecil + pemilih pustaka branding. */
+function TestimonialLogo({
+	value,
+	onPick,
+}: {
+	value: string;
+	onPick: (url: string) => void;
+}) {
+	const [open, setOpen] = useState(false);
+	return (
+		<div className="flex w-24 shrink-0 flex-col items-center gap-1.5">
+			{value ? (
+				<img
+					src={resolveAssetUrl(value)}
+					alt="Logo kampus"
+					className="size-20 rounded-md border-2 border-border bg-white object-contain p-1.5"
+				/>
+			) : (
+				<div className="flex size-20 items-center justify-center rounded-md border-2 border-dashed border-muted-foreground/30 bg-muted/40 text-muted-foreground">
+					<School className="size-8" />
+				</div>
+			)}
+			<Button
+				type="button"
+				variant="outline"
+				size="sm"
+				className="h-7 w-full px-2 text-[11px]"
+				onClick={() => setOpen(true)}
+			>
+				<ImagePlus className="size-3" /> {value ? "Ganti" : "Logo"}
+			</Button>
+			{value ? (
+				<button
+					type="button"
+					className="text-[11px] text-destructive hover:underline"
+					onClick={() => onPick("")}
+				>
+					Hapus logo
 				</button>
 			) : null}
 			<MediaLibraryDialog
@@ -1196,12 +1252,12 @@ export function FinanceSettings() {
 														})
 													}
 												/>
-												<div className="flex justify-end">
-													<Button
-														type="button"
-														variant="ghost"
-														size="sm"
-														className="text-destructive hover:text-destructive"
+											<div className="flex justify-end">
+												<Button
+													type="button"
+													variant="ghost"
+													size="sm"
+													className="text-destructive hover:text-destructive"
 														onClick={() =>
 															setDisplay({
 																...display,
@@ -1215,6 +1271,20 @@ export function FinanceSettings() {
 													</Button>
 												</div>
 											</div>
+											<TestimonialLogo
+												value={t.logo ?? ""}
+												onPick={(url) =>
+													setDisplay({
+														...display,
+														testimonials: display.testimonials.map(
+															(x, j) =>
+																j === i
+																	? { ...x, logo: url }
+																	: x,
+														),
+													})
+												}
+											/>
 										</div>
 									))}
 								</div>

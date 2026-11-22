@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, apiFetchBlob, ApiError } from '@/lib/api-client';
 import { rupiah } from '@/components/phase2a/invoices-manager';
@@ -128,39 +128,6 @@ async function openProof(paymentId: string) {
     win.close();
     toast.error(e instanceof ApiError ? e.message : 'Gagal membuka file bukti.');
   }
-}
-
-export function PaymentCard({ p, canVerify, onVerify }: { p: PaymentListItem; canVerify: boolean; onVerify: (id: string) => void }) {
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex flex-wrap items-center gap-1.5 text-base">
-          <ChannelBadges p={p} />
-          <span className="font-semibold">{rupiah(p.amount)}</span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-1.5 text-sm">
-        <p className="text-muted-foreground">
-          {p.allocations?.[0]?.invoice?.number ?? p.providerRef ?? p.id.slice(0, 8)} · {p.method}
-          {p.account ? ` · ${p.account.name}` : ''}
-        </p>
-        {p.proofUrl ? (
-          p.proofUrl.startsWith('proofs/') ? (
-            <Button variant="outline" size="sm" className="w-fit text-xs" onClick={() => openProof(p.id)}>
-              Lihat Bukti
-            </Button>
-          ) : (
-            <p className="truncate text-xs">Bukti: {p.proofUrl}</p>
-          )
-        ) : null}
-        {p.rejectReason ? <p className="text-xs text-destructive">Ditolak: {p.rejectReason}</p> : null}
-        {p.receipts?.[0] ? <p className="text-xs text-muted-foreground">Kwitansi: {p.receipts[0].number}</p> : null}
-        {canVerify && p.status === 'PENDING' ? (
-          <Button variant="outline" size="sm" className="mt-1 w-fit" onClick={() => onVerify(p.id)}>Verifikasi</Button>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
 }
 
 /** Daftar pembayaran dalam tabel — padat untuk banyak baris; wrapper

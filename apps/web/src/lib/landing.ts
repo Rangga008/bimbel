@@ -76,6 +76,8 @@ export interface LandingTestimonial {
   quote: string;
   /** Foto profil narasumber — opsional; kosong = inisial nama. */
   photo?: string;
+  /** Logo kampus/asal — opsional, tampil kecil di kanan kartu. */
+  logo?: string;
 }
 
 /** Lokasi footer/fasilitas yang diatur admin — kosong = pakai data gedung. */

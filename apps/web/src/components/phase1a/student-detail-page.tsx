@@ -127,7 +127,8 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
   const [discountReason, setDiscountReason] = useState('');
   const [discountMonths, setDiscountMonths] = useState('');
   const [addProgramOpen, setAddProgramOpen] = useState(false);
-  const [addForm, setAddForm] = useState({ programId: '', levelId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', paidInstallments: '0' });
+  const [addForm, setAddForm] = useState({ programId: '', levelId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', paidInstallments: '0', paidAt: '' });
+  const [addMode, setAddMode] = useState<'baru' | 'migrasi'>('baru');
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkSearch, setLinkSearch] = useState('');
   const [linkUserId, setLinkUserId] = useState('');
@@ -183,13 +184,15 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
           paymentPlan: addProgramIsReguler ? addForm.paymentPlan : undefined,
           studentCount: addProgramIsPrivat ? Number(addForm.studentCount) : undefined,
           sessionCount: addProgramIsPrivat ? Number(addForm.sessionCount) : undefined,
-          paidInstallments: Number(addForm.paidInstallments) || 0,
+          paidInstallments: addMode === 'migrasi' ? Number(addForm.paidInstallments) || 0 : 0,
+          paidAt: addMode === 'migrasi' && addForm.paidAt ? addForm.paidAt : undefined,
         },
       }),
     onSuccess: () => {
       toast.success('Program ditambahkan — jadwal angsuran sudah dibuat.');
       setAddProgramOpen(false);
-      setAddForm({ programId: '', levelId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', paidInstallments: '0' });
+      setAddMode('baru');
+      setAddForm({ programId: '', levelId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', paidInstallments: '0', paidAt: '' });
       qc.invalidateQueries({ queryKey: ['students', studentId] });
       qc.invalidateQueries({ queryKey: ['enrollments'] });
       qc.invalidateQueries({ queryKey: ['invoices'] });
@@ -236,8 +239,9 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
           phone: editForm.phone || undefined,
           dateOfBirth: editForm.dateOfBirth || null,
           gender: editForm.gender || null,
-          address: editForm.address || undefined,
-          schoolOrigin: editForm.schoolOrigin || undefined,
+          // null → benar-benar dikosongkan; undefined berarti "jangan ubah".
+          address: editForm.address || null,
+          schoolOrigin: editForm.schoolOrigin || null,
           isActive:
             editForm.isActive === ''
               ? undefined
@@ -628,7 +632,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                                   </span>
                                 ) : null}
                               </span>
-                              {canManage && remaining > 0.009 && inv.status !== 'VOID' ? (
+                              {canManage && remaining > 0.009 && inv.status === 'ISSUED' ? (
                                 <Button
                                   size="sm"
                                   variant="secondary"
@@ -690,12 +694,26 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
           <DialogHeader>
             <DialogTitle>Tambah Program ke Siswa</DialogTitle>
             <DialogDescription>
-              Daftarkan siswa ke program/jenjang baru — jadwal angsuran
-              langsung dibuat. Isi &quot;lunas sampai angsuran ke-N&quot; bila
-              siswa sudah membayar sebagian; sisanya jadi tagihan berjalan +
-              rencana bulanan.
+              {addMode === 'baru'
+                ? 'Daftarkan siswa ke program/jenjang baru — tagihan mulai kosong dari angsuran pertama.'
+                : 'Migrasi data lama: siswa ini sudah berjalan di program yang sama — sistem membuat jadwal lengkap, menandai N angsuran pertama lunas (dicatat sebagai pembayaran tunai + kwitansi + masuk kas), dan sisanya jadi tagihan berjalan.'}
             </DialogDescription>
           </DialogHeader>
+          <div className="grid grid-cols-2 gap-1 rounded-lg border p-1">
+            {([
+              { id: 'baru', label: 'Pendaftaran baru' },
+              { id: 'migrasi', label: 'Data lama (migrasi)' },
+            ] as const).map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${addMode === m.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+                onClick={() => setAddMode(m.id)}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
           <div className="flex flex-col gap-3">
             <Phase1aSelectField
               id="ap-program"
@@ -758,20 +776,39 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                 </div>
               </div>
             ) : null}
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="ap-paid">Sudah lunas sampai angsuran ke-</Label>
-              <Input
-                id="ap-paid"
-                type="number"
-                min={0}
-                value={addForm.paidInstallments}
-                onChange={(e) => setAddForm({ ...addForm, paidInstallments: e.target.value })}
-              />
-              <p className="text-xs text-muted-foreground">
-                0 = belum bayar apa pun. N = angsuran 1 s.d. N ditandai lunas,
-                angsuran berikutnya jadi tagihan berjalan.
-              </p>
-            </div>
+            {addMode === 'migrasi' ? (
+              <div className="flex flex-col gap-3 rounded-md border border-dashed border-brand-gold-300 bg-brand-gold-50/50 p-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="ap-paid">Sudah lunas sampai angsuran ke-</Label>
+                  <Input
+                    id="ap-paid"
+                    type="number"
+                    min={0}
+                    value={addForm.paidInstallments}
+                    onChange={(e) => setAddForm({ ...addForm, paidInstallments: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    0 = belum bayar apa pun. N = angsuran 1 s.d. N dicatat lunas
+                    (payment terverifikasi + kwitansi + masuk kas), angsuran
+                    berikutnya jadi tagihan berjalan.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="ap-paidat">Tanggal uang diterima (opsional)</Label>
+                  <Input
+                    id="ap-paidat"
+                    type="date"
+                    max={new Date().toISOString().slice(0, 10)}
+                    value={addForm.paidAt}
+                    onChange={(e) => setAddForm({ ...addForm, paidAt: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Kosongkan untuk hari ini — isi tanggal lama supaya catatan
+                    kas masuk di bulan yang benar.
+                  </p>
+                </div>
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setAddProgramOpen(false)}>

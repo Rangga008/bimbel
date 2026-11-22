@@ -20,7 +20,7 @@ import { useDebouncedValue } from '@/lib/use-debounced-value';
 import type { InvoiceDetail, InvoiceListItem, ProgramItem, StudentItem } from '@/lib/phase1a-types';
 import { ComboboxField } from '@/components/shared/combobox-field';
 import { CurrencyInput } from '@/components/shared/currency-input';
-import { Phase1aFormDialog, Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
+import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 function err(e: unknown, fb: string) {
@@ -76,7 +76,10 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
   const [filterProgramId, setFilterProgramId] = useState('');
   const [filterLevelId, setFilterLevelId] = useState('');
   const [open, setOpen] = useState(false);
+  const [createMode, setCreateMode] = useState<'manual' | 'paket'>('paket');
   const [studentId, setStudentId] = useState('');
+  const [packageId, setPackageId] = useState('');
+  const [priceOverride, setPriceOverride] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [desc, setDesc] = useState('');
   const [amount, setAmount] = useState('');
@@ -110,6 +113,12 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
     queryFn: () => apiFetch<StudentItem[]>('/students'),
     enabled: open,
   });
+  const packagesQ = useQuery({
+    queryKey: ['packages'],
+    queryFn: () =>
+      apiFetch<Array<{ id: string; name: string; code: string | null; totalSessions: number; price: string | number | null; isActive: boolean; level: { id: string; name: string; program: { id: string; name: string; code: string } } | null }>>('/packages'),
+    enabled: open,
+  });
   const detailQ = useQuery({
     queryKey: ['invoices', detailId],
     queryFn: () => apiFetch<InvoiceDetail>(`/invoices/${detailId}`),
@@ -129,9 +138,6 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
   const createM = useMutation({
     mutationFn: () => {
       if (!studentId) throw new Error('Pilih siswa dulu.');
-      if (!desc || !amount) throw new Error('Isi deskripsi + nominal.');
-      const mainAmount = Number(amount);
-      if (!Number.isFinite(mainAmount) || mainAmount <= 0) throw new Error('Nominal harus lebih dari 0.');
       const extras = extraItems
         .filter((it) => it.description.trim() !== '' || it.unitPrice.trim() !== '')
         .map((it) => {
@@ -140,6 +146,22 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
           if (!Number.isFinite(v) || it.unitPrice.trim() === '' || v <= 0) throw new Error('Nominal item tambahan harus lebih dari 0.');
           return { description: it.description.trim(), quantity: 1, unitPrice: v };
         });
+      if (createMode === 'paket') {
+        if (!packageId) throw new Error('Pilih paket dulu.');
+        return apiFetch<InvoiceDetail>('/invoices', {
+          method: 'POST',
+          body: {
+            studentId,
+            packageId,
+            price: priceOverride ? Number(priceOverride) : undefined,
+            dueDate: dueDate || undefined,
+            extraItems: extras.length ? extras : undefined,
+          },
+        });
+      }
+      if (!desc || !amount) throw new Error('Isi deskripsi + nominal.');
+      const mainAmount = Number(amount);
+      if (!Number.isFinite(mainAmount) || mainAmount <= 0) throw new Error('Nominal harus lebih dari 0.');
       return apiFetch<InvoiceDetail>('/invoices', {
         method: 'POST',
         body: {
@@ -153,6 +175,8 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
       toast.success(`Invoice ${created.number} dibuat (DRAFT).`);
       setOpen(false);
       setStudentId('');
+      setPackageId('');
+      setPriceOverride('');
       setDueDate('');
       setDesc('');
       setAmount('');
@@ -410,27 +434,33 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
         onPageSizeChange={(s) => { setPageSize(s); setPage(0); }}
       />
 
-      <Phase1aFormDialog
-        open={open}
-        onOpenChange={setOpen}
-        title="Buat Invoice"
-        description="Invoice manual — item utama + item tambahan (biaya admin, diskon, dsb)."
-        fields={[
-          { name: 'desc', label: 'Deskripsi item', placeholder: 'Biaya pendaftaran...', required: true },
-          { name: 'amount', label: 'Nominal', type: 'number', currency: true, placeholder: '500000', required: true },
-          { name: 'dueDate', label: 'Jatuh tempo (opsional)', type: 'date' },
-        ]}
-        values={{ desc, amount, dueDate }}
-        onChange={(n, v) => {
-          if (n === 'desc') setDesc(v);
-          else if (n === 'amount') setAmount(v);
-          else setDueDate(v);
-        }}
-        onSubmit={() => createM.mutate()}
-        isSubmitting={createM.isPending || studentsQ.isLoading}
-        submitLabel="Buat Invoice"
-        extra={
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Buat Invoice</DialogTitle>
+            <DialogDescription>
+              Buat dari paket yang sudah dikonfigurasi (item terisi otomatis) atau isi item manual.
+            </DialogDescription>
+          </DialogHeader>
           <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant={createMode === 'paket' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setCreateMode('paket')}
+              >
+                Dari Paket
+              </Button>
+              <Button
+                type="button"
+                variant={createMode === 'manual' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setCreateMode('manual')}
+              >
+                Item Manual
+              </Button>
+            </div>
             <Phase1aSelectField
               id="inv-student"
               label="Siswa (wajib)"
@@ -440,6 +470,64 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
               placeholder={studentsQ.isLoading ? 'Memuat...' : 'Pilih siswa...'}
               required
             />
+            {createMode === 'paket' ? (
+              <>
+                <Phase1aSelectField
+                  id="inv-package"
+                  label="Paket (wajib)"
+                  value={packageId}
+                  onChange={setPackageId}
+                  options={(packagesQ.data ?? [])
+                    .filter((p) => p.isActive)
+                    .map((p) => ({
+                      value: p.id,
+                      label: `${p.name} — ${p.level?.name ?? 'semua level'} · ${p.level?.program.name ?? '-'}${p.price != null ? ` · ${rupiah(p.price)}` : ''}`,
+                    }))}
+                  placeholder={packagesQ.isLoading ? 'Memuat...' : 'Pilih paket...'}
+                  required
+                />
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="inv-price">Harga (opsional — kosongkan = ikut harga paket)</Label>
+                  <CurrencyInput
+                    id="inv-price"
+                    value={priceOverride}
+                    onChange={setPriceOverride}
+                    placeholder="Ikut harga paket"
+                    showPreview={false}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="inv-desc">Deskripsi item *</Label>
+                  <Input
+                    id="inv-desc"
+                    placeholder="Biaya pendaftaran..."
+                    value={desc}
+                    onChange={(e) => setDesc(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="inv-amount">Nominal *</Label>
+                  <CurrencyInput
+                    id="inv-amount"
+                    value={amount}
+                    onChange={setAmount}
+                    placeholder="500000"
+                  />
+                </div>
+              </>
+            )}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="inv-due">Jatuh tempo (opsional)</Label>
+              <Input
+                id="inv-due"
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+              />
+            </div>
             <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3">
               <p className="text-xs font-medium text-muted-foreground">
                 Item tambahan — biaya admin, diskon (isi negatif), dsb.
@@ -501,8 +589,19 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
               </Button>
             </div>
           </div>
-        }
-      />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Batal
+            </Button>
+            <Button
+              onClick={() => createM.mutate()}
+              disabled={createM.isPending || studentsQ.isLoading}
+            >
+              Buat Invoice
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={detailId !== null} onOpenChange={(o) => { if (!o) setDetailId(null); }}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
