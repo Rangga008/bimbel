@@ -127,7 +127,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
   const [discountReason, setDiscountReason] = useState('');
   const [discountMonths, setDiscountMonths] = useState('');
   const [addProgramOpen, setAddProgramOpen] = useState(false);
-  const [addForm, setAddForm] = useState({ programId: '', levelId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', paidInstallments: '0', paidAt: '' });
+  const [addForm, setAddForm] = useState({ programId: '', levelId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', paidAmount: '', paidAt: '', discountAmount: '', discountMonths: '', discountReason: '' });
   const [addMode, setAddMode] = useState<'baru' | 'migrasi'>('baru');
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkSearch, setLinkSearch] = useState('');
@@ -184,15 +184,19 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
           paymentPlan: addProgramIsReguler ? addForm.paymentPlan : undefined,
           studentCount: addProgramIsPrivat ? Number(addForm.studentCount) : undefined,
           sessionCount: addProgramIsPrivat ? Number(addForm.sessionCount) : undefined,
-          paidInstallments: addMode === 'migrasi' ? Number(addForm.paidInstallments) || 0 : 0,
+          paidAmount: addMode === 'migrasi' && addForm.paidAmount ? Number(addForm.paidAmount) : undefined,
           paidAt: addMode === 'migrasi' && addForm.paidAt ? addForm.paidAt : undefined,
+          discountAmount: addMode === 'migrasi' && addForm.discountAmount ? Number(addForm.discountAmount) : undefined,
+          discountMonths: addMode === 'migrasi' && addForm.discountMonths ? Number(addForm.discountMonths) : undefined,
+          discountReason: addMode === 'migrasi' && addForm.discountReason.trim() ? addForm.discountReason.trim() : undefined,
         },
       }),
-    onSuccess: () => {
-      toast.success('Program ditambahkan — jadwal angsuran sudah dibuat.');
+    onSuccess: (created) => {
+      const sum = (created as { paymentSummary?: string }).paymentSummary;
+      toast.success(sum ? `Program ditambahkan — ${sum}.` : 'Program ditambahkan — jadwal angsuran sudah dibuat.');
       setAddProgramOpen(false);
       setAddMode('baru');
-      setAddForm({ programId: '', levelId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', paidInstallments: '0', paidAt: '' });
+      setAddForm({ programId: '', levelId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', paidAmount: '', paidAt: '', discountAmount: '', discountMonths: '', discountReason: '' });
       qc.invalidateQueries({ queryKey: ['students', studentId] });
       qc.invalidateQueries({ queryKey: ['enrollments'] });
       qc.invalidateQueries({ queryKey: ['invoices'] });
@@ -779,18 +783,17 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
             {addMode === 'migrasi' ? (
               <div className="flex flex-col gap-3 rounded-md border border-dashed border-brand-gold-300 bg-brand-gold-50/50 p-3">
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="ap-paid">Sudah lunas sampai angsuran ke-</Label>
-                  <Input
+                  <Label htmlFor="ap-paid">Total uang yang sudah dibayar</Label>
+                  <CurrencyInput
                     id="ap-paid"
-                    type="number"
-                    min={0}
-                    value={addForm.paidInstallments}
-                    onChange={(e) => setAddForm({ ...addForm, paidInstallments: e.target.value })}
+                    value={addForm.paidAmount}
+                    onChange={(v) => setAddForm({ ...addForm, paidAmount: v })}
+                    placeholder="0 = belum bayar apa pun"
                   />
                   <p className="text-xs text-muted-foreground">
-                    0 = belum bayar apa pun. N = angsuran 1 s.d. N dicatat lunas
-                    (payment terverifikasi + kwitansi + masuk kas), angsuran
-                    berikutnya jadi tagihan berjalan.
+                    Sistem membagi otomatis ke angsuran berurutan — cth 2.700.000
+                    pada angsuran 800rb → angsuran 1–3 lunas + angsuran 4 terbayar
+                    300rb (payment terverifikasi + kwitansi + masuk kas).
                   </p>
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -807,6 +810,41 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                     kas masuk di bulan yang benar.
                   </p>
                 </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="ap-disc">Diskon per angsuran (opsional)</Label>
+                  <CurrencyInput
+                    id="ap-disc"
+                    value={addForm.discountAmount}
+                    onChange={(v) => setAddForm({ ...addForm, discountAmount: v })}
+                    placeholder="0"
+                  />
+                </div>
+                {addForm.discountAmount && Number(addForm.discountAmount) > 0 ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="ap-discmonths">Berlaku N angsuran</Label>
+                        <Input
+                          id="ap-discmonths"
+                          type="number"
+                          min={1}
+                          placeholder="Kosong = sampai lunas"
+                          value={addForm.discountMonths}
+                          onChange={(e) => setAddForm({ ...addForm, discountMonths: e.target.value })}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="ap-discreason">Alasan</Label>
+                        <Input
+                          id="ap-discreason"
+                          placeholder="cth: Beasiswa"
+                          value={addForm.discountReason}
+                          onChange={(e) => setAddForm({ ...addForm, discountReason: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  </>
+                ) : null}
               </div>
             ) : null}
           </div>

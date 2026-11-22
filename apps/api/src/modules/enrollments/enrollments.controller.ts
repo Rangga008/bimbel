@@ -182,6 +182,10 @@ export class EnrollmentsController {
         programId: dto.programId,
         levelId: dto.levelId,
         paidInstallments: dto.paidInstallments,
+        paidAmount: dto.paidAmount,
+        paidAt: dto.paidAt,
+        discountAmount: dto.discountAmount,
+        discountMonths: dto.discountMonths,
       },
       ...ctx(req),
     });

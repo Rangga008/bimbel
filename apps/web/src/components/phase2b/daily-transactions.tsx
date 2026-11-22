@@ -81,6 +81,24 @@ export function DailyTransactions() {
     queryFn: () =>
       apiFetch<LedgerResponse>(`/ledger?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
   });
+  // Rekap bulan dari tanggal terpilih — agregat DB per sumber & akun.
+  const monthStart = `${date.slice(0, 7)}-01`;
+  const monthEnd = (() => {
+    const [y, m] = date.slice(0, 7).split('-').map(Number);
+    const last = new Date(y, m, 0).getDate();
+    return `${date.slice(0, 7)}-${String(last).padStart(2, '0')}`;
+  })();
+  const monthQ = useQuery({
+    queryKey: ['ledger-summary', date.slice(0, 7)],
+    queryFn: () =>
+      apiFetch<{
+        in: number;
+        out: number;
+        net: number;
+        bySource: { sourceType: string; in: number; out: number; count: number }[];
+        byAccount: { id: string; name: string; code: string | null; in: number; out: number }[];
+      }>(`/ledger/summary?from=${monthStart}T00:00:00.000&to=${monthEnd}T23:59:59.999`),
+  });
   const accountsQ = useQuery({
     queryKey: ['financial-accounts'],
     queryFn: () =>
@@ -188,6 +206,40 @@ export function DailyTransactions() {
           </CardContent>
         </Card>
       </div>
+
+      {monthQ.data ? (
+        <Card>
+          <CardContent className="flex flex-col gap-2 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold">
+                Rekap Bulan {new Intl.DateTimeFormat('id-ID', { month: 'long', year: 'numeric' }).format(new Date(`${monthStart}T00:00:00`))}
+              </p>
+              <p className="text-sm tabular-nums">
+                Masuk <span className="font-semibold text-emerald-600">{rupiah(monthQ.data.in)}</span>
+                {' · '}Keluar <span className="font-semibold text-rose-600">{rupiah(monthQ.data.out)}</span>
+                {' · '}Netto <span className="font-semibold">{rupiah(monthQ.data.net)}</span>
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              {monthQ.data.bySource
+                .filter((s) => s.in > 0 || s.out > 0)
+                .map((s) => (
+                  <span key={s.sourceType}>
+                    {s.sourceType === 'PAYMENT' ? 'Pembayaran siswa'
+                      : s.sourceType === 'EXPENSE' ? 'Pengeluaran'
+                      : s.sourceType === 'REFUND' ? 'Refund'
+                      : s.sourceType === 'SESSION' ? 'Gaji/honor sesi'
+                      : 'Manual'}:{' '}
+                    {s.in > 0 ? `+${rupiah(s.in)}` : ''}
+                    {s.in > 0 && s.out > 0 ? ' / ' : ''}
+                    {s.out > 0 ? `-${rupiah(s.out)}` : ''}
+                    {' '}({s.count} trx)
+                  </span>
+                ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="flex flex-col gap-2">
         <h2 className="text-sm font-semibold">Uang Masuk</h2>

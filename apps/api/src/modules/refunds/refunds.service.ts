@@ -381,4 +381,78 @@ export class RefundsService {
     });
     return { accounts: balances, entries };
   }
+
+  /**
+   * Rekap cashflow untuk satu rentang tanggal — total masuk/keluar/netto
+   * + rincian per jenis sumber & per akun. Dipakai kartu "Rekap Bulan"
+   * di Transaksi Harian supaya pelaporan periode tidak perlu menjumlah
+   * ratusan baris satu per satu.
+   */
+  async ledgerSummary(query: { accountId?: string; from?: string; to?: string }) {
+    const where: Record<string, unknown> = {};
+    if (query.accountId) where.accountId = query.accountId;
+    if (query.from || query.to) {
+      const range: { gte?: Date; lte?: Date } = {};
+      if (query.from) {
+        const d = new Date(query.from);
+        if (!Number.isNaN(d.getTime())) range.gte = d;
+      }
+      if (query.to) {
+        const d = new Date(query.to);
+        if (!Number.isNaN(d.getTime())) range.lte = d;
+      }
+      if (range.gte || range.lte) where.occurredAt = range;
+    }
+    const [bySource, byAccount, accounts] = await Promise.all([
+      this.prisma.ledgerEntry.groupBy({
+        by: ['sourceType', 'direction'],
+        where,
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
+      this.prisma.ledgerEntry.groupBy({
+        by: ['accountId', 'direction'],
+        where,
+        _sum: { amount: true },
+      }),
+      this.prisma.financialAccount.findMany({ orderBy: { name: 'asc' } }),
+    ]);
+    const srcMap = new Map<string, { in: number; out: number; count: number }>();
+    let totalIn = 0;
+    let totalOut = 0;
+    for (const row of bySource) {
+      const cur = srcMap.get(row.sourceType) ?? { in: 0, out: 0, count: 0 };
+      if (row.direction === 'IN') cur.in += money(row._sum.amount);
+      else cur.out += money(row._sum.amount);
+      cur.count += row._count._all;
+      srcMap.set(row.sourceType, cur);
+    }
+    const accMap = new Map<string, { in: number; out: number }>();
+    for (const a of accounts) accMap.set(a.id, { in: 0, out: 0 });
+    for (const row of byAccount) {
+      const cur = accMap.get(row.accountId) ?? { in: 0, out: 0 };
+      if (row.direction === 'IN') cur.in += money(row._sum.amount);
+      else cur.out += money(row._sum.amount);
+      accMap.set(row.accountId, cur);
+    }
+    for (const v of srcMap.values()) {
+      totalIn += v.in;
+      totalOut += v.out;
+    }
+    return {
+      in: Math.round(totalIn * 100) / 100,
+      out: Math.round(totalOut * 100) / 100,
+      net: Math.round((totalIn - totalOut) * 100) / 100,
+      bySource: [...srcMap.entries()].map(([sourceType, v]) => ({
+        sourceType,
+        in: v.in,
+        out: v.out,
+        count: v.count,
+      })),
+      byAccount: accounts.map((a) => {
+        const v = accMap.get(a.id) ?? { in: 0, out: 0 };
+        return { id: a.id, name: a.name, code: a.code, ...v };
+      }),
+    };
+  }
 }

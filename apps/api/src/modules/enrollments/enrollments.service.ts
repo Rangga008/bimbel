@@ -410,10 +410,6 @@ export class EnrollmentsService {
       regFee,
       basePrice,
     );
-    const paid = Math.min(
-      Math.max(0, dto.paidInstallments ?? 0),
-      plans.length,
-    );
     const now = new Date();
     // Migrasi: tanggal uang benar-benar diterima untuk angsuran yang
     // ditandai lunas — paidAt & ledger pakai tanggal ini (default hari ini).
@@ -421,6 +417,59 @@ export class EnrollmentsService {
     if (Number.isNaN(backfillPaidAt.getTime())) {
       throw new BadRequestException('Tanggal paidAt tidak valid.');
     }
+    const discAmount = Math.max(0, Number(dto.discountAmount) || 0);
+    const discMonths = dto.discountMonths ?? null;
+    const discLabel = dto.discountReason?.trim() || 'Diskon';
+    // Diskon per angsuran — replika aturan ensureDueInstallments: berlaku
+    // sampai lunas (null) atau untuk N angsuran pertama.
+    const itemsFor = (idx: number) => {
+      const items = [...plans[idx].items];
+      const within = discMonths === null || idx + 1 <= discMonths;
+      if (discAmount > 0 && within) {
+        items.push({
+          description: `Diskon/Bantuan — ${discLabel}`,
+          quantity: 1,
+          unitPrice: -discAmount,
+          amount: -discAmount,
+        });
+      }
+      return items;
+    };
+    const totals = plans.map((_, idx) =>
+      Math.max(
+        0,
+        itemsFor(idx).reduce((s, it) => s + it.amount, 0),
+      ),
+    );
+    const grandTotal = totals.reduce((s, t) => s + t, 0);
+    // Cakupan pembayaran per angsuran: paidAmount (nominal total →
+    // distribusikan berurutan, sisa jadi parsial) ATAU paidInstallments
+    // (N angsuran pertama lunas — kompat lama).
+    const covers: number[] = new Array(plans.length).fill(0);
+    if (dto.paidAmount !== undefined && dto.paidAmount !== null) {
+      const paidAmt = Number(dto.paidAmount);
+      if (!Number.isFinite(paidAmt) || paidAmt < 0) {
+        throw new BadRequestException('paidAmount tidak valid.');
+      }
+      if (paidAmt > grandTotal + 0.009) {
+        throw new BadRequestException(
+          `Total uang yang sudah dibayar melebihi total tagihan (${grandTotal.toLocaleString('id-ID')}).`,
+        );
+      }
+      let rest = paidAmt;
+      for (let i = 0; i < plans.length && rest > 0.009; i += 1) {
+        covers[i] = Math.min(rest, totals[i]);
+        rest -= covers[i];
+      }
+    } else {
+      const paid = Math.min(
+        Math.max(0, dto.paidInstallments ?? 0),
+        plans.length,
+      );
+      for (let i = 0; i < paid; i += 1) covers[i] = totals[i];
+    }
+    const anyPaid = covers.some((c) => c > 0.009);
+    const allPaid = covers.every((c, i) => c >= totals[i] - 0.009);
     return this.prisma.$transaction(async (tx) => {
       const enrollment = await tx.enrollment.create({
         data: {
@@ -440,31 +489,33 @@ export class EnrollmentsService {
             plans.length > 1
               ? (plans as unknown as Prisma.InputJsonValue)
               : undefined,
-          status: paid >= plans.length ? 'PAID' : 'PENDING_PAYMENT',
+          discountAmount:
+            discAmount > 0 ? new Prisma.Decimal(discAmount) : null,
+          discountMonths: discAmount > 0 ? discMonths : null,
+          discountReason: discAmount > 0 ? discLabel : null,
+          status: allPaid ? 'PAID' : 'PENDING_PAYMENT',
           notes: 'Ditambahkan oleh admin/staff.',
         },
       });
-      // Backfill: angsuran yang ditandai "sudah lunas" dicatat sebagai
+      // Backfill: uang yang ditandai "sudah diterima" dicatat sebagai
       // pembayaran CASH VERIFIED + alokasi + kwitansi + ledger — replika
       // PaymentsService.allocateAndReceipt supaya uangnya benar-benar
       // tercatat masuk kas (Transaksi Harian), bukan cuma amountPaid di-set.
-      const kas =
-        paid > 0
-          ? await tx.financialAccount.findFirst({
-              where: { code: 'KAS', isActive: true },
-            })
-          : null;
-      const settle = async (inv: {
-        id: string;
-        number: string;
-        totalAmount: Prisma.Decimal;
-      }) => {
+      const kas = anyPaid
+        ? await tx.financialAccount.findFirst({
+            where: { code: 'KAS', isActive: true },
+          })
+        : null;
+      const pay = async (
+        inv: { id: string; number: string; totalAmount: Prisma.Decimal },
+        amount: number,
+      ) => {
         const payment = await tx.payment.create({
           data: {
             invoiceId: inv.id,
             studentId: student.id,
             accountId: kas?.id ?? null,
-            amount: inv.totalAmount,
+            amount,
             method: 'CASH',
             channel: 'CASH',
             status: 'VERIFIED',
@@ -473,19 +524,19 @@ export class EnrollmentsService {
             paidAt: backfillPaidAt,
             createdBy: actorId ?? null,
             proofNote:
-              'Angsuran ditandai lunas saat program ditambahkan (backfill).',
+              'Pembayaran dicatat saat program ditambahkan (backfill).',
           },
         });
         await tx.paymentAllocation.create({
           data: {
             paymentId: payment.id,
             invoiceId: inv.id,
-            amount: inv.totalAmount,
+            amount,
           },
         });
         await tx.invoice.update({
           where: { id: inv.id },
-          data: { amountPaid: inv.totalAmount },
+          data: { amountPaid: new Prisma.Decimal(amount) },
         });
         await tx.receipt.create({
           data: {
@@ -493,7 +544,7 @@ export class EnrollmentsService {
             paymentId: payment.id,
             invoiceId: inv.id,
             studentId: student.id,
-            amount: inv.totalAmount,
+            amount,
             method: 'CASH',
             status: 'VERIFIED',
             verifierId: actorId ?? null,
@@ -504,7 +555,7 @@ export class EnrollmentsService {
             data: {
               accountId: kas.id,
               direction: 'IN',
-              amount: inv.totalAmount,
+              amount,
               sourceType: 'PAYMENT',
               sourceId: payment.id,
               paymentId: payment.id,
@@ -514,10 +565,11 @@ export class EnrollmentsService {
           });
         }
       };
-      const issue = async (idx: number, settled: boolean) => {
+      const issue = async (idx: number) => {
         const plan = plans[idx];
-        const items = [...plan.items];
-        const total = items.reduce((s, it) => s + it.amount, 0);
+        const items = itemsFor(idx);
+        const total = totals[idx];
+        const cover = covers[idx];
         const due = new Date(enrollment.createdAt.getTime() + 7 * 86400000);
         due.setMonth(due.getMonth() + plan.dueOffsetMonths);
         const inv = await tx.invoice.create({
@@ -534,18 +586,34 @@ export class EnrollmentsService {
             items: { create: items },
           },
         });
-        if (settled) await settle(inv);
+        if (cover > 0.009) await pay(inv, cover);
         return inv;
       };
-      const first = await issue(0, paid >= 1);
+      const first = await issue(0);
       await tx.enrollment.update({
         where: { id: enrollment.id },
         data: { invoiceId: first.id },
       });
-      // Cicilan 2..N (idx 1..paid-1) → lunas; cicilan idx=paid → berjalan.
-      for (let i = 1; i < paid; i += 1) await issue(i, true);
-      if (paid >= 1 && paid < plans.length) await issue(paid, false);
-      return enrollment;
+      // Terbitkan angsuran yang masih tercakup pembayaran + satu angsuran
+      // berjalan pertama yang belum terbayar apa pun (hanya bila ada uang
+      // masuk — tanpa backfill cukup invoice pertama saja yang terbit).
+      let idx = 1;
+      while (idx < plans.length && covers[idx] > 0.009) {
+        await issue(idx);
+        idx += 1;
+      }
+      if (anyPaid && idx < plans.length) await issue(idx);
+      const paymentSummary =
+        covers
+          .map((c, i) => ({ c, i }))
+          .filter((x) => x.c > 0.009)
+          .map((x) =>
+            x.c >= totals[x.i] - 0.009
+              ? `angsuran ${x.i + 1} lunas`
+              : `angsuran ${x.i + 1} terbayar ${x.c.toLocaleString('id-ID')}`,
+          )
+          .join(', ') || '';
+      return { ...enrollment, paymentSummary };
     });
   }
 

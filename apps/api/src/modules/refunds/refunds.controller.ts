@@ -171,6 +171,17 @@ export class RefundsController {
     return this.refunds.listLedger({ accountId, from, to });
   }
 
+  /** Rekap cashflow satu rentang tanggal (masuk/keluar/netto per sumber & akun). */
+  @Get('ledger/summary')
+  @RequirePermissions(PERMISSION_CODES.LEDGER_VIEW)
+  ledgerSummary(
+    @Query('accountId') accountId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.refunds.ledgerSummary({ accountId, from, to });
+  }
+
   /**
    * Transaksi harian ad-hoc — kas masuk/keluar di luar siklus invoice
    * (mis. melayani tamu, belanja mendadak di luar RAB bulanan).

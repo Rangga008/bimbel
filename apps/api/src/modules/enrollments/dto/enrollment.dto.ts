@@ -5,6 +5,7 @@ import {
   IsEmail,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -230,12 +231,44 @@ export class CreateStaffEnrollmentDto {
    * Jumlah angsuran yang SUDAH lunas saat ini (0 = belum bayar apa pun).
    * Invoice cicilan 1..N ditandai lunas; cicilan berikutnya diterbitkan
    * sebagai tagihan berjalan, sisanya tetap rencana bulanan.
+   * Alternatif: `paidAmount` (nominal total — lebih fleksibel untuk
+   * pembayaran parsial; bila keduanya diisi, paidAmount yang dipakai).
    */
   @IsOptional()
   @IsInt()
   @Min(0)
   @Max(120)
   paidInstallments?: number;
+
+  /**
+   * Total uang yang SUDAH diterima (migrasi data lama) — didistribusikan
+   * ke angsuran berurutan: angsuran lunas dulu, sisanya jadi pembayaran
+   * parsial pada angsuran berikutnya. Cth: 2.7jt pada angsuran 800rb
+   * → 3 angsuran lunas + angsuran ke-4 terbayar 300rb.
+   */
+  @IsOptional()
+  @IsNumber({}, { message: 'paidAmount harus angka.' })
+  @Min(0, { message: 'paidAmount minimal 0.' })
+  paidAmount?: number;
+
+  /** Diskon per angsuran (rupiah) — dipotong dari tiap invoice yang terbit. */
+  @IsOptional()
+  @IsNumber({}, { message: 'discountAmount harus angka.' })
+  @Min(0, { message: 'discountAmount minimal 0.' })
+  discountAmount?: number;
+
+  /** Diskon berlaku untuk N angsuran pertama; null/kosong = sampai lunas. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(120)
+  discountMonths?: number | null;
+
+  /** Alasan diskon — tampil di item invoice "Diskon/Bantuan — {reason}". */
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  discountReason?: string;
 
   /**
    * Tanggal uang benar-benar diterima untuk angsuran backfill (migrasi data
