@@ -53,6 +53,12 @@ export class CreateGroupDto {
   @IsUUID('4', { message: 'levelId tidak valid.' })
   levelId?: string;
 
+  /** Paket harga yang diambil kelompok ini (mis. kelompok SNBT → paket
+   *  intensif 24 sesi) — harus milik level yang dipilih. */
+  @IsOptional()
+  @IsUUID('4', { message: 'packageId tidak valid.' })
+  packageId?: string | null;
+
   @IsOptional()
   @IsInt()
   @Min(1, { message: 'Kapasitas minimal 1.' })

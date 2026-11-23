@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -29,7 +28,7 @@ WORKDIR /app
 # Pakai client Postgres terbaru yang tersedia di Alpine — pg_dump versi baru
 # tetap bisa membaca server Postgres yang lebih lama, sedangkan client lama
 # gagal saat server managed (Railway/dsb.) memakai Postgres versi lebih baru.
-RUN apk add --no-cache postgresql18-client
+RUN apk add --no-cache postgresql17-client
 ENV NODE_ENV=production
 ENV PRISMA_SCHEMA_ENGINE_BINARY=/app/prisma-engines/schema-engine-linux-musl-openssl-3.0.x
 COPY --from=build /app/prisma-engines ./prisma-engines

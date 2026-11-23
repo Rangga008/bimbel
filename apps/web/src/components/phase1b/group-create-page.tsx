@@ -29,6 +29,7 @@ export function GroupCreatePage({ basePath }: { basePath: string }) {
   const [form, setForm] = useState({ name: '', code: '', capacity: '' });
   const [programId, setProgramId] = useState('');
   const [levelId, setLevelId] = useState('');
+  const [packageId, setPackageId] = useState('');
   const [tutorId, setTutorId] = useState('');
 
   const programsQ = useQuery({
@@ -64,6 +65,7 @@ export function GroupCreatePage({ basePath }: { basePath: string }) {
           code: form.code || undefined,
           programId,
           levelId: levelId || undefined,
+          packageId: packageId || undefined,
           capacity: form.capacity ? Number(form.capacity) : undefined,
           tutorId: tutorId || undefined,
         },
@@ -121,11 +123,24 @@ export function GroupCreatePage({ basePath }: { basePath: string }) {
           <Phase1aSelectField
             id="grp-level" label="Jenjang" required={levelRequired}
             value={levelId}
-            onChange={setLevelId}
+            onChange={(v) => { setLevelId(v); setPackageId(''); }}
             options={programLevels.map((l) => ({ value: l.id, label: l.name }))}
             placeholder={levelRequired ? '- Pilih jenjang -' : '- Tanpa jenjang -'}
             hint={!programId ? 'Pilih program dulu.' : undefined}
           />
+          {(selLevel?.packages ?? []).length > 0 ? (
+            <Phase1aSelectField
+              id="grp-package" label="Paket harga (opsional)"
+              value={packageId}
+              onChange={setPackageId}
+              options={(selLevel?.packages ?? []).map((p) => ({
+                value: p.id,
+                label: `${p.name}${p.price != null ? ` · Rp ${Number(p.price).toLocaleString('id-ID')}` : ''}`,
+              }))}
+              placeholder="- Paket yang diambil kelompok ini -"
+              hint="Mis. kelompok SNBT → paket intensif — harga paket otomatis terpakai saat menambah program di detail siswa."
+            />
+          ) : null}
           {levelSubjects.length > 0 ? (
             <div className="flex flex-col gap-1.5 sm:col-span-2">
               <Label>Mapel dalam jenjang ini</Label>

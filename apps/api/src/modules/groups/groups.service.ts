@@ -95,6 +95,13 @@ export class GroupsService {
         throw new BadRequestException('Level tersebut bukan bagian dari program yang dipilih.');
       }
     }
+    if (dto.packageId) {
+      const pkg = await this.prisma.package.findUnique({ where: { id: dto.packageId } });
+      if (!pkg) throw new BadRequestException('Paket tidak ditemukan.');
+      if (dto.levelId && pkg.levelId !== dto.levelId) {
+        throw new BadRequestException('Paket tersebut bukan milik level yang dipilih.');
+      }
+    }
     // Normalisasi jadwal: bentuk baru `schedules[]` (multi-mapel, tiap item
     // bisa beda hari/jam/tutor/ruangan) menang atas field jadwal tunggal lama.
     const legacyProvided =
@@ -201,6 +208,7 @@ export class GroupsService {
         code: dto.code,
         programId: dto.programId,
         levelId: dto.levelId,
+        packageId: dto.packageId ?? null,
         capacity: dto.capacity,
         isActive: dto.isActive ?? true,
       },
@@ -264,6 +272,13 @@ export class GroupsService {
         throw new BadRequestException('Level tersebut bukan bagian dari program yang dipilih.');
       }
     }
+    if (dto.packageId) {
+      const pkg = await this.prisma.package.findUnique({ where: { id: dto.packageId } });
+      if (!pkg) throw new BadRequestException('Paket tidak ditemukan.');
+      if (nextLevelId && pkg.levelId !== nextLevelId) {
+        throw new BadRequestException('Paket tersebut bukan milik level yang dipilih.');
+      }
+    }
     return this.prisma.learningGroup.update({
       where: { id },
       data: {
@@ -271,6 +286,7 @@ export class GroupsService {
         ...(dto.code !== undefined ? { code: dto.code } : {}),
         ...(dto.programId !== undefined ? { programId: dto.programId } : {}),
         ...(dto.levelId !== undefined ? { levelId: dto.levelId } : {}),
+        ...(dto.packageId !== undefined ? { packageId: dto.packageId } : {}),
         ...(dto.capacity !== undefined ? { capacity: dto.capacity } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },

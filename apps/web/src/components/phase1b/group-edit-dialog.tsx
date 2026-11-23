@@ -36,6 +36,7 @@ export function GroupEditDialog({
   const [code, setCode] = useState(group.code ?? '');
   const [programId, setProgramId] = useState(group.programId);
   const [levelId, setLevelId] = useState(group.levelId ?? '');
+  const [packageId, setPackageId] = useState(group.packageId ?? '');
   const [capacity, setCapacity] = useState(group.capacity != null ? String(group.capacity) : '');
   const [isActive, setIsActive] = useState(group.isActive);
 
@@ -57,6 +58,7 @@ export function GroupEditDialog({
           code: code.trim() || null,
           programId,
           levelId: levelId || null,
+          packageId: packageId || null,
           capacity: capacity ? Number(capacity) : null,
           isActive,
         },
@@ -98,9 +100,21 @@ export function GroupEditDialog({
             id="ge-level"
             label="Level (opsional)"
             value={levelId}
-            onChange={setLevelId}
+            onChange={(v) => { setLevelId(v); setPackageId(''); }}
             options={selProgram?.levels?.map((l) => ({ value: l.id, label: l.name })) || []}
           />
+          {(selLevel?.packages ?? []).length > 0 ? (
+            <Phase1aSelectField
+              id="ge-package"
+              label="Paket harga (opsional)"
+              value={packageId}
+              onChange={setPackageId}
+              options={(selLevel?.packages ?? []).map((p) => ({
+                value: p.id,
+                label: `${p.name}${p.price != null ? ` · Rp ${Number(p.price).toLocaleString('id-ID')}` : ''}`,
+              }))}
+            />
+          ) : null}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="ge-capacity">Kapasitas (opsional)</Label>
             <input

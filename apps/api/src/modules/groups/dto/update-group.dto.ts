@@ -20,6 +20,11 @@ export class UpdateGroupDto {
   @IsUUID('4', { message: 'levelId tidak valid.' })
   levelId?: string | null;
 
+  /** Paket harga kelompok — kirim null untuk melepas. */
+  @IsOptional()
+  @IsUUID('4', { message: 'packageId tidak valid.' })
+  packageId?: string | null;
+
   @IsOptional()
   @IsInt()
   @Min(1, { message: 'Kapasitas minimal 1.' })

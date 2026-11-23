@@ -93,7 +93,7 @@ export class ProgramsService {
             },
             packages: {
               where: { isActive: true },
-              select: { id: true, name: true, totalSessions: true },
+              select: { id: true, name: true, totalSessions: true, price: true },
               orderBy: { name: 'asc' },
             },
           },

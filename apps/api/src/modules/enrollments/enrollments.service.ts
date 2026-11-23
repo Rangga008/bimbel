@@ -386,7 +386,30 @@ export class EnrollmentsService {
         ? Number(program.registrationFee)
         : 0;
     const basePrice = level.price ? Number(level.price) : 0;
-    if (regFee + basePrice <= 0) {
+    // Paket terkonfigurasi (mis. "SNBT Intensif 24 sesi — Rp4.950.000"):
+    // total tagihan = harga paket, dibagi sesuai cara bayar. Tarif jenjang
+    // & biaya pendaftaran tidak ditambah — paket adalah harga deal.
+    let pkg: {
+      id: string;
+      name: string;
+      price: unknown;
+      totalSessions: number;
+    } | null = null;
+    if (dto.packageId) {
+      const found = await this.prisma.package.findUnique({
+        where: { id: dto.packageId },
+      });
+      if (!found || !found.isActive || found.levelId !== level.id) {
+        throw new BadRequestException('Paket tidak valid untuk jenjang ini.');
+      }
+      if (!(Number(found.price) > 0)) {
+        throw new BadRequestException(
+          `Harga paket "${found.name}" belum diatur — isi dulu di program/level.`,
+        );
+      }
+      pkg = found;
+    }
+    if (!pkg && regFee + basePrice <= 0) {
       throw new BadRequestException(
         'Harga pendaftaran untuk jenjang ini belum diatur.',
       );
@@ -403,13 +426,20 @@ export class EnrollmentsService {
         `Siswa sudah terdaftar di ${program.name} — cek pendaftaran sebelumnya.`,
       );
     }
-    const plans = this.buildInvoiceSchedule(
-      program,
-      level,
-      dto as unknown as CreateEnrollmentDto,
-      regFee,
-      basePrice,
-    );
+    const plans = pkg
+      ? this.buildPackageSchedule(
+          program,
+          level,
+          pkg,
+          dto as unknown as CreateEnrollmentDto,
+        )
+      : this.buildInvoiceSchedule(
+          program,
+          level,
+          dto as unknown as CreateEnrollmentDto,
+          regFee,
+          basePrice,
+        );
     const now = new Date();
     // Migrasi: tanggal uang benar-benar diterima untuk angsuran yang
     // ditandai lunas — paidAt & ledger pakai tanggal ini (default hari ini).
@@ -484,7 +514,9 @@ export class EnrollmentsService {
               ? (dto.paymentPlan ?? 'MONTHLY')
               : null,
           studentCount: dto.studentCount ?? null,
-          sessionCount: dto.sessionCount ?? null,
+          sessionCount:
+            dto.sessionCount ??
+            (pkg && level.priceUnit === 'SESSION' ? pkg.totalSessions : null),
           billingPlan:
             plans.length > 1
               ? (plans as unknown as Prisma.InputJsonValue)
@@ -580,6 +612,8 @@ export class EnrollmentsService {
             status: 'ISSUED',
             totalAmount: new Prisma.Decimal(total),
             amountPaid: new Prisma.Decimal(0),
+            packageId:
+              (plan as { packageId?: string }).packageId ?? null,
             dueDate: due,
             issuedAt: now,
             notes: `${idx === 0 ? 'Pendaftaran ' : ''}${enrollment.childName} — ${program.name} / ${level.name} (${plan.label})`,
@@ -682,6 +716,7 @@ export class EnrollmentsService {
               enrollmentId: e.id,
               status: 'ISSUED',
               totalAmount: new Prisma.Decimal(Math.max(0, total)),
+              packageId: (plan as { packageId?: string }).packageId ?? null,
               dueDate: due,
               issuedAt: new Date(),
               notes: `Angsuran ${e.childName} — ${e.program.name} / ${e.level.name} (${plan.label})`,
@@ -824,6 +859,79 @@ export class EnrollmentsService {
             amount: basePrice,
           },
         ],
+      },
+    ] as Plan[];
+  }
+
+  /**
+   * Jadwal invoice dari Paket terkonfigurasi: harga paket = total deal,
+   * dibagi sesuai cara bayar (REGULER/YEAR mengikuti paymentPlan; selain
+   * itu satu invoice paket). packageId ikut disimpan di tiap plan supaya
+   * invoice cicilan berikutnya (ensureDueInstallments) tetap tertaut.
+   */
+  private buildPackageSchedule(
+    program: { name: string; category: string },
+    level: {
+      name: string;
+      priceUnit: string | null;
+      monthlyCount: number | null;
+    },
+    pkg: { id: string; name: string; price: unknown; totalSessions: number },
+    dto: CreateEnrollmentDto,
+  ) {
+    type Item = { description: string; quantity: number; unitPrice: number; amount: number };
+    type Plan = { label: string; dueOffsetMonths: number; packageId: string; items: Item[] };
+    const price = Math.round(Number(pkg.price) * 100) / 100;
+    const item = (amount: number, quantity = 1): Item => ({
+      description: `Paket ${pkg.name} — ${level.name} (${program.name})`,
+      quantity,
+      unitPrice: Math.round((amount / quantity) * 100) / 100,
+      amount,
+    });
+    // Bagi rata harga paket ke N angsuran — sisa pembulatan di angsuran akhir.
+    const split = (n: number) => {
+      const each = Math.floor((price * 100) / n) / 100;
+      return Array.from({ length: n }, (_, i) =>
+        i === n - 1 ? Math.round((price - each * (n - 1)) * 100) / 100 : each,
+      );
+    };
+    if (program.category === 'REGULER' || level.priceUnit === 'YEAR') {
+      const plan = dto.paymentPlan ?? 'MONTHLY';
+      if (plan === 'FULL') {
+        return [
+          {
+            label: 'paket lunas di awal',
+            dueOffsetMonths: 0,
+            packageId: pkg.id,
+            items: [item(price)],
+          },
+        ] as Plan[];
+      }
+      const count =
+        plan === 'TWO_TIMES'
+          ? 2
+          : level.monthlyCount && level.monthlyCount > 0
+            ? level.monthlyCount
+            : 10;
+      return split(count).map((a, i) => ({
+        label: `angsuran ${i + 1} dari ${count}`,
+        dueOffsetMonths: i,
+        packageId: pkg.id,
+        items: [item(a)],
+      })) as Plan[];
+    }
+    // Privat (per-sesi) / extra (per-bulan): paket = total tetap 1 invoice;
+    // untuk sesi, jumlah pertemuan ikut paket bila tidak diisi manual.
+    const qty =
+      level.priceUnit === 'SESSION'
+        ? (dto.sessionCount ?? pkg.totalSessions ?? 1)
+        : 1;
+    return [
+      {
+        label: `paket ${pkg.name}`,
+        dueOffsetMonths: 0,
+        packageId: pkg.id,
+        items: [item(price, qty)],
       },
     ] as Plan[];
   }
@@ -1292,9 +1400,9 @@ export class EnrollmentsService {
       },
     });
     if (!e) throw new NotFoundException('Pendaftaran tidak ditemukan.');
-    if (['PAID', 'ACCEPTED', 'PLACED'].includes(e.status)) {
+    if (['ACCEPTED', 'PLACED'].includes(e.status)) {
       throw new BadRequestException(
-        'Pendaftaran sudah diproses — tidak bisa dihapus. Batalkan lewat alur keuangan/refund.',
+        'Pendaftaran sudah ditempatkan — tidak bisa dihapus.',
       );
     }
     const invoiceIds = [
@@ -1310,40 +1418,50 @@ export class EnrollmentsService {
       });
       if (paid > 0) {
         throw new BadRequestException(
-          'Ada tagihan yang sudah dibayar — tidak bisa dihapus. Gunakan alur refund.',
+          'Ada tagihan yang sudah dibayar — refund dulu lewat tombol refund di halaman Invoice, baru program bisa dihapus.',
         );
       }
     }
     await this.prisma.$transaction(async (tx) => {
       if (invoiceIds.length) {
-        const refunds = await tx.refund.count({
+        // Invoice yang pernah di-refund dipertahankan sebagai jejak
+        // keuangan (FK Refund = Restrict) — cukup dilepas dari pendaftaran
+        // ini, bukan dihapus.
+        const refunded = await tx.refund.findMany({
           where: { invoiceId: { in: invoiceIds } },
+          select: { invoiceId: true },
         });
-        if (refunds > 0) {
-          throw new BadRequestException(
-            'Ada catatan refund pada tagihannya — tidak bisa dihapus.',
-          );
+        const refundedIds = new Set(refunded.map((r) => r.invoiceId));
+        const keepIds = invoiceIds.filter((id) => refundedIds.has(id));
+        const delIds = invoiceIds.filter((id) => !refundedIds.has(id));
+        if (keepIds.length) {
+          await tx.invoice.updateMany({
+            where: { id: { in: keepIds } },
+            data: { enrollmentId: null },
+          });
         }
-        await tx.paymentAllocation.deleteMany({
-          where: { invoiceId: { in: invoiceIds } },
-        });
-        await tx.payment.deleteMany({
-          where: {
-            invoiceId: { in: invoiceIds },
-            status: { not: 'VERIFIED' },
-            allocations: { none: {} },
-            receipts: { none: {} },
-            ledgerEntries: { none: {} },
-          },
-        });
-        await tx.payment.updateMany({
-          where: { invoiceId: { in: invoiceIds } },
-          data: { invoiceId: null },
-        });
-        await tx.invoiceItem.deleteMany({
-          where: { invoiceId: { in: invoiceIds } },
-        });
-        await tx.invoice.deleteMany({ where: { id: { in: invoiceIds } } });
+        if (delIds.length) {
+          await tx.paymentAllocation.deleteMany({
+            where: { invoiceId: { in: delIds } },
+          });
+          await tx.payment.deleteMany({
+            where: {
+              invoiceId: { in: delIds },
+              status: { not: 'VERIFIED' },
+              allocations: { none: {} },
+              receipts: { none: {} },
+              ledgerEntries: { none: {} },
+            },
+          });
+          await tx.payment.updateMany({
+            where: { invoiceId: { in: delIds } },
+            data: { invoiceId: null },
+          });
+          await tx.invoiceItem.deleteMany({
+            where: { invoiceId: { in: delIds } },
+          });
+          await tx.invoice.deleteMany({ where: { id: { in: delIds } } });
+        }
       }
       await tx.enrollment.delete({ where: { id } });
     });

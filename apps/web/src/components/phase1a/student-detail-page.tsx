@@ -69,11 +69,26 @@ interface PlanStudent {
   studentId: string;
   enrollments: PlanEnrollment[];
 }
+interface CatalogPackage {
+  id: string;
+  name: string;
+  totalSessions: number;
+  durationWeeks: number | null;
+  price: string | number | null;
+  isFeatured: boolean;
+}
+interface CatalogLevel {
+  id: string;
+  name: string;
+  priceUnit: string | null;
+  monthlyCount: number | null;
+  packages: CatalogPackage[];
+}
 interface CatalogProgram {
   id: string;
   name: string;
   category: string;
-  levels: { id: string; name: string }[];
+  levels: CatalogLevel[];
 }
 
 const ACTIVITY_BADGE: Record<ActivityItem['kind'], 'secondary' | 'warning' | 'outline'> = {
@@ -127,7 +142,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
   const [discountReason, setDiscountReason] = useState('');
   const [discountMonths, setDiscountMonths] = useState('');
   const [addProgramOpen, setAddProgramOpen] = useState(false);
-  const [addForm, setAddForm] = useState({ programId: '', levelId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', paidAmount: '', paidAt: '', discountAmount: '', discountMonths: '', discountReason: '' });
+  const [addForm, setAddForm] = useState({ programId: '', levelId: '', packageId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', paidAmount: '', paidAt: '', discountAmount: '', discountMonths: '', discountReason: '' });
   const [addMode, setAddMode] = useState<'baru' | 'migrasi'>('baru');
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkSearch, setLinkSearch] = useState('');
@@ -171,8 +186,34 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
     enabled: canManage,
   });
   const addProgramSel = programsQ.data?.find((x) => x.id === addForm.programId);
+  const addLevelSel = addProgramSel?.levels.find((l) => l.id === addForm.levelId);
+  const addPkgSel = addLevelSel?.packages.find((p) => p.id === addForm.packageId);
   const addProgramIsReguler = addProgramSel?.category === 'REGULER';
   const addProgramIsPrivat = addProgramSel?.category === 'PRIVAT';
+  // Estimasi tagihan — paket = harga tetap dibagi cara bayar; tanpa paket
+  // estimasi hanya ditampilkan bila harga paket terpilih (tarif jenjang
+  // dihitung server-side dan bisa lebih kompleks).
+  const addPkgPrice = addPkgSel?.price ? Number(addPkgSel.price) : 0;
+  const addDisc = Math.max(0, Number(addForm.discountAmount) || 0);
+  const addInstCount =
+    !addProgramIsReguler || addForm.paymentPlan === 'FULL'
+      ? 1
+      : addForm.paymentPlan === 'TWO_TIMES'
+        ? 2
+        : (addLevelSel?.monthlyCount ?? 10);
+  const addDiscMonths =
+    addDisc > 0
+      ? addForm.discountMonths
+        ? Math.min(Number(addForm.discountMonths), addInstCount)
+        : addInstCount
+      : 0;
+  const addEstTotal = addPkgSel
+    ? Math.max(0, addPkgPrice - addDisc * addDiscMonths)
+    : null;
+  const addEstPaid =
+    addMode === 'migrasi' && addForm.paidAmount
+      ? Math.min(Number(addForm.paidAmount), addEstTotal ?? Infinity)
+      : 0;
   const addProgramM = useMutation({
     mutationFn: () =>
       apiFetch(`/enrollments`, {
@@ -181,14 +222,15 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
           studentId,
           programId: addForm.programId,
           levelId: addForm.levelId,
+          packageId: addForm.packageId || undefined,
           paymentPlan: addProgramIsReguler ? addForm.paymentPlan : undefined,
           studentCount: addProgramIsPrivat ? Number(addForm.studentCount) : undefined,
           sessionCount: addProgramIsPrivat ? Number(addForm.sessionCount) : undefined,
           paidAmount: addMode === 'migrasi' && addForm.paidAmount ? Number(addForm.paidAmount) : undefined,
           paidAt: addMode === 'migrasi' && addForm.paidAt ? addForm.paidAt : undefined,
-          discountAmount: addMode === 'migrasi' && addForm.discountAmount ? Number(addForm.discountAmount) : undefined,
-          discountMonths: addMode === 'migrasi' && addForm.discountMonths ? Number(addForm.discountMonths) : undefined,
-          discountReason: addMode === 'migrasi' && addForm.discountReason.trim() ? addForm.discountReason.trim() : undefined,
+          discountAmount: addForm.discountAmount ? Number(addForm.discountAmount) : undefined,
+          discountMonths: addForm.discountMonths ? Number(addForm.discountMonths) : undefined,
+          discountReason: addForm.discountReason.trim() ? addForm.discountReason.trim() : undefined,
         },
       }),
     onSuccess: (created) => {
@@ -196,7 +238,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
       toast.success(sum ? `Program ditambahkan — ${sum}.` : 'Program ditambahkan — jadwal angsuran sudah dibuat.');
       setAddProgramOpen(false);
       setAddMode('baru');
-      setAddForm({ programId: '', levelId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', paidAmount: '', paidAt: '', discountAmount: '', discountMonths: '', discountReason: '' });
+      setAddForm({ programId: '', levelId: '', packageId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', paidAmount: '', paidAt: '', discountAmount: '', discountMonths: '', discountReason: '' });
       qc.invalidateQueries({ queryKey: ['students', studentId] });
       qc.invalidateQueries({ queryKey: ['enrollments'] });
       qc.invalidateQueries({ queryKey: ['invoices'] });
@@ -723,7 +765,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
               id="ap-program"
               label="Program *"
               value={addForm.programId}
-              onChange={(v) => setAddForm({ ...addForm, programId: v, levelId: '' })}
+              onChange={(v) => setAddForm({ ...addForm, programId: v, levelId: '', packageId: '' })}
               options={(programsQ.data ?? []).map((x) => ({
                 value: x.id,
                 label: `${x.name} (${x.category})`,
@@ -734,13 +776,26 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
               id="ap-level"
               label="Jenjang *"
               value={addForm.levelId}
-              onChange={(v) => setAddForm({ ...addForm, levelId: v })}
+              onChange={(v) => setAddForm({ ...addForm, levelId: v, packageId: '' })}
               options={(addProgramSel?.levels ?? []).map((l) => ({
                 value: l.id,
                 label: l.name,
               }))}
               placeholder="Pilih jenjang"
             />
+            {(addLevelSel?.packages ?? []).length > 0 ? (
+              <Phase1aSelectField
+                id="ap-package"
+                label="Paket (opsional — kosongkan = tarif jenjang)"
+                value={addForm.packageId}
+                onChange={(v) => setAddForm({ ...addForm, packageId: v })}
+                options={(addLevelSel?.packages ?? []).map((p) => ({
+                  value: p.id,
+                  label: `${p.name}${p.price != null ? ` · ${rp(p.price)}` : ' · harga belum diisi'}`,
+                }))}
+                placeholder="Pilih paket harga"
+              />
+            ) : null}
             {addProgramIsReguler ? (
               <Phase1aSelectField
                 id="ap-plan"
@@ -780,6 +835,59 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                 </div>
               </div>
             ) : null}
+            <div className="flex flex-col gap-2 rounded-md border p-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="ap-disc">Diskon per angsuran (opsional)</Label>
+                <CurrencyInput
+                  id="ap-disc"
+                  value={addForm.discountAmount}
+                  onChange={(v) => setAddForm({ ...addForm, discountAmount: v })}
+                  placeholder="0 = tanpa diskon"
+                />
+              </div>
+              {addForm.discountAmount && Number(addForm.discountAmount) > 0 ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="ap-discmonths">Berlaku N angsuran</Label>
+                    <Input
+                      id="ap-discmonths"
+                      type="number"
+                      min={1}
+                      placeholder="Kosong = sampai lunas"
+                      value={addForm.discountMonths}
+                      onChange={(e) => setAddForm({ ...addForm, discountMonths: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="ap-discreason">Alasan</Label>
+                    <Input
+                      id="ap-discreason"
+                      placeholder="cth: Beasiswa"
+                      value={addForm.discountReason}
+                      onChange={(e) => setAddForm({ ...addForm, discountReason: e.target.value })}
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            {addPkgSel ? (
+              <div className="flex flex-col gap-0.5 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+                <span>
+                  Paket <b>{addPkgSel.name}</b> — {rp(addPkgPrice)}
+                  {addPkgSel.totalSessions ? ` · ${addPkgSel.totalSessions} sesi` : ''}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {addInstCount > 1
+                    ? `${addInstCount} angsuran ≈ ${rp(Math.max(0, Math.round(addPkgPrice / addInstCount) - addDisc))}/angsuran`
+                    : 'Ditagihkan sekaligus'}
+                  {addDisc > 0 ? ` · diskon ${rp(addDisc)} × ${addDiscMonths} angsuran` : ''}
+                  {' → '}Total tagihan <b>{rp(addEstTotal)}</b>
+                  {addEstPaid > 0
+                    ? ` · sudah dibayar ${rp(addEstPaid)} → sisa ${rp(Math.max(0, (addEstTotal ?? 0) - addEstPaid))}`
+                    : ''}
+                </span>
+              </div>
+            ) : null}
             {addMode === 'migrasi' ? (
               <div className="flex flex-col gap-3 rounded-md border border-dashed border-brand-gold-300 bg-brand-gold-50/50 p-3">
                 <div className="flex flex-col gap-1.5">
@@ -810,41 +918,6 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                     kas masuk di bulan yang benar.
                   </p>
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="ap-disc">Diskon per angsuran (opsional)</Label>
-                  <CurrencyInput
-                    id="ap-disc"
-                    value={addForm.discountAmount}
-                    onChange={(v) => setAddForm({ ...addForm, discountAmount: v })}
-                    placeholder="0"
-                  />
-                </div>
-                {addForm.discountAmount && Number(addForm.discountAmount) > 0 ? (
-                  <>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="ap-discmonths">Berlaku N angsuran</Label>
-                        <Input
-                          id="ap-discmonths"
-                          type="number"
-                          min={1}
-                          placeholder="Kosong = sampai lunas"
-                          value={addForm.discountMonths}
-                          onChange={(e) => setAddForm({ ...addForm, discountMonths: e.target.value })}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="ap-discreason">Alasan</Label>
-                        <Input
-                          id="ap-discreason"
-                          placeholder="cth: Beasiswa"
-                          value={addForm.discountReason}
-                          onChange={(e) => setAddForm({ ...addForm, discountReason: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                  </>
-                ) : null}
               </div>
             ) : null}
           </div>

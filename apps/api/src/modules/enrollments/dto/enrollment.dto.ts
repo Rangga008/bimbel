@@ -277,4 +277,13 @@ export class CreateStaffEnrollmentDto {
   @IsOptional()
   @IsDateString({}, { message: 'paidAt harus tanggal valid (YYYY-MM-DD).' })
   paidAt?: string;
+
+  /**
+   * Paket harga terkonfigurasi pada jenjang terpilih — total tagihan diambil
+   * dari harga paket (bukan tarif jenjang), dibagi sesuai cara bayar.
+   * Wajib milik jenjang yang dipilih; harga paket harus sudah diisi.
+   */
+  @IsOptional()
+  @IsUUID('4', { message: 'packageId tidak valid.' })
+  packageId?: string;
 }

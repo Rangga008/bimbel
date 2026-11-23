@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Ban, BadgePercent, Eye, FileCheck2, FileText, Search, Trash2 } from 'lucide-react';
+import { Ban, BadgePercent, Eye, FileCheck2, FileText, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -91,6 +91,9 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
   const [discountTarget, setDiscountTarget] = useState<InvoiceListItem | null>(null);
   const [discountAmount, setDiscountAmount] = useState('');
   const [discountReason, setDiscountReason] = useState('');
+  const [refundTarget, setRefundTarget] = useState<InvoiceListItem | null>(null);
+  const [refundAmount, setRefundAmount] = useState('');
+  const [refundReason, setRefundReason] = useState('');
 
   const listQ = useQuery({
     queryKey: ['invoices', debouncedSearch, status, filterProgramId, filterLevelId],
@@ -219,6 +222,28 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
       qc.invalidateQueries({ queryKey: ['invoices'] });
     },
     onError: (e) => toast.error(err(e, 'Gagal membatalkan invoice.')),
+  });
+
+  const refundM = useMutation({
+    mutationFn: () =>
+      apiFetch(`/refunds`, {
+        method: 'POST',
+        body: {
+          invoiceId: refundTarget!.id,
+          amount: Number(refundAmount),
+          reason: refundReason.trim(),
+        },
+      }),
+    onSuccess: () => {
+      toast.success('Refund dicatat — kas keluar tercatat di Transaksi Harian.');
+      setRefundTarget(null);
+      setRefundAmount('');
+      setRefundReason('');
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+      qc.invalidateQueries({ queryKey: ['ar'] });
+      qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal mencatat refund.')),
   });
 
   const deleteM = useMutation({
@@ -392,11 +417,28 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
                           <BadgePercent className="size-4 text-brand-gold-600" />
                         </Button>
                       ) : null}
-                      {canManage && inv.status !== 'VOID' ? (
+                      {canManage && inv.status === 'ISSUED' && Number(inv.amountPaid) > 0 ? (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Refund ${inv.number}`}
+                          title="Refund — kembalikan uang yang sudah dibayar"
+                          onClick={() => {
+                            setRefundTarget(inv);
+                            setRefundAmount(String(Number(inv.totalAmount)));
+                            setRefundReason('');
+                          }}
+                          disabled={refundM.isPending}
+                        >
+                          <RotateCcw className="size-4 text-warning-600" />
+                        </Button>
+                      ) : null}
+                      {canManage && inv.status !== 'VOID' && Number(inv.amountPaid) === 0 ? (
                         <Button
                           variant="ghost"
                           size="icon-sm"
                           aria-label={`Batalkan ${inv.number}`}
+                          title="Batalkan (hanya bila belum ada pembayaran)"
                           onClick={() => setVoidTarget(inv)}
                           disabled={voidM.isPending}
                         >
@@ -696,6 +738,48 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={refundTarget !== null} onOpenChange={(o) => { if (!o) setRefundTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Refund — {refundTarget?.number}</DialogTitle>
+            <DialogDescription>
+              Kembalikan uang yang sudah dibayar. Nominal di atas sisa tagihan
+              dikembalikan tunai — tercatat kas keluar di Transaksi Harian.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); refundM.mutate(); }}>
+            {refundTarget ? (
+              <div className="flex flex-col gap-0.5 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                <span>Total tagihan: <b>{rupiah(refundTarget.totalAmount)}</b></span>
+                <span>Sudah dibayar: <b>{rupiah(refundTarget.amountPaid)}</b></span>
+                <span className="text-xs text-muted-foreground">
+                  Isi total tagihan untuk pembatalan penuh — semua yang dibayar
+                  dikembalikan dan sisa tagihan hangus.
+                </span>
+              </div>
+            ) : null}
+            <CurrencyInput
+              id="refund-amount"
+              label="Nominal refund"
+              required
+              value={refundAmount}
+              onChange={setRefundAmount}
+              placeholder="mis. 450.000"
+            />
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="refund-reason">Alasan *</Label>
+              <Input id="refund-reason" required maxLength={200} value={refundReason}
+                onChange={(e) => setRefundReason(e.target.value)} placeholder="mis. Siswa mengundurkan diri / salah input" />
+            </div>
+            <DialogFooter>
+              <Button type="submit" disabled={refundM.isPending || !(Number(refundAmount) > 0) || !refundReason.trim()}>
+                {refundM.isPending ? 'Menyimpan...' : 'Catat Refund'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDialog
         open={voidTarget !== null}
         onOpenChange={(o) => { if (!o) setVoidTarget(null); }}
@@ -713,7 +797,7 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
         open={deleteTarget !== null}
         onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
         title={`Hapus invoice ${deleteTarget?.number ?? ''} permanen?`}
-        description="Invoice beserta item dan pengajuan pembayaran yang belum terverifikasi ikut terhapus. Hanya bisa bila belum ada pembayaran masuk — kalau sudah ada, gunakan Batalkan."
+        description="Invoice beserta item dan pengajuan pembayaran yang belum terverifikasi ikut terhapus. Hanya bisa bila belum ada pembayaran masuk — kalau sudah ada, gunakan Refund dulu."
         confirmLabel="Ya, hapus permanen"
         pending={deleteM.isPending}
         onConfirm={() => {
