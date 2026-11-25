@@ -9,6 +9,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch, apiFetchBlob, ApiError } from '@/lib/api-client';
 import { rupiah } from '@/components/phase2a/invoices-manager';
 import { PrintReceiptButton } from '@/components/phase2b/receipt-print';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { Trash2 } from 'lucide-react';
 import type { PaymentListItem } from '@/lib/phase2b-types';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -133,6 +135,19 @@ async function openProof(paymentId: string) {
 /** Daftar pembayaran dalam tabel — padat untuk banyak baris; wrapper
  *  overflow-x-auto menjaga tetap bisa dipakai di layar sempit. */
 export function PaymentsTable({ items, canVerify, onVerify }: { items: PaymentListItem[]; canVerify: boolean; onVerify: (id: string) => void }) {
+  const qc = useQueryClient();
+  const [purgeTarget, setPurgeTarget] = useState<PaymentListItem | null>(null);
+  const purgeM = useMutation({
+    mutationFn: () => apiFetch(`/payments/${purgeTarget?.id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      toast.success('Pembayaran dihapus — kwitansi, mutasi kas & alokasi invoice dibalik seolah uang tidak pernah masuk.');
+      setPurgeTarget(null);
+      qc.invalidateQueries({ queryKey: ['payments'] });
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+      qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+    onError: (e) => toast.error(err2b(e, 'Gagal menghapus pembayaran.')),
+  });
   return (
     <div className="overflow-x-auto rounded-md border">
       <table className="w-full min-w-[920px] text-left text-sm">
@@ -200,7 +215,19 @@ export function PaymentsTable({ items, canVerify, onVerify }: { items: PaymentLi
                     {p.receipts?.[0] ? (
                       <PrintReceiptButton receiptId={p.receipts[0].id} detailBase="/receipts" />
                     ) : null}
-                    {!((canVerify && p.status === 'PENDING') || p.receipts?.[0]) ? (
+                    {canVerify && !p.providerRef ? (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Hapus pembayaran salah input"
+                        title="Hapus pembayaran salah input — kwitansi, mutasi kas & alokasi invoice dibalik seolah uang tidak pernah masuk"
+                        disabled={purgeM.isPending}
+                        onClick={() => setPurgeTarget(p)}
+                      >
+                        <Trash2 className="size-4 text-destructive" />
+                      </Button>
+                    ) : null}
+                    {!((canVerify && p.status === 'PENDING') || p.receipts?.[0] || (canVerify && !p.providerRef)) ? (
                       <span className="text-xs text-muted-foreground">—</span>
                     ) : null}
                   </div>
@@ -210,6 +237,15 @@ export function PaymentsTable({ items, canVerify, onVerify }: { items: PaymentLi
           })}
         </tbody>
       </table>
+      <ConfirmDialog
+        open={!!purgeTarget}
+        onOpenChange={(o) => !o && setPurgeTarget(null)}
+        title="Hapus pembayaran salah input?"
+        description={`Pembayaran ${rupiah(Number(purgeTarget?.amount ?? 0))} beserta kwitansi dan mutasi kasnya dihapus permanen, dan tagihan invoice-nya kembali terbuka — seolah uang tidak pernah masuk. Hanya untuk koreksi salah input; pembayaran gateway tidak bisa dihapus (pakai refund).`}
+        confirmLabel="Ya, hapus permanen"
+        pending={purgeM.isPending}
+        onConfirm={() => purgeM.mutate()}
+      />
     </div>
   );
 }

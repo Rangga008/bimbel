@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -168,6 +169,30 @@ export class PaymentsController {
       );
     }
     return updated;
+  }
+
+  /**
+   * Hapus pembayaran salah input (backfill migrasi dsb.) — membalik alokasi
+   * invoice + menghapus kwitansi & mutasi kasnya. Bukan untuk pembayaran
+   * gateway (ditolak di service).
+   */
+  @Delete('payments/:id')
+  @RequirePermissions(PERMISSION_CODES.PAYMENT_VERIFY)
+  async purge(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const result = await this.payments.purge(id);
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'PAYMENT_PURGED',
+      entity: 'Payment',
+      entityId: id,
+      newData: result as unknown as Record<string, unknown>,
+      ...ctx(req),
+    });
+    return result;
   }
 
   @Post('payments/gateway/initiate')

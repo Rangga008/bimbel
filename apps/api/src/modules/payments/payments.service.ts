@@ -1558,4 +1558,58 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         : null,
     };
   }
+
+  /**
+   * Hapus pembayaran salah input — membalik alokasinya (amountPaid invoice
+   * dikurangi kembali) lalu menghapus payment + kwitansi + mutasi ledger.
+   * Hasilnya seolah uang tidak pernah masuk. Hanya untuk koreksi salah
+   * input; pembayaran gateway (uang sungguhan lewat Midtrans dsb.) ditolak —
+   * pakai refund agar jejak uangnya tetap ada. Tercatat di audit log.
+   */
+  async purge(id: string) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id },
+      include: {
+        allocations: { select: { invoiceId: true, amount: true } },
+      },
+    });
+    if (!payment) throw new NotFoundException('Pembayaran tidak ditemukan.');
+    if (payment.providerRef) {
+      throw new BadRequestException(
+        'Pembayaran gateway tidak bisa dihapus — uangnya benar-benar bergerak di luar sistem. Gunakan refund.',
+      );
+    }
+    return this.prisma.$transaction(async (tx) => {
+      // Balik amountPaid tiap invoice yang dialokasi payment ini.
+      for (const al of payment.allocations) {
+        const inv = await tx.invoice.findUnique({
+          where: { id: al.invoiceId },
+          select: { amountPaid: true },
+        });
+        if (!inv) continue;
+        const restored = Math.max(
+          0,
+          Number(inv.amountPaid) - Number(al.amount),
+        );
+        await tx.invoice.update({
+          where: { id: al.invoiceId },
+          data: { amountPaid: new Prisma.Decimal(restored) },
+        });
+      }
+      const ledger = await tx.ledgerEntry.deleteMany({
+        where: {
+          OR: [{ paymentId: id }, { sourceType: 'PAYMENT', sourceId: id }],
+        },
+      });
+      await tx.receipt.deleteMany({ where: { paymentId: id } });
+      await tx.paymentAllocation.deleteMany({ where: { paymentId: id } });
+      await tx.payment.delete({ where: { id } });
+      return {
+        purged: true,
+        allocations: payment.allocations.length,
+        ledgerEntries: ledger.count,
+        amount: Number(payment.amount),
+      };
+    });
+  }
 }
