@@ -183,10 +183,16 @@ export class InvoicesService {
       orderBy: { createdAt: 'desc' },
       take: 500,
     });
-    const mapped = rows.map((inv) => ({
-      ...inv,
-      displayStatus: this.displayStatusOf(inv),
-    }));
+    const mapped = rows
+      // Cicilan yang tertutup diskon penuh (total Rp0) bukan tagihan —
+      // disaring dari daftar supaya tidak menambah noise. Barisnya tetap
+      // ada di DB (urutan cicilan billingPlan bergantung padanya) dan
+      // masih bisa dibuka lewat detail/id.
+      .filter((inv) => Number(inv.totalAmount) !== 0)
+      .map((inv) => ({
+        ...inv,
+        displayStatus: this.displayStatusOf(inv),
+      }));
     return derivedFilter
       ? mapped.filter((inv) => inv.displayStatus === derivedFilter)
       : mapped;
@@ -403,9 +409,24 @@ export class InvoicesService {
   async remove(id: string) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
-      select: { id: true, amountPaid: true, status: true },
+      select: {
+        id: true,
+        amountPaid: true,
+        status: true,
+        enrollmentId: true,
+        enrollment: { select: { id: true } },
+      },
     });
     if (!invoice) throw new NotFoundException('Invoice tidak ditemukan.');
+    // Invoice cicilan pendaftaran tidak boleh dihapus satuan — urutan
+    // cicilan billingPlan dihitung dari jumlah invoice, menghapus satu di
+    // tengah membuat cicilan berikutnya terbit ganda. Hapus lewat program
+    // di detail siswa (seluruh paket cicilan sekaligus).
+    if (invoice.enrollmentId || invoice.enrollment) {
+      throw new BadRequestException(
+        'Invoice ini bagian dari cicilan program — hapus lewat tombol hapus program di detail siswa, bukan satuan.',
+      );
+    }
     if (Number(invoice.amountPaid) > 0) {
       throw new BadRequestException(
         'Invoice sudah menerima pembayaran — tidak bisa dihapus. Gunakan void/refund.',

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, BadgePercent, ClipboardCheck, GraduationCap, Layers, Link2, MapPin, Pencil, Plus, School, Trash2, Users, Wallet } from 'lucide-react';
+import { ArrowLeft, BadgePercent, ClipboardCheck, RotateCcw, GraduationCap, Layers, Link2, MapPin, Pencil, Plus, School, Trash2, Users, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -142,7 +142,9 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
   const [discountReason, setDiscountReason] = useState('');
   const [discountMonths, setDiscountMonths] = useState('');
   const [addProgramOpen, setAddProgramOpen] = useState(false);
-  const [addForm, setAddForm] = useState({ programId: '', levelId: '', packageId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', paidAmount: '', paidAt: '', discountAmount: '', discountMonths: '', discountReason: '' });
+  const [addForm, setAddForm] = useState({ programId: '', levelId: '', packageId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', startDate: '', priceOverride: '', discountAmount: '', discountMonths: '', discountReason: '' });
+  // Nominal terbayar per angsuran (mode migrasi) — index 0 = angsuran ke-1.
+  const [addPaidRows, setAddPaidRows] = useState<string[]>([]);
   const [addMode, setAddMode] = useState<'baru' | 'migrasi'>('baru');
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkSearch, setLinkSearch] = useState('');
@@ -153,6 +155,9 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
   const [payDate, setPayDate] = useState('');
   const [payNote, setPayNote] = useState('');
   const [removeTarget, setRemoveTarget] = useState<StaffEnrollment | null>(null);
+  const [refundTarget, setRefundTarget] = useState<{ id: string; number: string; paid: number } | null>(null);
+  const [refundAmount, setRefundAmount] = useState('');
+  const [refundReason, setRefundReason] = useState('');
 
   const studentQ = useQuery({
     queryKey: ['students', studentId],
@@ -193,7 +198,12 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
   // Estimasi tagihan — paket = harga tetap dibagi cara bayar; tanpa paket
   // estimasi hanya ditampilkan bila harga paket terpilih (tarif jenjang
   // dihitung server-side dan bisa lebih kompleks).
-  const addPkgPrice = addPkgSel?.price ? Number(addPkgSel.price) : 0;
+  // Harga akhir efektif — override admin (kesepakatan) menang atas harga
+  // paket standar.
+  const addPkgStdPrice = addPkgSel?.price ? Number(addPkgSel.price) : 0;
+  const addPkgPrice = addForm.priceOverride
+    ? Number(addForm.priceOverride) || 0
+    : addPkgStdPrice;
   const addDisc = Math.max(0, Number(addForm.discountAmount) || 0);
   const addInstCount =
     !addProgramIsReguler || addForm.paymentPlan === 'FULL'
@@ -211,9 +221,29 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
     ? Math.max(0, addPkgPrice - addDisc * addDiscMonths)
     : null;
   const addEstPaid =
-    addMode === 'migrasi' && addForm.paidAmount
-      ? Math.min(Number(addForm.paidAmount), addEstTotal ?? Infinity)
+    addMode === 'migrasi'
+      ? Math.min(
+          addPaidRows.reduce((s, v) => s + (Number(v) || 0), 0),
+          addEstTotal ?? Infinity,
+        )
       : 0;
+  // Label bulan per angsuran — dijangkar ke tanggal mulai (default bulan
+  // ini) supaya admin mengisi nominal di bulan yang benar.
+  const MONTHS_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const instMonthLabel = (i: number) => {
+    const base = addForm.startDate
+      ? new Date(`${addForm.startDate}T00:00:00`)
+      : new Date();
+    const d = new Date(base.getFullYear(), base.getMonth() + i, 1);
+    return `${MONTHS_ID[d.getMonth()]} ${d.getFullYear()}`;
+  };
+  // Perkiraan tagihan per angsuran (≈ — pembulatan akhir dihitung server).
+  const instApprox = (i: number) =>
+    Math.max(
+      0,
+      Math.round(addPkgPrice / Math.max(1, addInstCount)) -
+        (i < addDiscMonths ? addDisc : 0),
+    );
   const addProgramM = useMutation({
     mutationFn: () =>
       apiFetch(`/enrollments`, {
@@ -226,8 +256,15 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
           paymentPlan: addProgramIsReguler ? addForm.paymentPlan : undefined,
           studentCount: addProgramIsPrivat ? Number(addForm.studentCount) : undefined,
           sessionCount: addProgramIsPrivat ? Number(addForm.sessionCount) : undefined,
-          paidAmount: addMode === 'migrasi' && addForm.paidAmount ? Number(addForm.paidAmount) : undefined,
-          paidAt: addMode === 'migrasi' && addForm.paidAt ? addForm.paidAt : undefined,
+          startDate: addForm.startDate || undefined,
+          priceOverride:
+            addPkgSel && addForm.priceOverride
+              ? Number(addForm.priceOverride)
+              : undefined,
+          paidSchedule:
+            addMode === 'migrasi' && addPaidRows.some((v) => Number(v) > 0)
+              ? Array.from({ length: addInstCount }, (_, i) => Number(addPaidRows[i]) || 0)
+              : undefined,
           discountAmount: addForm.discountAmount ? Number(addForm.discountAmount) : undefined,
           discountMonths: addForm.discountMonths ? Number(addForm.discountMonths) : undefined,
           discountReason: addForm.discountReason.trim() ? addForm.discountReason.trim() : undefined,
@@ -238,7 +275,8 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
       toast.success(sum ? `Program ditambahkan — ${sum}.` : 'Program ditambahkan — jadwal angsuran sudah dibuat.');
       setAddProgramOpen(false);
       setAddMode('baru');
-      setAddForm({ programId: '', levelId: '', packageId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', paidAmount: '', paidAt: '', discountAmount: '', discountMonths: '', discountReason: '' });
+      setAddPaidRows([]);
+      setAddForm({ programId: '', levelId: '', packageId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', startDate: '', priceOverride: '', discountAmount: '', discountMonths: '', discountReason: '' });
       qc.invalidateQueries({ queryKey: ['students', studentId] });
       qc.invalidateQueries({ queryKey: ['enrollments'] });
       qc.invalidateQueries({ queryKey: ['invoices'] });
@@ -352,6 +390,30 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
       qc.invalidateQueries({ queryKey: ['students'] });
     },
     onError: (e) => toast.error(err(e, 'Gagal menghapus program.')),
+  });
+
+  // Refund pembayaran invoice — uang keluar tercatat di kas + invoice
+  // terpotong otomatis. Prasyarat sebelum program bisa dihapus.
+  const refundM = useMutation({
+    mutationFn: () =>
+      apiFetch(`/refunds`, {
+        method: 'POST',
+        body: {
+          invoiceId: refundTarget?.id,
+          amount: Number(refundAmount),
+          reason: refundReason.trim(),
+        },
+      }),
+    onSuccess: () => {
+      toast.success('Refund tercatat — uang keluar masuk Transaksi Harian.');
+      setRefundTarget(null);
+      setRefundAmount('');
+      setRefundReason('');
+      qc.invalidateQueries({ queryKey: ['students', studentId] });
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+      qc.invalidateQueries({ queryKey: ['payment-plan'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal mencatat refund.')),
   });
 
   // "Hubungkan Akun" — untuk siswa yang mendaftar sendiri padahal data
@@ -694,6 +756,21 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                                   Bayar
                                 </Button>
                               ) : null}
+                              {canManage && paid > 0.009 && inv.status === 'ISSUED' ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 px-2 text-[11px] text-warning-600"
+                                  title="Kembalikan uang yang sudah dibayar — prasyarat hapus program"
+                                  onClick={() => {
+                                    setRefundTarget({ id: inv.id, number: inv.number, paid });
+                                    setRefundAmount(String(Math.round(paid)));
+                                    setRefundReason('');
+                                  }}
+                                >
+                                  <RotateCcw className="size-3" /> Refund
+                                </Button>
+                              ) : null}
                             </span>
                           </div>
                         );
@@ -788,13 +865,35 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                 id="ap-package"
                 label="Paket (opsional — kosongkan = tarif jenjang)"
                 value={addForm.packageId}
-                onChange={(v) => setAddForm({ ...addForm, packageId: v })}
+                onChange={(v) => {
+                  const pkg = addLevelSel?.packages.find((p) => p.id === v);
+                  setAddForm({
+                    ...addForm,
+                    packageId: v,
+                    priceOverride: pkg?.price != null ? String(Number(pkg.price)) : '',
+                  });
+                }}
                 options={(addLevelSel?.packages ?? []).map((p) => ({
                   value: p.id,
                   label: `${p.name}${p.price != null ? ` · ${rp(p.price)}` : ' · harga belum diisi'}`,
                 }))}
                 placeholder="Pilih paket harga"
               />
+            ) : null}
+            {addPkgSel ? (
+              <div className="flex flex-col gap-1.5">
+                <CurrencyInput
+                  id="ap-price"
+                  label="Harga akhir (bisa disesuaikan)"
+                  value={addForm.priceOverride}
+                  onChange={(v) => setAddForm({ ...addForm, priceOverride: v })}
+                  placeholder="Harga kesepakatan"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Otomatis terisi harga paket standar ({rp(addPkgStdPrice)}) —
+                  ubah bila ada kesepakatan/promo khusus untuk siswa ini.
+                </p>
+              </div>
             ) : null}
             {addProgramIsReguler ? (
               <Phase1aSelectField
@@ -891,32 +990,59 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
             {addMode === 'migrasi' ? (
               <div className="flex flex-col gap-3 rounded-md border border-dashed border-brand-gold-300 bg-brand-gold-50/50 p-3">
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="ap-paid">Total uang yang sudah dibayar</Label>
-                  <CurrencyInput
-                    id="ap-paid"
-                    value={addForm.paidAmount}
-                    onChange={(v) => setAddForm({ ...addForm, paidAmount: v })}
-                    placeholder="0 = belum bayar apa pun"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Sistem membagi otomatis ke angsuran berurutan — cth 2.700.000
-                    pada angsuran 800rb → angsuran 1–3 lunas + angsuran 4 terbayar
-                    300rb (payment terverifikasi + kwitansi + masuk kas).
-                  </p>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="ap-paidat">Tanggal uang diterima (opsional)</Label>
+                  <Label htmlFor="ap-start">Angsuran pertama mulai tanggal (wajib)</Label>
                   <Input
-                    id="ap-paidat"
+                    id="ap-start"
                     type="date"
                     max={new Date().toISOString().slice(0, 10)}
-                    value={addForm.paidAt}
-                    onChange={(e) => setAddForm({ ...addForm, paidAt: e.target.value })}
+                    value={addForm.startDate}
+                    onChange={(e) => setAddForm({ ...addForm, startDate: e.target.value })}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Kosongkan untuk hari ini — isi tanggal lama supaya catatan
-                    kas masuk di bulan yang benar.
+                    Kapan siswa <b>benar-benar mulai membayar</b> — cth anak
+                    yang bayar sejak Juli diisi tanggal Juli supaya cicilan
+                    ke-5 jatuh di November dan kas masuk tercatat di bulan
+                    yang benar.
                   </p>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Yang sudah dibayar per bulan</Label>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {Array.from({ length: addInstCount }, (_, i) => (
+                      <div key={i} className="flex flex-col gap-1">
+                        <Label htmlFor={`ap-row-${i}`} className="text-xs font-normal text-muted-foreground">
+                          Angsuran {i + 1} — {instMonthLabel(i)}
+                          {addPkgSel ? ` (tagihan ≈ ${rp(instApprox(i))})` : ''}
+                        </Label>
+                        <CurrencyInput
+                          id={`ap-row-${i}`}
+                          value={addPaidRows[i] ?? ''}
+                          onChange={(v) =>
+                            setAddPaidRows((rows) => {
+                              const next = [...rows];
+                              next[i] = v;
+                              return next;
+                            })
+                          }
+                          placeholder="0"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Isi nominal yang dibayar di tiap bulannya — bulan yang
+                    kosong berarti belum bayar dan tetap jadi tagihan. Setiap
+                    bulan yang terisi dibuatkan payment terverifikasi +
+                    kwitansi + masuk kas <b>di bulan itu juga</b>.
+                  </p>
+                  {addEstPaid > 0 ? (
+                    <p className="text-xs font-medium">
+                      Total terisi {rp(addEstPaid)}
+                      {addEstTotal != null
+                        ? ` dari ${rp(addEstTotal)} → sisa ${rp(Math.max(0, addEstTotal - addEstPaid))}`
+                        : ''}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             ) : null}
@@ -926,7 +1052,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
               Batal
             </Button>
             <Button
-              disabled={!addForm.programId || !addForm.levelId || addProgramM.isPending}
+              disabled={!addForm.programId || !addForm.levelId || (addMode === 'migrasi' && !addForm.startDate) || addProgramM.isPending}
               onClick={() => addProgramM.mutate()}
             >
               {addProgramM.isPending ? 'Menyimpan…' : 'Simpan'}
@@ -1104,6 +1230,58 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!refundTarget} onOpenChange={(o) => !o && setRefundTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Refund Pembayaran</DialogTitle>
+            <DialogDescription>
+              {refundTarget
+                ? `Invoice ${refundTarget.number} — sudah dibayar ${rp(refundTarget.paid)}. Refund mengurangi tagihan invoice & mencatat uang keluar di kas. Program baru bisa dihapus setelah semua tagihannya di-refund penuh.`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <CurrencyInput
+                id="refund-amount"
+                label="Nominal refund"
+                value={refundAmount}
+                onChange={setRefundAmount}
+                placeholder="0"
+              />
+              <p className="text-xs text-muted-foreground">
+                Terisi penuh = pembatalan total. Kurangi bila hanya sebagian
+                yang dikembalikan.
+              </p>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="refund-reason">Alasan (wajib)</Label>
+              <Input
+                id="refund-reason"
+                value={refundReason}
+                onChange={(e) => setRefundReason(e.target.value)}
+                placeholder="cth: siswa berhenti, salah input migrasi"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRefundTarget(null)}>Batal</Button>
+            <Button
+              disabled={
+                refundM.isPending ||
+                !refundTarget ||
+                Number(refundAmount) <= 0 ||
+                Number(refundAmount) - refundTarget.paid > 0.009 ||
+                !refundReason.trim()
+              }
+              onClick={() => refundM.mutate()}
+            >
+              {refundM.isPending ? 'Mencatat…' : `Refund ${rp(Number(refundAmount) || 0)}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={linkOpen} onOpenChange={(o) => { setLinkOpen(o); if (!o) { setLinkSearch(''); setLinkUserId(''); } }}>
         <DialogContent>
           <DialogHeader>
@@ -1184,7 +1362,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
         open={!!removeTarget}
         onOpenChange={(o) => !o && setRemoveTarget(null)}
         title={`Hapus program ${removeTarget?.program.name ?? ''} — ${removeTarget?.level.name ?? ''}?`}
-        description="Pendaftaran dan seluruh tagihannya yang belum dibayar ikut dihapus dari siswa ini. Ditolak bila program sudah diproses atau ada tagihan yang sudah dibayar."
+        description="Pendaftaran dan seluruh tagihannya yang belum dibayar ikut dihapus dari siswa ini. Tagihan yang sudah dibayar harus di-refund penuh dulu — pakai tombol Refund di tiap invoice."
         confirmLabel="Ya, hapus program"
         pending={removeEnrollM.isPending}
         onConfirm={() => removeEnrollM.mutate()}

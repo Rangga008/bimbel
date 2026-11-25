@@ -1,5 +1,7 @@
 import {
+  ArrayMaxSize,
   Equals,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsEmail,
@@ -286,4 +288,33 @@ export class CreateStaffEnrollmentDto {
   @IsOptional()
   @IsUUID('4', { message: 'packageId tidak valid.' })
   packageId?: string;
+
+  /** Harga akhir override (khusus mode paket) — kesepakatan/promo manual yang
+   *  berbeda dari harga paket standar. Kosongkan = ikut harga paket. */
+  @IsOptional()
+  @IsNumber({}, { message: 'priceOverride harus angka.' })
+  @Min(0, { message: 'priceOverride minimal 0.' })
+  priceOverride?: number;
+
+  /**
+   * Bulan mulai angsuran pertama (YYYY-MM-DD) — jangkar jatuh tempo semua
+   * cicilan. Penting untuk migrasi: siswa yang mulai bayar Juli diisi
+   * tanggal Juli supaya angsuran ke-5 jatuh di November, bukan 5 bulan
+   * setelah tanggal input. Kosong = bulan invoice diterbitkan.
+   */
+  @IsOptional()
+  @IsDateString({}, { message: 'startDate harus tanggal valid (YYYY-MM-DD).' })
+  startDate?: string;
+
+  /**
+   * Nominal yang SUDAH dibayar per angsuran (migrasi data lama) — indeks 0 =
+   * angsuran pertama. Lebih akurat daripada `paidAmount` untuk pembayaran
+   * yang tidak berurutan/parsial di beberapa bulan. Bila diisi, menang atas
+   * paidAmount/paidInstallments; tiap nilai di-clamp ke total angsurannya.
+   */
+  @IsOptional()
+  @IsArray({ message: 'paidSchedule harus array angka.' })
+  @ArrayMaxSize(120)
+  @IsNumber({}, { each: true, message: 'paidSchedule harus array angka.' })
+  paidSchedule?: number[];
 }

@@ -426,11 +426,21 @@ export class EnrollmentsService {
         `Siswa sudah terdaftar di ${program.name} — cek pendaftaran sebelumnya.`,
       );
     }
-    const plans = pkg
+    // Harga akhir override (mode paket) — kesepakatan/promo manual yang
+    // berbeda dari harga paket standar.
+    let pkgEff = pkg;
+    if (pkg && dto.priceOverride !== undefined && dto.priceOverride !== null) {
+      const overridePrice = Number(dto.priceOverride);
+      if (!Number.isFinite(overridePrice) || overridePrice < 0) {
+        throw new BadRequestException('Harga akhir tidak valid.');
+      }
+      pkgEff = { ...pkg, price: overridePrice };
+    }
+    const plans = pkgEff
       ? this.buildPackageSchedule(
           program,
           level,
-          pkg,
+          pkgEff,
           dto as unknown as CreateEnrollmentDto,
         )
       : this.buildInvoiceSchedule(
@@ -441,6 +451,24 @@ export class EnrollmentsService {
           basePrice,
         );
     const now = new Date();
+    // Jangkar jatuh tempo cicilan: startDate (bulan siswa benar-benar mulai —
+    // penting untuk migrasi: anak yang bayar sejak Juli diisi tanggal Juli
+    // supaya cicilan ke-5 jatuh November, bukan 5 bulan setelah tanggal
+    // input). Kosong → 7 jam setelah pendaftaran (perilaku lama).
+    let anchorMs: number | null = null;
+    if (dto.startDate) {
+      const anchor = new Date(dto.startDate);
+      if (Number.isNaN(anchor.getTime())) {
+        throw new BadRequestException('Tanggal startDate tidak valid.');
+      }
+      anchorMs = anchor.getTime();
+    }
+    const baseMs = anchorMs ?? now.getTime() + 7 * 86400000;
+    // dueStart ikut disimpan di tiap plan supaya cicilan terbit berikutnya
+    // (ensureDueInstallments) memakai jangkar yang sama.
+    for (const p of plans) {
+      (p as { dueStart?: string }).dueStart = new Date(baseMs).toISOString();
+    }
     // Migrasi: tanggal uang benar-benar diterima untuk angsuran yang
     // ditandai lunas — paidAt & ledger pakai tanggal ini (default hari ini).
     const backfillPaidAt = dto.paidAt ? new Date(dto.paidAt) : now;
@@ -472,11 +500,31 @@ export class EnrollmentsService {
       ),
     );
     const grandTotal = totals.reduce((s, t) => s + t, 0);
-    // Cakupan pembayaran per angsuran: paidAmount (nominal total →
-    // distribusikan berurutan, sisa jadi parsial) ATAU paidInstallments
-    // (N angsuran pertama lunas — kompat lama).
+    // Cakupan pembayaran per angsuran: paidSchedule (nominal per angsuran —
+    // paling akurat untuk migrasi) → paidAmount (total, distribusi berurutan)
+    // → paidInstallments (N angsuran pertama lunas — kompat lama).
     const covers: number[] = new Array(plans.length).fill(0);
-    if (dto.paidAmount !== undefined && dto.paidAmount !== null) {
+    if (dto.paidSchedule?.length) {
+      if (dto.paidSchedule.length > plans.length) {
+        throw new BadRequestException(
+          `paidSchedule lebih panjang dari jumlah angsuran (${plans.length}).`,
+        );
+      }
+      dto.paidSchedule.forEach((amt, i) => {
+        const n = Number(amt) || 0;
+        if (n < 0) {
+          throw new BadRequestException(
+            `Nominal angsuran ke-${i + 1} tidak boleh negatif.`,
+          );
+        }
+        if (n - totals[i] > 0.009) {
+          throw new BadRequestException(
+            `Nominal angsuran ke-${i + 1} melebihi tagihannya (${totals[i].toLocaleString('id-ID')}).`,
+          );
+        }
+        covers[i] = n;
+      });
+    } else if (dto.paidAmount !== undefined && dto.paidAmount !== null) {
       const paidAmt = Number(dto.paidAmount);
       if (!Number.isFinite(paidAmt) || paidAmt < 0) {
         throw new BadRequestException('paidAmount tidak valid.');
@@ -541,6 +589,7 @@ export class EnrollmentsService {
       const pay = async (
         inv: { id: string; number: string; totalAmount: Prisma.Decimal },
         amount: number,
+        paidAt: Date,
       ) => {
         const payment = await tx.payment.create({
           data: {
@@ -553,7 +602,7 @@ export class EnrollmentsService {
             status: 'VERIFIED',
             verifiedBy: actorId ?? null,
             verifiedAt: now,
-            paidAt: backfillPaidAt,
+            paidAt,
             createdBy: actorId ?? null,
             proofNote:
               'Pembayaran dicatat saat program ditambahkan (backfill).',
@@ -592,7 +641,7 @@ export class EnrollmentsService {
               sourceId: payment.id,
               paymentId: payment.id,
               description: `Pembayaran CASH invoice ${inv.number}`,
-              occurredAt: backfillPaidAt,
+              occurredAt: paidAt,
             },
           });
         }
@@ -602,7 +651,9 @@ export class EnrollmentsService {
         const items = itemsFor(idx);
         const total = totals[idx];
         const cover = covers[idx];
-        const due = new Date(enrollment.createdAt.getTime() + 7 * 86400000);
+        // Jatuh tempo dijangkar ke startDate (bulan mulai sebenarnya) bila
+        // diisi — bukan tanggal input migrasi — supaya urutan bulan benar.
+        const due = new Date(baseMs);
         due.setMonth(due.getMonth() + plan.dueOffsetMonths);
         const inv = await tx.invoice.create({
           data: {
@@ -620,7 +671,19 @@ export class EnrollmentsService {
             items: { create: items },
           },
         });
-        if (cover > 0.009) await pay(inv, cover);
+        if (cover > 0.009) {
+          // Tanggal uang diterima per angsuran: paidAt eksplisit (legacy)
+          // menang; defaultnya bulan jatuh tempo angsuran itu sendiri supaya
+          // kas masuk tercatat di bulan siswa benar-benar membayar — kasus
+          // migrasi "bayar sejak Juli" tercatat di Juli–November, bukan
+          // semuanya di tanggal input.
+          const pAt = dto.paidAt
+            ? backfillPaidAt
+            : due.getTime() < now.getTime()
+              ? due
+              : now;
+          await pay(inv, cover, pAt);
+        }
         return inv;
       };
       const first = await issue(0);
@@ -690,8 +753,13 @@ export class EnrollmentsService {
       await this.prisma.$transaction(async (tx) => {
         for (let i = issued; i < plans.length; i += 1) {
           const plan = plans[i];
-          // Replika rumus dueDate saat pendaftaran: createdAt+7h +offset bulan.
-          const due = new Date(e.createdAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+          // Replika rumus dueDate saat pendaftaran: jangkar dueStart (bulan
+          // mulai sebenarnya — migrasi) atau createdAt+7h untuk data lama,
+          // ditambah offset bulan cicilan.
+          const dueStartMs = (plan as { dueStart?: string }).dueStart
+            ? Date.parse((plan as { dueStart?: string }).dueStart!)
+            : e.createdAt.getTime() + 7 * 24 * 60 * 60 * 1000;
+          const due = new Date(dueStartMs);
           due.setMonth(due.getMonth() + plan.dueOffsetMonths);
           if (due.getTime() > Date.now()) break; // belum bulannya
           const items = [...plan.items];
