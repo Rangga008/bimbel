@@ -161,6 +161,31 @@ export class RefundsController {
     return created;
   }
 
+  /**
+   * Hapus jejak salah input: purge refund + seluruh rantai pembayaran invoice
+   * yang sudah ter-refund penuh (payment, kwitansi, mutasi ledger, invoice).
+   * Hanya untuk koreksi salah input — uang yang benar-benar masuk/keluar
+   * kas tidak boleh dihilangkan jejaknya, makanya diguard ketat di service.
+   */
+  @Delete('refunds/:id')
+  @RequirePermissions(PERMISSION_CODES.REFUND_MANAGE)
+  async purge(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const result = await this.refunds.purgeRefundChain(id);
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'REFUND_CHAIN_PURGED',
+      entity: 'Refund',
+      entityId: id,
+      newData: result as unknown as Record<string, unknown>,
+      ...ctx(req),
+    });
+    return result;
+  }
+
   @Get('ledger')
   @RequirePermissions(PERMISSION_CODES.LEDGER_VIEW)
   ledger(

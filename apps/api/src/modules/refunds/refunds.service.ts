@@ -455,4 +455,112 @@ export class RefundsService {
       }),
     };
   }
+
+  /**
+   * Hapus jejak salah input migrasi — purge SELURuh rantai keuangan invoice
+   * yang sudah ter-refund penuh: refund + payment + kwitansi + mutasi ledger
+   * + invoice-nya sekalian. Hasilnya seolah uang tidak pernah masuk.
+   *
+   * Guard ketat supaya tidak dipakai menghilangkan jejak uang sungguhan:
+   * 1. Invoice harus sudah lepas dari enrollment (program dihapus dulu) —
+   *    kalau masih tertaut, urutan cicilan billingPlan bisa rusak.
+   * 2. amountPaid harus 0 — semua uang yang tercatat sudah dikembalikan,
+   *    jadi tidak ada uang sungguhan di kas yang jejaknya hilang.
+   * 3. Payment yang teralokasi juga ke invoice lain ditolak — menghapusnya
+   *    akan merusak pembayaran invoice tersebut.
+   */
+  async purgeRefundChain(refundId: string) {
+    const refund = await this.prisma.refund.findUnique({
+      where: { id: refundId },
+      include: {
+        invoice: {
+          select: {
+            id: true,
+            number: true,
+            amountPaid: true,
+            enrollmentId: true,
+            enrollment: { select: { id: true } },
+          },
+        },
+      },
+    });
+    if (!refund) throw new NotFoundException('Refund tidak ditemukan.');
+    const inv = refund.invoice;
+    if (inv.enrollmentId || inv.enrollment) {
+      throw new BadRequestException(
+        'Invoice masih tertaut ke pendaftaran — hapus program dulu dari detail siswa, baru bersihkan jejaknya.',
+      );
+    }
+    if (Number(inv.amountPaid) > 0.009) {
+      throw new BadRequestException(
+        'Invoice masih punya uang tercatat (belum ter-refund penuh) — jejaknya tidak boleh dihapus.',
+      );
+    }
+    return this.prisma.$transaction(async (tx) => {
+      // Semua refund invoice ini + mutasi OUT-nya.
+      const refunds = await tx.refund.findMany({
+        where: { invoiceId: inv.id },
+        select: { id: true },
+      });
+      const refundIds = refunds.map((r) => r.id);
+      // Semua payment yang menunjuk invoice ini — langsung (invoiceId) atau
+      // lewat alokasi. Payment yang juga teralokasi ke invoice LAIN tidak
+      // boleh ikut terhapus.
+      const payments = await tx.payment.findMany({
+        where: {
+          OR: [
+            { invoiceId: inv.id },
+            { allocations: { some: { invoiceId: inv.id } } },
+          ],
+        },
+        select: {
+          id: true,
+          allocations: { select: { invoiceId: true } },
+        },
+      });
+      for (const p of payments) {
+        const others = p.allocations.filter((a) => a.invoiceId !== inv.id);
+        if (others.length > 0) {
+          throw new BadRequestException(
+            'Ada pembayaran yang juga teralokasi ke invoice lain — tidak bisa purge otomatis.',
+          );
+        }
+      }
+      const paymentIds = payments.map((p) => p.id);
+      const ledger = await tx.ledgerEntry.deleteMany({
+        where: {
+          OR: [
+            { refundId: { in: refundIds } },
+            { paymentId: { in: paymentIds } },
+            { sourceType: 'REFUND', sourceId: { in: refundIds } },
+            { sourceType: 'PAYMENT', sourceId: { in: paymentIds } },
+          ],
+        },
+      });
+      await tx.refund.deleteMany({ where: { id: { in: refundIds } } });
+      await tx.receipt.deleteMany({
+        where: { paymentId: { in: paymentIds } },
+      });
+      await tx.paymentAllocation.deleteMany({
+        where: {
+          OR: [
+            { paymentId: { in: paymentIds } },
+            { invoiceId: inv.id },
+          ],
+        },
+      });
+      const deletedPayments = await tx.payment.deleteMany({
+        where: { id: { in: paymentIds } },
+      });
+      await tx.invoiceItem.deleteMany({ where: { invoiceId: inv.id } });
+      await tx.invoice.delete({ where: { id: inv.id } });
+      return {
+        purged: true,
+        invoice: inv.number,
+        refunds: refundIds.length,
+        payments: deletedPayments.count,
+        ledgerEntries: ledger.count,
+      };
+    });
+  }
 }

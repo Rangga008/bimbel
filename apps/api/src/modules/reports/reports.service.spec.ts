@@ -16,6 +16,7 @@ function prismaMock(overrides: Record<string, unknown[] | undefined> = {}) {
   const findMany = (key: string) =>
     jest.fn().mockResolvedValue(overrides[key] ?? []);
   return {
+    appSetting: { findUnique: jest.fn().mockResolvedValue(null) },
     invoice: { findMany: findMany('invoice') },
     payment: { findMany: findMany('payment') },
     budget: { findMany: findMany('budget') },

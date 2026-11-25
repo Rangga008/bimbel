@@ -578,9 +578,37 @@ window.addEventListener('load', function () {
   private async buildInvoice(filters: ReportFilters): Promise<ReportDoc> {
     const where: Record<string, unknown> = {};
     const range = effectiveRange(filters);
-    if (range.gte || range.lt) where.createdAt = { gte: range.gte, lt: range.lt };
+    if (range.gte || range.lt) {
+      const r: Record<string, unknown> = {};
+      if (range.gte) r.gte = range.gte;
+      if (range.lt) r.lt = range.lt;
+      // Bulan tagihan = jatuh tempo (jangkar cicilan) — bukan tanggal input.
+      // Invoice migrasi yang jatuh tempo Juli masuk laporan Juli walau
+      // diinput belakangan. Fallback issuedAt lalu createdAt untuk invoice
+      // manual tanpa jatuh tempo.
+      where.AND = [
+        {
+          OR: [
+            { dueDate: r },
+            { dueDate: null, issuedAt: r },
+            { dueDate: null, issuedAt: null, createdAt: r },
+          ],
+        },
+      ];
+    }
     if (filters.studentId) where.studentId = filters.studentId;
-    if (filters.status) where.status = filters.status;
+    // PAID/OVERDUE adalah status turunan — invoice lunas tetap ISSUED di DB.
+    // Difilter setelah fetch (pola yang sama dengan daftar invoice).
+    let derivedStatus: string | null = null;
+    if (filters.status) {
+      const st = filters.status.toUpperCase();
+      if (['DRAFT', 'VOID'].includes(st)) {
+        where.status = st;
+      } else {
+        where.status = 'ISSUED';
+        derivedStatus = st;
+      }
+    }
     const invScope = invoiceScopeWhere(filters);
     if (invScope) Object.assign(where, invScope);
 
@@ -594,11 +622,24 @@ window.addEventListener('load', function () {
       take: 500,
     });
 
-    const HEADERS = ['No. Invoice', 'Siswa', 'Paket', 'Status', 'Total', 'Terbayar', 'Outstanding', 'Tgl Terbit'];
+    const HEADERS = ['No. Invoice', 'Siswa', 'Paket', 'Status', 'Total', 'Terbayar', 'Outstanding', 'Jatuh Tempo'];
+    // Status tampilan — turunan dari ISSUED (pola displayStatusOf di modul invoice).
+    const dispOf = (inv: { status: string; totalAmount: unknown; amountPaid: unknown; dueDate: Date | null }) => {
+      if (inv.status !== 'ISSUED') return inv.status;
+      const total = reportMoney(inv.totalAmount);
+      const paidAmt = reportMoney(inv.amountPaid);
+      if (total - paidAmt <= 0.009) return 'PAID';
+      if (inv.dueDate && inv.dueDate.getTime() < Date.now()) return 'OVERDUE';
+      return 'ISSUED';
+    };
+    const shown = invoices
+      // Cicilan tertutup diskon penuh (Rp0) bukan tagihan — noise di laporan.
+      .filter((inv) => reportMoney(inv.totalAmount) !== 0)
+      .filter((inv) => !derivedStatus || dispOf(inv) === derivedStatus);
     let billed = 0;
     let paid = 0;
     let outstanding = 0;
-    const rows = invoices.map((inv) => {
+    const rows = shown.map((inv) => {
       const total = reportMoney(inv.totalAmount);
       const amtPaid = reportMoney(inv.amountPaid);
       const out = Math.max(0, total - amtPaid);
@@ -609,19 +650,19 @@ window.addEventListener('load', function () {
         inv.number,
         inv.student.user.name,
         inv.package?.name ?? '-',
-        inv.status,
+        dispOf(inv),
         numCell(total),
         numCell(amtPaid),
         numCell(out),
-        fmtDateId(inv.issuedAt ?? inv.createdAt),
+        fmtDateId(inv.dueDate ?? inv.issuedAt ?? inv.createdAt),
       ];
     });
 
-    // Tabel terpisah per bulan terbit — lebih mudah dibaca saat laporan
-    // menjangkau beberapa bulan.
+    // Tabel terpisah per bulan tagihan (jatuh tempo) — konsisten dengan
+    // filter periode sehingga bulan laporan = bulan tagihan sesungguhnya.
     const sections = sectionsByMonth(
-      invoices,
-      (inv) => inv.issuedAt ?? inv.createdAt,
+      shown,
+      (inv) => inv.dueDate ?? inv.issuedAt ?? inv.createdAt,
       (inv) => {
         const total = reportMoney(inv.totalAmount);
         const amtPaid = reportMoney(inv.amountPaid);
@@ -629,11 +670,11 @@ window.addEventListener('load', function () {
           inv.number,
           inv.student.user.name,
           inv.package?.name ?? '-',
-          inv.status,
+          dispOf(inv),
           numCell(total),
           numCell(amtPaid),
           numCell(Math.max(0, total - amtPaid)),
-          fmtDateId(inv.issuedAt ?? inv.createdAt),
+          fmtDateId(inv.dueDate ?? inv.issuedAt ?? inv.createdAt),
         ];
       },
       { headers: HEADERS, order: 'asc' },
@@ -645,7 +686,7 @@ window.addEventListener('load', function () {
       HEADERS,
       rows,
       [
-        `Jumlah invoice: ${invoices.length}`,
+        `Jumlah invoice: ${shown.length}`,
         `Total ditagihkan: ${reportRupiah(billed)}`,
         `Total terbayar: ${reportRupiah(paid)}`,
         `Total outstanding: ${reportRupiah(outstanding)}`,
@@ -658,7 +699,20 @@ window.addEventListener('load', function () {
   private async buildPayment(filters: ReportFilters): Promise<ReportDoc> {
     const where: Record<string, unknown> = {};
     const range = effectiveRange(filters);
-    if (range.gte || range.lt) where.createdAt = { gte: range.gte, lt: range.lt };
+    if (range.gte || range.lt) {
+      const r: Record<string, unknown> = {};
+      if (range.gte) r.gte = range.gte;
+      if (range.lt) r.lt = range.lt;
+      // Bulan pembayaran = tanggal uang diterima (paidAt) — konsisten dengan
+      // ledger (occurredAt) & rekap kas. Backfill migrasi ber-paidAt lama
+      // masuk bulan yang benar, bukan bulan input. Fallback verifiedAt lalu
+      // createdAt untuk pengajuan yang belum dibayar.
+      where.OR = [
+        { paidAt: r },
+        { paidAt: null, verifiedAt: r },
+        { paidAt: null, verifiedAt: null, createdAt: r },
+      ];
+    }
     if (filters.channel) where.channel = filters.channel;
     if (filters.status) where.status = filters.status;
     const payScope = invoiceScopeWhere(filters);
@@ -1842,7 +1896,7 @@ window.addEventListener('load', function () {
           return x.cells;
         });
       return { title: monthLabelOf(mkey), headers: HEADERS, rows };
-    });
+    }).filter((sec) => sec.rows.length > 0); // bulan tanpa data tidak dirender
     const rows = sections.flatMap((s) => [[`— ${s.title} —`, ...Array(HEADERS.length - 1).fill('')], ...s.rows]);
 
     return this.baseDoc(
