@@ -31,6 +31,8 @@ export class PeopleService {
     search?: string;
     isActive?: string;
     levelId?: string;
+    groupId?: string;
+    packageId?: string;
   }) {
     const where: Record<string, unknown> = {
       // Akun yang dihapus (dianonimkan) tidak tampil di daftar.
@@ -57,6 +59,27 @@ export class PeopleService {
         { groupMembers: { some: { group: { levelId: query.levelId } } } },
       ];
     }
+    // Filter per kelompok — siswa yang jadi anggota kelompok itu.
+    if (query.groupId) {
+      where.groupMembers = { some: { groupId: query.groupId } };
+    }
+    // Filter per paket — dari pendaftaran ber-paket itu atau kelompok
+    // yang tertaut paket itu.
+    if (query.packageId) {
+      where.AND = [
+        ...((where.AND as unknown[]) ?? []),
+        {
+          OR: [
+            {
+              enrollments: {
+                some: { invoices: { some: { packageId: query.packageId } } },
+              },
+            },
+            { groupMembers: { some: { group: { packageId: query.packageId } } } },
+          ],
+        },
+      ];
+    }
     return this.prisma.student.findMany({
       where,
       include: {
@@ -74,7 +97,14 @@ export class PeopleService {
           },
         },
         enrollments: {
-          select: { level: { select: { id: true, name: true } } },
+          select: {
+            level: { select: { id: true, name: true } },
+            invoices: {
+              where: { packageId: { not: null } },
+              select: { package: { select: { id: true, name: true } } },
+              take: 1,
+            },
+          },
         },
       },
       orderBy: { createdAt: 'desc' },

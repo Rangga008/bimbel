@@ -40,8 +40,10 @@ export class StudentsController {
     @Query('search') search?: string,
     @Query('isActive') isActive?: string,
     @Query('levelId') levelId?: string,
+    @Query('groupId') groupId?: string,
+    @Query('packageId') packageId?: string,
   ) {
-    return this.people.listStudents({ search, isActive, levelId });
+    return this.people.listStudents({ search, isActive, levelId, groupId, packageId });
   }
 
   @Get('students/:id')

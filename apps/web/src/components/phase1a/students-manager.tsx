@@ -75,12 +75,43 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
   const th = 'px-3 py-2 text-left font-medium whitespace-nowrap';
   const td = 'px-3 py-2 align-top';
 
+  const [levelFilter, setLevelFilter] = useState('');
+  const [groupFilter, setGroupFilter] = useState('');
+  const [packageFilter, setPackageFilter] = useState('');
+
   const studentsQuery = useQuery({
-    queryKey: ['students', debouncedSearch],
+    queryKey: ['students', debouncedSearch, levelFilter, groupFilter, packageFilter],
+    queryFn: () => {
+      const p = new URLSearchParams();
+      if (debouncedSearch) p.set('search', debouncedSearch);
+      if (levelFilter) p.set('levelId', levelFilter);
+      if (groupFilter) p.set('groupId', groupFilter);
+      if (packageFilter) p.set('packageId', packageFilter);
+      const qs = p.toString();
+      return apiFetch<Array<StudentItem & { tempPassword?: string }>>(
+        `/students${qs ? `?${qs}` : ''}`,
+      );
+    },
+  });
+
+  // Opsi filter — jenjang, kelompok, paket.
+  const levelsQuery = useQuery({
+    queryKey: ['levels-filter'],
     queryFn: () =>
-      apiFetch<Array<StudentItem & { tempPassword?: string }>>(
-        `/students${debouncedSearch ? `?search=${encodeURIComponent(debouncedSearch)}` : ''}`,
-      ),
+      apiFetch<Array<{ id: string; name: string }>>('/levels'),
+    staleTime: 60_000,
+  });
+  const groupsFilterQuery = useQuery({
+    queryKey: ['groups-filter'],
+    queryFn: () =>
+      apiFetch<Array<{ id: string; name: string }>>('/groups'),
+    staleTime: 60_000,
+  });
+  const packagesQuery = useQuery({
+    queryKey: ['packages-filter'],
+    queryFn: () =>
+      apiFetch<Array<{ id: string; name: string; level?: { name: string } | null }>>('/packages'),
+    staleTime: 60_000,
   });
 
   const PAGE_SIZE = 12;
@@ -198,17 +229,85 @@ export function StudentsManager({ canManage, basePath }: { canManage: boolean; b
         </Card>
       ) : null}
 
-      <div className="relative max-w-md">
-        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Cari nama / email siswa..."
-          value={search}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full max-w-md">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Cari nama / email siswa..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setVisible(PAGE_SIZE);
+            }}
+            className="pl-9"
+          />
+        </div>
+        <select
+          value={levelFilter}
           onChange={(e) => {
-            setSearch(e.target.value);
+            setLevelFilter(e.target.value);
             setVisible(PAGE_SIZE);
           }}
-          className="pl-9"
-        />
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+        >
+          <option value="">Semua Jenjang</option>
+          {[...(levelsQuery.data ?? [])]
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+        </select>
+        <select
+          value={groupFilter}
+          onChange={(e) => {
+            setGroupFilter(e.target.value);
+            setVisible(PAGE_SIZE);
+          }}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+        >
+          <option value="">Semua Kelompok</option>
+          {[...(groupsFilterQuery.data ?? [])]
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+        </select>
+        <select
+          value={packageFilter}
+          onChange={(e) => {
+            setPackageFilter(e.target.value);
+            setVisible(PAGE_SIZE);
+          }}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+        >
+          <option value="">Semua Paket</option>
+          {[...(packagesQuery.data ?? [])]
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((pk) => (
+              <option key={pk.id} value={pk.id}>
+                {pk.name}
+                {pk.level ? ` — ${pk.level.name}` : ''}
+              </option>
+            ))}
+        </select>
+        {levelFilter || groupFilter || packageFilter ? (
+          <button
+            type="button"
+            onClick={() => {
+              setLevelFilter('');
+              setGroupFilter('');
+              setPackageFilter('');
+              setVisible(PAGE_SIZE);
+            }}
+            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Reset filter
+          </button>
+        ) : null}
       </div>
 
       {studentsQuery.isLoading ? <SkeletonCards /> : null}
