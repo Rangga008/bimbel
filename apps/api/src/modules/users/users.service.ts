@@ -243,6 +243,7 @@ export class UsersService {
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
         { email: { contains: query.search, mode: 'insensitive' } },
+        { phone: { contains: query.search, mode: 'insensitive' } },
       ];
     }
     if (query.role) {
