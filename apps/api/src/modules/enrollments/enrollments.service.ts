@@ -1006,7 +1006,30 @@ export class EnrollmentsService {
             : level.monthlyCount && level.monthlyCount > 0
               ? level.monthlyCount
               : 10;
-      return split(count).map((a, i) => ({
+      // Nominal kustom per angsuran (misal bulan 1 = 450rb, bulan 2 = 500rb)
+      // menggantikan pembagian rata — totalnya wajib sama dengan harga paket.
+      const custom = (dto as { installmentAmounts?: number[] }).installmentAmounts;
+      let amounts: number[];
+      if (custom && custom.length > 0) {
+        if (custom.length !== count) {
+          throw new BadRequestException(
+            `Jumlah nominal angsuran (${custom.length}) tidak cocok dengan jumlah angsuran (${count}).`,
+          );
+        }
+        const total = custom.reduce((acc, v) => acc + (Number(v) || 0), 0);
+        if (custom.some((v) => !Number.isFinite(Number(v)) || Number(v) < 0)) {
+          throw new BadRequestException('Nominal angsuran tidak valid.');
+        }
+        if (Math.round(total) !== Math.round(price)) {
+          throw new BadRequestException(
+            `Total nominal angsuran (Rp ${Math.round(total).toLocaleString('id-ID')}) harus sama dengan harga akhir paket (Rp ${Math.round(price).toLocaleString('id-ID')}).`,
+          );
+        }
+        amounts = custom.map((v) => Math.round(Number(v) * 100) / 100);
+      } else {
+        amounts = split(count);
+      }
+      return amounts.map((a, i) => ({
         label: `angsuran ${i + 1} dari ${count}`,
         dueOffsetMonths: i,
         packageId: pkg.id,
@@ -1493,10 +1516,20 @@ export class EnrollmentsService {
       },
     });
     if (!e) throw new NotFoundException('Pendaftaran tidak ditemukan.');
+    // Status ACCEPTED/PLACED hanya menghalangi bila penempatannya NYATA —
+    // pendaftaran yang statusnya terlanjur PLACED padahal tidak punya
+    // kelompok (misal anggota sudah dikeluarkan / data migrasi) tetap bisa
+    // dihapus setelah tagihannya di-refund penuh.
     if (['ACCEPTED', 'PLACED'].includes(e.status)) {
-      throw new BadRequestException(
-        'Pendaftaran sudah ditempatkan — tidak bisa dihapus.',
-      );
+      const membership = await this.prisma.groupMember.findFirst({
+        where: { studentId: e.studentId, groupId: e.groupId ?? '__none__' },
+        select: { id: true },
+      });
+      if (e.groupId && membership) {
+        throw new BadRequestException(
+          'Pendaftaran sudah ditempatkan ke kelompok — keluarkan siswa dari kelompok dulu, baru hapus program.',
+        );
+      }
     }
     const invoiceIds = [
       ...new Set(

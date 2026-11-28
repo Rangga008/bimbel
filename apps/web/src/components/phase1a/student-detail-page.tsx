@@ -145,6 +145,10 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
   const [addForm, setAddForm] = useState({ programId: '', levelId: '', packageId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', startDate: '', priceOverride: '', discountAmount: '', discountMonths: '', discountReason: '' });
   // Nominal terbayar per angsuran (mode migrasi) — index 0 = angsuran ke-1.
   const [addPaidRows, setAddPaidRows] = useState<string[]>([]);
+  // Tagihan kustom per angsuran — kosong = pembagian rata server. Bila satu
+  // baris diubah, seluruh jadwal dikirim sebagai installmentAmounts dan
+  // totalnya wajib sama dengan harga akhir (divalidasi server).
+  const [addBillRows, setAddBillRows] = useState<string[]>([]);
   const [addInstCountOverride, setAddInstCountOverride] = useState('');
   const [addDueMonths, setAddDueMonths] = useState<string[]>([]);
   const [addMode, setAddMode] = useState<'baru' | 'migrasi'>('baru');
@@ -257,6 +261,23 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
       Math.round(addPkgPrice / Math.max(1, addInstCount)) -
         (i < addDiscMonths ? addDisc : 0),
     );
+  // Tagihan per angsuran: kustom bila diisi, fallback pembagian rata.
+  const finalPrice = Number(addForm.priceOverride) || addPkgPrice;
+  // Default mengikuti pembagian server: floor per angsuran, sisa pembulatan
+  // di angsuran terakhir — supaya total default selalu pas harga akhir.
+  const billDefault = (i: number) => {
+    const n = Math.max(1, addInstCount);
+    const each = Math.floor((finalPrice * 100) / n) / 100;
+    return i === n - 1 ? Math.round((finalPrice - each * (n - 1)) * 100) / 100 : each;
+  };
+  const billOf = (i: number) =>
+    addBillRows[i] !== undefined && addBillRows[i] !== ''
+      ? Number(addBillRows[i]) || 0
+      : billDefault(i);
+  const billsCustomized = addBillRows.some((v) => v !== undefined && v !== '');
+  const billTotal = Array.from({ length: addInstCount }, (_, i) => billOf(i)).reduce((a, b) => a + b, 0);
+  const billMismatch = billsCustomized && Math.round(billTotal) !== Math.round(finalPrice);
+
   const addProgramM = useMutation({
     mutationFn: () =>
       apiFetch(`/enrollments`, {
@@ -282,6 +303,10 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
             addPkgSel && addForm.priceOverride
               ? Number(addForm.priceOverride)
               : undefined,
+          installmentAmounts:
+            addPkgSel && billsCustomized
+              ? Array.from({ length: addInstCount }, (_, i) => billOf(i))
+              : undefined,
           paidSchedule:
             addMode === 'migrasi' && addPaidRows.some((v) => Number(v) > 0)
               ? Array.from({ length: addInstCount }, (_, i) => Number(addPaidRows[i]) || 0)
@@ -297,6 +322,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
       setAddProgramOpen(false);
       setAddMode('baru');
       setAddPaidRows([]);
+      setAddBillRows([]);
       setAddInstCountOverride('');
       setAddDueMonths([]);
       setAddForm({ programId: '', levelId: '', packageId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', startDate: '', priceOverride: '', discountAmount: '', discountMonths: '', discountReason: '' });
@@ -1100,6 +1126,23 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                             }
                           />
                         </span>
+                        {addPkgSel ? (
+                          <span className="flex items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground">Tagihan</span>
+                            <CurrencyInput
+                              aria-label={`Tagihan angsuran ${i + 1}`}
+                              className="h-6 text-[11px]"
+                              value={addBillRows[i] ?? String(billDefault(i))}
+                              onChange={(v) =>
+                                setAddBillRows((rows) => {
+                                  const next = [...rows];
+                                  next[i] = v;
+                                  return next;
+                                })
+                              }
+                            />
+                          </span>
+                        ) : null}
                         <CurrencyInput
                           id={`ap-row-${i}`}
                           value={addPaidRows[i] ?? ''}
@@ -1121,6 +1164,12 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                     bulan yang terisi dibuatkan payment terverifikasi +
                     kwitansi + masuk kas <b>di bulan itu juga</b>.
                   </p>
+                  {billsCustomized ? (
+                    <p className={`text-xs font-medium ${billMismatch ? 'text-destructive' : ''}`}>
+                      Total tagihan angsuran {rp(billTotal)} dari harga akhir {rp(finalPrice)}
+                      {billMismatch ? ' — harus sama persis!' : ' — cocok.'}
+                    </p>
+                  ) : null}
                   {addEstPaid > 0 ? (
                     <p className="text-xs font-medium">
                       Total terisi {rp(addEstPaid)}

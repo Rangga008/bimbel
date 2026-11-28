@@ -331,6 +331,15 @@ export class CreateStaffEnrollmentDto {
   @IsString({ each: true })
   dueMonths?: string[];
 
+  /** Nominal tagihan per angsuran (index 0 = angsuran 1) — menggantikan
+   *  pembagian rata harga paket. Jumlah totalnya harus sama dengan harga
+   *  akhir paket; diskon tetap memotong di atas nominal ini. */
+  @IsOptional()
+  @IsArray({ message: 'installmentAmounts harus array angka.' })
+  @ArrayMaxSize(36)
+  @IsNumber({}, { each: true, message: 'installmentAmounts harus array angka.' })
+  installmentAmounts?: number[];
+
   @IsArray({ message: 'paidSchedule harus array angka.' })
   @ArrayMaxSize(120)
   @IsNumber({}, { each: true, message: 'paidSchedule harus array angka.' })
