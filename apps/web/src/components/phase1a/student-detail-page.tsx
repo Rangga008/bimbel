@@ -149,6 +149,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
   // baris diubah, seluruh jadwal dikirim sebagai installmentAmounts dan
   // totalnya wajib sama dengan harga akhir (divalidasi server).
   const [addBillRows, setAddBillRows] = useState<string[]>([]);
+  const [addBillEdit, setAddBillEdit] = useState(false);
   const [addInstCountOverride, setAddInstCountOverride] = useState('');
   const [addDueMonths, setAddDueMonths] = useState<string[]>([]);
   const [addMode, setAddMode] = useState<'baru' | 'migrasi'>('baru');
@@ -274,7 +275,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
     addBillRows[i] !== undefined && addBillRows[i] !== ''
       ? Number(addBillRows[i]) || 0
       : billDefault(i);
-  const billsCustomized = addBillRows.some((v) => v !== undefined && v !== '');
+  const billsCustomized = addBillEdit && addBillRows.some((v) => v !== undefined && v !== '');
   const billTotal = Array.from({ length: addInstCount }, (_, i) => billOf(i)).reduce((a, b) => a + b, 0);
   const billMismatch = billsCustomized && Math.round(billTotal) !== Math.round(finalPrice);
 
@@ -323,6 +324,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
       setAddMode('baru');
       setAddPaidRows([]);
       setAddBillRows([]);
+      setAddBillEdit(false);
       setAddInstCountOverride('');
       setAddDueMonths([]);
       setAddForm({ programId: '', levelId: '', packageId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', startDate: '', priceOverride: '', discountAmount: '', discountMonths: '', discountReason: '' });
@@ -1067,22 +1069,30 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                 </span>
               </div>
             ) : null}
-            {addMode === 'migrasi' ? (
+            {addMode === 'migrasi' || (addProgramIsReguler && addForm.paymentPlan === 'MONTHLY') ? (
               <div className="flex flex-col gap-3 rounded-md border border-dashed border-brand-gold-300 bg-brand-gold-50/50 p-3">
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="ap-start">Angsuran pertama mulai tanggal (wajib)</Label>
+                  <Label htmlFor="ap-start">
+                    Angsuran pertama mulai tanggal{addMode === 'migrasi' ? ' (wajib)' : ' (opsional)'}
+                  </Label>
                   <Input
                     id="ap-start"
                     type="date"
-                    max={new Date().toISOString().slice(0, 10)}
+                    max={addMode === 'migrasi' ? new Date().toISOString().slice(0, 10) : undefined}
                     value={addForm.startDate}
                     onChange={(e) => setAddForm({ ...addForm, startDate: e.target.value })}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Kapan siswa <b>benar-benar mulai membayar</b> — cth anak
-                    yang bayar sejak Juli diisi tanggal Juli supaya cicilan
-                    ke-5 jatuh di November dan kas masuk tercatat di bulan
-                    yang benar.
+                    {addMode === 'migrasi' ? (
+                      <>
+                        Kapan siswa <b>benar-benar mulai membayar</b> — cth anak
+                        yang bayar sejak Juli diisi tanggal Juli supaya cicilan
+                        ke-5 jatuh di November dan kas masuk tercatat di bulan
+                        yang benar.
+                      </>
+                    ) : (
+                      <>Kosong = 7 hari setelah pendaftaran. Isi untuk mengatur bulan jatuh tempo cicilan pertama.</>
+                    )}
                   </p>
                 </div>
                 {addProgramIsReguler && addForm.paymentPlan === 'MONTHLY' ? (
@@ -1102,8 +1112,23 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                     </p>
                   </div>
                 ) : null}
+                {addPkgSel ? (
+                  <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      className="size-3.5"
+                      checked={addBillEdit}
+                      onChange={(e) => {
+                        setAddBillEdit(e.target.checked);
+                        if (!e.target.checked) setAddBillRows([]);
+                      }}
+                    />
+                    Atur nominal tagihan &amp; bulan per angsuran
+                  </label>
+                ) : null}
+                {addMode === 'migrasi' || addBillEdit ? (
                 <div className="flex flex-col gap-2">
-                  <Label>Yang sudah dibayar per bulan</Label>
+                  {addMode === 'migrasi' ? <Label>Yang sudah dibayar per bulan</Label> : null}
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {Array.from({ length: addInstCount }, (_, i) => (
                       <div key={i} className="flex flex-col gap-1">
@@ -1126,13 +1151,13 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                             }
                           />
                         </span>
-                        {addPkgSel ? (
+                        {addPkgSel && addBillEdit ? (
                           <span className="flex items-center gap-1">
                             <span className="text-[10px] text-muted-foreground">Tagihan</span>
                             <CurrencyInput
                               aria-label={`Tagihan angsuran ${i + 1}`}
                               className="h-6 text-[11px]"
-                              value={addBillRows[i] ?? String(billDefault(i))}
+                              value={addBillRows[i] ?? String(Math.round(billDefault(i)))}
                               onChange={(v) =>
                                 setAddBillRows((rows) => {
                                   const next = [...rows];
@@ -1143,6 +1168,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                             />
                           </span>
                         ) : null}
+                        {addMode === 'migrasi' ? (
                         <CurrencyInput
                           id={`ap-row-${i}`}
                           value={addPaidRows[i] ?? ''}
@@ -1155,22 +1181,25 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                           }
                           placeholder="0"
                         />
+                        ) : null}
                       </div>
                     ))}
                   </div>
+                  {addMode === 'migrasi' ? (
                   <p className="text-xs text-muted-foreground">
                     Isi nominal yang dibayar di tiap bulannya — bulan yang
                     kosong berarti belum bayar dan tetap jadi tagihan. Setiap
                     bulan yang terisi dibuatkan payment terverifikasi +
                     kwitansi + masuk kas <b>di bulan itu juga</b>.
                   </p>
+                  ) : null}
                   {billsCustomized ? (
                     <p className={`text-xs font-medium ${billMismatch ? 'text-destructive' : ''}`}>
                       Total tagihan angsuran {rp(billTotal)} dari harga akhir {rp(finalPrice)}
                       {billMismatch ? ' — harus sama persis!' : ' — cocok.'}
                     </p>
                   ) : null}
-                  {addEstPaid > 0 ? (
+                  {addMode === 'migrasi' && addEstPaid > 0 ? (
                     <p className="text-xs font-medium">
                       Total terisi {rp(addEstPaid)}
                       {addEstTotal != null
@@ -1179,6 +1208,7 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                     </p>
                   ) : null}
                 </div>
+                ) : null}
               </div>
             ) : null}
           </div>
