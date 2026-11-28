@@ -13,6 +13,15 @@ export function formatRupiah(value: string | number | null | undefined) {
 
 function sanitizeAmount(value: string, allowNegative: boolean) {
 	const negative = allowNegative && value.trimStart().startsWith("-");
+	// Nilai desimal (mis. amountPaid 0.33 dari data lama) dibulatkan ke rupiah
+	// bulat — tanpa guard ini titik desimal terbuang dan digitnya tergabung
+	// ("0.33" → "033" = Rp 33, salah skala total). Hanya pola desimal tunggal
+	// ("0.33"/"0,33") — angka berpemisah ribuan ("4.000.000") tetap digit-strip.
+	const trimmed = value.trim();
+	if (/^-?\d+[.,]\d{1,2}$/.test(trimmed)) {
+		const n = Math.round(Number(trimmed.replace(",", ".")));
+		return String(n);
+	}
 	const digits = value.replace(/\D/g, "");
 	return `${negative ? "-" : ""}${digits}`;
 }

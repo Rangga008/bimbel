@@ -976,14 +976,15 @@ export class EnrollmentsService {
     const item = (amount: number, quantity = 1): Item => ({
       description: `Paket ${pkg.name} — ${level.name} (${program.name})`,
       quantity,
-      unitPrice: Math.round((amount / quantity) * 100) / 100,
-      amount,
+      unitPrice: Math.round(amount / quantity),
+      amount: Math.round(amount),
     });
-    // Bagi rata harga paket ke N angsuran — sisa pembulatan di angsuran akhir.
+    // Bagi rata harga paket ke N angsuran — rupiah bulat (tidak ada sen),
+    // sisa pembulatan di angsuran akhir.
     const split = (n: number) => {
-      const each = Math.floor((price * 100) / n) / 100;
+      const each = Math.floor(price / n);
       return Array.from({ length: n }, (_, i) =>
-        i === n - 1 ? Math.round((price - each * (n - 1)) * 100) / 100 : each,
+        i === n - 1 ? price - each * (n - 1) : each,
       );
     };
     if (program.category === 'REGULER' || level.priceUnit === 'YEAR') {
@@ -1025,7 +1026,7 @@ export class EnrollmentsService {
             `Total nominal angsuran (Rp ${Math.round(total).toLocaleString('id-ID')}) harus sama dengan harga akhir paket (Rp ${Math.round(price).toLocaleString('id-ID')}).`,
           );
         }
-        amounts = custom.map((v) => Math.round(Number(v) * 100) / 100);
+        amounts = custom.map((v) => Math.round(Number(v)));
       } else {
         amounts = split(count);
       }
