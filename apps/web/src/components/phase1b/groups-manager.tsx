@@ -1,6 +1,7 @@
 "use client";
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
+import { ListPager } from '@/components/shared/list-pager';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronRight, Plus, Search, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +16,8 @@ import type { GroupListItem } from '@/lib/phase1b-types';
 
 export function GroupsManager({ canManage, basePath }: { canManage: boolean; basePath: string }) {
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
   const [programFilter, setProgramFilter] = useState('');
   const [levelFilter, setLevelFilter] = useState('');
   const debouncedSearch = useDebouncedValue(search);
@@ -105,7 +108,7 @@ export function GroupsManager({ canManage, basePath }: { canManage: boolean; bas
               </tr>
             </thead>
             <tbody>
-              {groups.map((g) => (
+              {groups.slice(page * pageSize, (page + 1) * pageSize).map((g) => (
                 <tr key={g.id} className="border-b last:border-0">
                   <td className={`${td} font-medium whitespace-nowrap`}>
                     {g.name}
@@ -130,6 +133,15 @@ export function GroupsManager({ canManage, basePath }: { canManage: boolean; bas
           </table>
         </div>
       ) : null}
+      <ListPager
+        page={page}
+        pageCount={Math.ceil(groups.length / pageSize)}
+        total={groups.length}
+        shown={pageSize}
+        onPageChange={setPage}
+        pageSize={pageSize}
+        onPageSizeChange={(sz) => { setPageSize(sz); setPage(0); }}
+      />
     </div>
   );
 }

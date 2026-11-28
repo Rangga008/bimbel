@@ -43,9 +43,12 @@ const PLAN_STATE_LABEL: Record<string, string> = {
 import { Phase1aSelectField } from '@/components/phase1a/phase1a-form-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { PaymentsEmpty, PaymentsTable, VerifyDialog, err2b, usePaymentsList } from '@/components/phase2b/payment-shared';
+import { ListPager } from '@/components/shared/list-pager';
 
 /** Fase 2b — Halaman "Pembayaran" (Admin Finance): list + input cash + verifikasi. */
 export function PaymentsManager({ canVerify }: { canVerify: boolean }) {
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
   const qc = useQueryClient();
   const [status, setStatus] = useState('');
   const [channel, setChannel] = useState('');
@@ -185,8 +188,17 @@ export function PaymentsManager({ canVerify }: { canVerify: boolean }) {
       </div>
       <PaymentsEmpty isLoading={listQ.isLoading} isError={listQ.isError} count={listQ.data?.length} />
       {(listQ.data?.length ?? 0) > 0 ? (
-        <PaymentsTable items={listQ.data ?? []} canVerify={canVerify} onVerify={setVerifyId} />
+        <PaymentsTable items={(listQ.data ?? []).slice(page * pageSize, (page + 1) * pageSize)} canVerify={canVerify} onVerify={setVerifyId} />
       ) : null}
+      <ListPager
+        page={page}
+        pageCount={Math.ceil((listQ.data?.length ?? 0) / pageSize)}
+        total={listQ.data?.length ?? 0}
+        shown={pageSize}
+        onPageChange={setPage}
+        pageSize={pageSize}
+        onPageSizeChange={(sz) => { setPageSize(sz); setPage(0); }}
+      />
       <Dialog open={openCash} onOpenChange={setOpenCash}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>

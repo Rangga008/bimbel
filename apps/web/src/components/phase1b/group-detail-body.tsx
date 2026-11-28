@@ -1,5 +1,6 @@
 "use client";
 import { useState } from 'react';
+import { ListPager } from '@/components/shared/list-pager';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { UserPlus, UserRoundPlus } from 'lucide-react';
@@ -18,6 +19,9 @@ function err(e: unknown, fb: string) {
 export function GroupDetailBody({ groupId, canManage, onChanged }: { groupId: string; canManage: boolean; onChanged: () => void }) {
   const qc = useQueryClient();
   const [studentPickOpen, setStudentPickOpen] = useState(false);
+  const [memberSearch, setMemberSearch] = useState('');
+  const [memPage, setMemPage] = useState(0);
+  const [memPageSize, setMemPageSize] = useState(10);
   const [tutorPickOpen, setTutorPickOpen] = useState(false);
   const [delTarget, setDelTarget] = useState<{ kind: string; id: string; label: string } | null>(null);
   const detailQ = useQuery({
@@ -49,6 +53,11 @@ export function GroupDetailBody({ groupId, canManage, onChanged }: { groupId: st
   if (detailQ.isError || !detailQ.data) return <p className="text-sm text-destructive">Gagal memuat detail.</p>;
   const d = detailQ.data;
   const memberIds = new Set(d.members.map((m) => m.studentId));
+  const q = memberSearch.trim().toLowerCase();
+  const filteredMembers = q
+    ? d.members.filter((m) => (m.student?.user?.name ?? '').toLowerCase().includes(q))
+    : d.members;
+  const shownMembers = filteredMembers.slice(memPage * memPageSize, (memPage + 1) * memPageSize);
   const tutorIds = new Set(d.tutors.map((t) => t.tutorId));
   return (
     <div className="flex flex-col gap-4">
@@ -89,9 +98,18 @@ export function GroupDetailBody({ groupId, canManage, onChanged }: { groupId: st
         </div>
       ) : null}
       <div>
-        <h3 className="text-sm font-semibold">Siswa ({d.members.length})</h3>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">Siswa ({filteredMembers.length}{q ? ` dari ${d.members.length}` : ''})</h3>
+          <input
+            type="search"
+            placeholder="Cari siswa..."
+            value={memberSearch}
+            onChange={(e) => { setMemberSearch(e.target.value); setMemPage(0); }}
+            className="h-7 w-36 rounded-md border border-input bg-background px-2 text-xs"
+          />
+        </div>
         <div className="mt-2 flex flex-col gap-1.5">
-          {d.members.map((m) => (
+          {shownMembers.map((m) => (
             <div key={m.studentId} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
               <span className="flex min-w-0 items-center gap-2.5 truncate">
                 <UserAvatar name={m.student?.user?.name} avatarUrl={m.student?.user?.avatarUrl} className="size-7" />
@@ -103,6 +121,16 @@ export function GroupDetailBody({ groupId, canManage, onChanged }: { groupId: st
             </div>
           ))}
           {d.members.length === 0 ? <p className="text-xs text-muted-foreground">Belum ada siswa.</p> : null}
+          {d.members.length > 0 && filteredMembers.length === 0 ? <p className="text-xs text-muted-foreground">Tidak ada yang cocok dengan pencarian.</p> : null}
+          <ListPager
+            page={memPage}
+            pageCount={Math.ceil(filteredMembers.length / memPageSize)}
+            total={filteredMembers.length}
+            shown={memPageSize}
+            onPageChange={setMemPage}
+            pageSize={memPageSize}
+            onPageSizeChange={(sz) => { setMemPageSize(sz); setMemPage(0); }}
+          />
         </div>
         {canManage ? (
           <div className="mt-2">

@@ -1,3 +1,4 @@
+import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   Equals,
@@ -313,6 +314,23 @@ export class CreateStaffEnrollmentDto {
    * paidAmount/paidInstallments; tiap nilai di-clamp ke total angsurannya.
    */
   @IsOptional()
+  /** Override jumlah angsuran bulanan — misal paket dibagi 3/4 bulan saja. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'installmentCount harus bilangan bulat.' })
+  @Min(1)
+  @Max(36)
+  installmentCount?: number;
+
+  /** Bulan penagihan per angsuran (YYYY-MM) — index 0 = angsuran ke-1.
+   *  Meng override offset bulan berurutan dari startDate (misal angsuran 2
+   *  di bulan Januari karena siswa membayar sekaligus untuk 2 bulan). */
+  @IsOptional()
+  @IsArray({ message: 'dueMonths harus array string YYYY-MM.' })
+  @ArrayMaxSize(36)
+  @IsString({ each: true })
+  dueMonths?: string[];
+
   @IsArray({ message: 'paidSchedule harus array angka.' })
   @ArrayMaxSize(120)
   @IsNumber({}, { each: true, message: 'paidSchedule harus array angka.' })

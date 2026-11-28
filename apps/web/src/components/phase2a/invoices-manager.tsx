@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Ban, BadgePercent, Eye, FileCheck2, FileText, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { Ban, BadgePercent, CalendarClock, Eye, FileCheck2, FileText, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -92,6 +92,8 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
   const [discountAmount, setDiscountAmount] = useState('');
   const [discountReason, setDiscountReason] = useState('');
   const [refundTarget, setRefundTarget] = useState<InvoiceListItem | null>(null);
+  const [dueTarget, setDueTarget] = useState<InvoiceListItem | null>(null);
+  const [dueDateNew, setDueDateNew] = useState('');
   const [refundAmount, setRefundAmount] = useState('');
   const [refundReason, setRefundReason] = useState('');
 
@@ -244,6 +246,19 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
       qc.invalidateQueries({ queryKey: ['ledger'] });
     },
     onError: (e) => toast.error(err(e, 'Gagal mencatat refund.')),
+  });
+  const dueM = useMutation({
+    mutationFn: () =>
+      apiFetch(`/invoices/${dueTarget?.id}/due-date`, {
+        method: 'PATCH',
+        body: { dueDate: dueDateNew },
+      }),
+    onSuccess: () => {
+      toast.success('Bulan penagihan diubah.');
+      setDueTarget(null);
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal mengubah jatuh tempo.')),
   });
 
   const deleteM = useMutation({
@@ -431,6 +446,20 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
                           disabled={refundM.isPending}
                         >
                           <RotateCcw className="size-4 text-warning-600" />
+                        </Button>
+                      ) : null}
+                      {canManage && inv.status === 'ISSUED' ? (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Ubah jatuh tempo ${inv.number}`}
+                          title="Ubah bulan penagihan (jatuh tempo)"
+                          onClick={() => {
+                            setDueTarget(inv);
+                            setDueDateNew(inv.dueDate ? String(inv.dueDate).slice(0, 10) : '');
+                          }}
+                        >
+                          <CalendarClock className="size-4 text-primary" />
                         </Button>
                       ) : null}
                       {canManage && inv.status !== 'VOID' && Number(inv.amountPaid) === 0 ? (
@@ -777,6 +806,27 @@ export function InvoicesManager({ canManage }: { canManage: boolean }) {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+            <Dialog open={!!dueTarget} onOpenChange={(o) => !o && setDueTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ubah Bulan Penagihan</DialogTitle>
+            <DialogDescription>
+              {dueTarget ? `Invoice ${dueTarget.number} — jatuh tempo menentukan bulan tagihan di laporan & kapan cicilan ditagihkan.` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="due-new-inv">Jatuh tempo baru</Label>
+            <Input id="due-new-inv" type="date" value={dueDateNew} onChange={(e) => setDueDateNew(e.target.value)} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDueTarget(null)}>Batal</Button>
+            <Button disabled={dueM.isPending || !dueDateNew} onClick={() => dueM.mutate()}>
+              {dueM.isPending ? 'Menyimpan…' : 'Simpan'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

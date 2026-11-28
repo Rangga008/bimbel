@@ -469,6 +469,29 @@ export class EnrollmentsService {
     for (const p of plans) {
       (p as { dueStart?: string }).dueStart = new Date(baseMs).toISOString();
     }
+    // dueMonths: bulan penagihan eksplisit per angsuran (YYYY-MM) — meng
+    // override offset berurutan. Offset dihitung selisih bulan terhadap
+    // bulan startDate supaya ensureDueInstallments tetap konsisten.
+    if (dto.dueMonths?.length) {
+      if (dto.dueMonths.length > plans.length) {
+        throw new BadRequestException(
+          `dueMonths lebih panjang dari jumlah angsuran (${plans.length}).`,
+        );
+      }
+      const base = new Date(baseMs);
+      const baseMi = base.getFullYear() * 12 + base.getMonth();
+      dto.dueMonths.forEach((ym, i) => {
+        if (!ym) return; // kosong = pakai offset default berurutan
+        const m = /^(\d{4})-(\d{2})/.exec(ym);
+        if (!m) {
+          throw new BadRequestException(
+            `dueMonths[${i}] tidak valid — format YYYY-MM.`,
+          );
+        }
+        const mi = Number(m[1]) * 12 + (Number(m[2]) - 1);
+        (plans[i] as { dueOffsetMonths: number }).dueOffsetMonths = mi - baseMi;
+      });
+    }
     // Migrasi: tanggal uang benar-benar diterima untuk angsuran yang
     // ditandai lunas — paidAt & ledger pakai tanggal ini (default hari ini).
     const backfillPaidAt = dto.paidAt ? new Date(dto.paidAt) : now;
@@ -945,7 +968,7 @@ export class EnrollmentsService {
       monthlyCount: number | null;
     },
     pkg: { id: string; name: string; price: unknown; totalSessions: number },
-    dto: CreateEnrollmentDto,
+    dto: CreateEnrollmentDto & { installmentCount?: number },
   ) {
     type Item = { description: string; quantity: number; unitPrice: number; amount: number };
     type Plan = { label: string; dueOffsetMonths: number; packageId: string; items: Item[] };
@@ -978,9 +1001,11 @@ export class EnrollmentsService {
       const count =
         plan === 'TWO_TIMES'
           ? 2
-          : level.monthlyCount && level.monthlyCount > 0
-            ? level.monthlyCount
-            : 10;
+          : dto.installmentCount && dto.installmentCount > 0
+            ? Math.min(36, dto.installmentCount)
+            : level.monthlyCount && level.monthlyCount > 0
+              ? level.monthlyCount
+              : 10;
       return split(count).map((a, i) => ({
         label: `angsuran ${i + 1} dari ${count}`,
         dueOffsetMonths: i,

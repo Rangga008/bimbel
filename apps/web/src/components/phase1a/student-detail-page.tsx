@@ -145,6 +145,8 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
   const [addForm, setAddForm] = useState({ programId: '', levelId: '', packageId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', startDate: '', priceOverride: '', discountAmount: '', discountMonths: '', discountReason: '' });
   // Nominal terbayar per angsuran (mode migrasi) — index 0 = angsuran ke-1.
   const [addPaidRows, setAddPaidRows] = useState<string[]>([]);
+  const [addInstCountOverride, setAddInstCountOverride] = useState('');
+  const [addDueMonths, setAddDueMonths] = useState<string[]>([]);
   const [addMode, setAddMode] = useState<'baru' | 'migrasi'>('baru');
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkSearch, setLinkSearch] = useState('');
@@ -212,7 +214,9 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
       ? 1
       : addForm.paymentPlan === 'TWO_TIMES'
         ? 2
-        : (addLevelSel?.monthlyCount ?? 10);
+        : addInstCountOverride
+          ? Math.max(1, Math.min(36, Number(addInstCountOverride) || 1))
+          : (addLevelSel?.monthlyCount ?? 10);
   const addDiscMonths =
     addDisc > 0
       ? addForm.discountMonths
@@ -239,6 +243,13 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
     const d = new Date(base.getFullYear(), base.getMonth() + i, 1);
     return `${MONTHS_ID[d.getMonth()]} ${d.getFullYear()}`;
   };
+  const instMonthValue = (i: number) => {
+    const base = addForm.startDate
+      ? new Date(`${addForm.startDate}T00:00:00`)
+      : new Date();
+    const d = new Date(base.getFullYear(), base.getMonth() + i, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  };
   // Perkiraan tagihan per angsuran (≈ — pembulatan akhir dihitung server).
   const instApprox = (i: number) =>
     Math.max(
@@ -259,6 +270,14 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
           studentCount: addProgramIsPrivat ? Number(addForm.studentCount) : undefined,
           sessionCount: addProgramIsPrivat ? Number(addForm.sessionCount) : undefined,
           startDate: addForm.startDate || undefined,
+          installmentCount:
+            addProgramIsReguler && addForm.paymentPlan === 'MONTHLY' && addInstCountOverride
+              ? Number(addInstCountOverride)
+              : undefined,
+          dueMonths:
+            addDueMonths.some((v, i) => v && v !== instMonthValue(i))
+              ? Array.from({ length: addInstCount }, (_, i) => addDueMonths[i] || instMonthValue(i))
+              : undefined,
           priceOverride:
             addPkgSel && addForm.priceOverride
               ? Number(addForm.priceOverride)
@@ -278,6 +297,8 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
       setAddProgramOpen(false);
       setAddMode('baru');
       setAddPaidRows([]);
+      setAddInstCountOverride('');
+      setAddDueMonths([]);
       setAddForm({ programId: '', levelId: '', packageId: '', paymentPlan: 'MONTHLY', studentCount: '1', sessionCount: '1', startDate: '', priceOverride: '', discountAmount: '', discountMonths: '', discountReason: '' });
       qc.invalidateQueries({ queryKey: ['students', studentId] });
       qc.invalidateQueries({ queryKey: ['enrollments'] });
@@ -1038,15 +1059,47 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                     yang benar.
                   </p>
                 </div>
+                {addProgramIsReguler && addForm.paymentPlan === 'MONTHLY' ? (
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="ap-instit">Jumlah angsuran (opsional)</Label>
+                    <Input
+                      id="ap-instit"
+                      type="number"
+                      min={1}
+                      max={36}
+                      placeholder={`Default ${addLevelSel?.monthlyCount ?? 10} bulan`}
+                      value={addInstCountOverride}
+                      onChange={(e) => setAddInstCountOverride(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Ubah bila paket dibagi lebih sedikit/lebih banyak — misal cuma 3 atau 4 bulan.
+                    </p>
+                  </div>
+                ) : null}
                 <div className="flex flex-col gap-2">
                   <Label>Yang sudah dibayar per bulan</Label>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {Array.from({ length: addInstCount }, (_, i) => (
                       <div key={i} className="flex flex-col gap-1">
-                        <Label htmlFor={`ap-row-${i}`} className="text-xs font-normal text-muted-foreground">
-                          Angsuran {i + 1} — {instMonthLabel(i)}
-                          {addPkgSel ? ` (tagihan ≈ ${rp(instApprox(i))})` : ''}
-                        </Label>
+                        <span className="flex items-center gap-1.5">
+                          <Label htmlFor={`ap-row-${i}`} className="text-xs font-normal text-muted-foreground">
+                            Angsuran {i + 1}
+                            {addPkgSel ? ` (≈ ${rp(instApprox(i))})` : ''}
+                          </Label>
+                          <input
+                            type="month"
+                            aria-label={`Bulan angsuran ${i + 1}`}
+                            className="h-6 rounded border border-input bg-background px-1 text-[11px]"
+                            value={addDueMonths[i] || instMonthValue(i)}
+                            onChange={(e) =>
+                              setAddDueMonths((rows) => {
+                                const next = [...rows];
+                                next[i] = e.target.value;
+                                return next;
+                              })
+                            }
+                          />
+                        </span>
                         <CurrencyInput
                           id={`ap-row-${i}`}
                           value={addPaidRows[i] ?? ''}
