@@ -184,6 +184,17 @@ function BarChart({ items, maxValue }: { items: { label: string; value: number; 
 	);
 }
 
+// Format angka laporan: ribuan id-ID; awalan Rp bila kolomnya kolom uang.
+// Sel nomor HP aman — diawali 0 sehingga tidak cocok pola angka polos.
+const MONEY_HEAD = /total|biaya|harga|sisa|masuk|bayar|outstanding|les|daftar|rata|jumlah|terbayar|honor|net|revenue|outstanding|^jan|^feb|^mar|^apr|^mei|^jun|^jul|^agu|^sep|^okt|^nov|^des/i;
+function fmtCell(cell: string, header: string): string {
+  if (!/^-?[1-9]\d{3,}(\.\d+)?$/.test(cell.trim())) return cell;
+  const n = Number(cell);
+  if (!Number.isFinite(n)) return cell;
+  const formatted = n.toLocaleString('id-ID', { maximumFractionDigits: 2 });
+  return MONEY_HEAD.test(header.trim()) ? `Rp ${formatted}` : formatted;
+}
+
 function ReportDataTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
 	return (
 		<div className="overflow-x-auto rounded-xl border">
@@ -212,7 +223,7 @@ function ReportDataTable({ headers, rows }: { headers: string[]; rows: string[][
 							<tr key={i} className="border-b transition-colors last:border-0 hover:bg-muted/50">
 								{row.map((cell, j) => (
 									<td key={j} className="px-3 py-2 whitespace-pre-line tabular-nums align-top">
-										{cell}
+										{fmtCell(cell, headers[j] ?? '')}
 									</td>
 								))}
 							</tr>

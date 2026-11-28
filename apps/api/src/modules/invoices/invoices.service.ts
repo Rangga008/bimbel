@@ -406,6 +406,30 @@ export class InvoicesService {
    * ikut dihapus. Invoice yang sudah dibayar wajib lewat alur
    * void/refund, tidak boleh dihapus (jejak keuangan).
    */
+  /**
+   * Ubah bulan penagihan (jatuh tempo) invoice — misal angsuran ke-2 yang
+   * belum dibayar dimundurkan/dimajukan bulannya. Void tidak boleh; invoice
+   * lunas boleh (jatuh tempo memengaruhi laporan per bulan tagihan).
+   */
+  async updateDueDate(id: string, dueDate: string) {
+    const inv = await this.prisma.invoice.findUnique({
+      where: { id },
+      select: { id: true, status: true },
+    });
+    if (!inv) throw new NotFoundException('Invoice tidak ditemukan.');
+    if (inv.status === 'VOID') {
+      throw new BadRequestException('Invoice VOID tidak bisa diubah.');
+    }
+    const d = new Date(dueDate);
+    if (Number.isNaN(d.getTime())) {
+      throw new BadRequestException('Tanggal jatuh tempo tidak valid.');
+    }
+    return this.prisma.invoice.update({
+      where: { id },
+      data: { dueDate: d },
+    });
+  }
+
   async remove(id: string) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },

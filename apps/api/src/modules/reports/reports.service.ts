@@ -968,6 +968,8 @@ window.addEventListener('load', function () {
       totalAmount: true,
       amountPaid: true,
       status: true,
+      dueDate: true,
+      createdAt: true,
       items: { select: { description: true, amount: true } },
       allocations: {
         select: {
@@ -1036,17 +1038,24 @@ window.addEventListener('load', function () {
       }
       for (const inv of invs) {
         if (inv.status === 'VOID') continue;
+        // Tagihan dihitung per bulan jatuh tempo — hanya invoice yang
+        // jatuh tempo di dalam periode terpilih yang masuk TOTAL BIAYA,
+        // supaya angka bulan dan uang konsisten dengan filter.
+        const dueIdx = monthIdx(new Date(inv.dueDate ?? inv.createdAt));
+        if (dueIdx < 0) continue;
         const billed = reportMoney(inv.totalAmount);
         lvl.billed += billed;
         lvl.regFee += inv.items
           .filter((it) => REGFEE_RE.test(it.description))
-          .reduce((s, it) => s + reportMoney(it.amount), 0);
+          .reduce((s2, it) => s2 + reportMoney(it.amount), 0);
         for (const al of inv.allocations) {
           if (al.payment.status !== 'VERIFIED' || !al.payment.paidAt) continue;
+          // Uang masuk dihitung di bulan paidAt — hanya yang dalam periode.
+          const mi = monthIdx(new Date(al.payment.paidAt));
+          if (mi < 0) continue;
           const amt = reportMoney(al.amount);
           lvl.paid += amt;
-          const mi = monthIdx(new Date(al.payment.paidAt));
-          if (mi >= 0) lvl.months[mi] += amt;
+          lvl.months[mi] += amt;
         }
       }
     }

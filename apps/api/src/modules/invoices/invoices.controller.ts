@@ -115,6 +115,19 @@ export class InvoicesController {
     return updated;
   }
 
+  /** Ubah bulan penagihan (jatuh tempo) — misal angsuran berikutnya dimundurkan. */
+  @Patch('invoices/:id/due-date')
+  @RequirePermissions(PERMISSION_CODES.INVOICE_MANAGE)
+  async updateDueDate(@Param('id') id: string, @Body() body: { dueDate?: string }, @CurrentUser() actor: AuthenticatedUser, @Req() req: Request) {
+    const before = await this.invoices.get(id);
+    const updated = await this.invoices.updateDueDate(id, String(body?.dueDate ?? ''));
+    await this.audit.log({
+      actorId: actor.id, action: 'INVOICE_DUE_DATE_CHANGED', entity: 'Invoice', entityId: id,
+      oldData: { dueDate: (before as { dueDate?: unknown }).dueDate ?? null }, newData: { dueDate: body?.dueDate }, ...this.ctx(req),
+    });
+    return updated;
+  }
+
   /** Hapus invoice permanen — hanya bila belum ada pembayaran masuk. */
   @Delete('invoices/:id')
   @RequirePermissions(PERMISSION_CODES.INVOICE_MANAGE)

@@ -158,6 +158,8 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
   const [refundTarget, setRefundTarget] = useState<{ id: string; number: string; paid: number } | null>(null);
   const [refundAmount, setRefundAmount] = useState('');
   const [refundReason, setRefundReason] = useState('');
+  const [dueTarget, setDueTarget] = useState<{ id: string; number: string; dueDate: string | null } | null>(null);
+  const [dueDateNew, setDueDateNew] = useState('');
 
   const studentQ = useQuery({
     queryKey: ['students', studentId],
@@ -414,6 +416,23 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
       qc.invalidateQueries({ queryKey: ['payment-plan'] });
     },
     onError: (e) => toast.error(err(e, 'Gagal mencatat refund.')),
+  });
+
+  // Ubah bulan penagihan invoice — misal angsuran ke-2 dimundurkan.
+  const dueM = useMutation({
+    mutationFn: () =>
+      apiFetch(`/invoices/${dueTarget?.id}/due-date`, {
+        method: 'PATCH',
+        body: { dueDate: dueDateNew },
+      }),
+    onSuccess: () => {
+      toast.success('Bulan penagihan diubah.');
+      setDueTarget(null);
+      qc.invalidateQueries({ queryKey: ['students', studentId] });
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+      qc.invalidateQueries({ queryKey: ['payment-plan'] });
+    },
+    onError: (e) => toast.error(err(e, 'Gagal mengubah jatuh tempo.')),
   });
 
   // "Hubungkan Akun" — untuk siswa yang mendaftar sendiri padahal data
@@ -769,6 +788,20 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
                                   }}
                                 >
                                   <RotateCcw className="size-3" /> Refund
+                                </Button>
+                              ) : null}
+                              {canManage && inv.status === 'ISSUED' ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 px-2 text-[11px]"
+                                  title="Ubah bulan penagihan (jatuh tempo) — misal angsuran berikutnya dimundurkan"
+                                  onClick={() => {
+                                    setDueTarget({ id: inv.id, number: inv.number, dueDate: ('dueDate' in inv && inv.dueDate) ? String(inv.dueDate) : null });
+                                    setDueDateNew(('dueDate' in inv && inv.dueDate) ? String(inv.dueDate).slice(0, 10) : '');
+                                  }}
+                                >
+                                  <Pencil className="size-3" /> Jatuh tempo
                                 </Button>
                               ) : null}
                             </span>
@@ -1277,6 +1310,32 @@ export function StudentDetailPage({ studentId, basePath, canManage }: { studentI
               onClick={() => refundM.mutate()}
             >
               {refundM.isPending ? 'Mencatat…' : `Refund ${rp(Number(refundAmount) || 0)}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!dueTarget} onOpenChange={(o) => !o && setDueTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ubah Bulan Penagihan</DialogTitle>
+            <DialogDescription>
+              {dueTarget ? `Invoice ${dueTarget.number} — jatuh tempo menentukan bulan tagihan di laporan & kapan cicilan ditagihkan.` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="due-new">Jatuh tempo baru</Label>
+            <Input
+              id="due-new"
+              type="date"
+              value={dueDateNew}
+              onChange={(e) => setDueDateNew(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDueTarget(null)}>Batal</Button>
+            <Button disabled={dueM.isPending || !dueDateNew} onClick={() => dueM.mutate()}>
+              {dueM.isPending ? 'Menyimpan…' : 'Simpan'}
             </Button>
           </DialogFooter>
         </DialogContent>
