@@ -121,7 +121,25 @@ export class UsersService {
       Awaited<ReturnType<UsersService['findByEmailWithRoles']>>
     >,
   ) {
-    const roles = user.userRoles.map((userRole) => userRole.role.name);
+    // Urutan deterministik — roles[0] menentukan portal awal saat login.
+    // Tanpa sorting, urutan mengikuti urutan baris DB (acak) sehingga akun
+    // multi-role kadang mendarat di portal berbeda tiap login. Staf lebih
+    // prioritas dari peran belajar supaya admin tidak mendarat di portal siswa.
+    const ROLE_ORDER = [
+      'OWNER',
+      'ADMIN_ACADEMIC',
+      'ADMIN_FINANCE',
+      'TUTOR',
+      'ORANG_TUA',
+      'SISWA',
+    ];
+    const roles = user.userRoles
+      .map((userRole) => userRole.role.name)
+      .sort((a, b) => {
+        const ia = ROLE_ORDER.indexOf(a);
+        const ib = ROLE_ORDER.indexOf(b);
+        return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+      });
     const permissions = Array.from(
       new Set(
         user.userRoles.flatMap((userRole) =>

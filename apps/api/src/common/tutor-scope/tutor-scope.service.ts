@@ -143,8 +143,18 @@ export class TutorScopeService {
   async forStudent(actor: {
     id: string;
     roles: string[];
+    permissions?: string[];
   }): Promise<StudentScope | null> {
     if (!actor.roles.includes('SISWA')) return null;
+    // Akun multi-role yang juga staf/admin (punya people.view) tidak boleh
+    // ikut terfilter scope siswa — hak akses kurikulumnya lebih luas.
+    // Tanpa guard ini materi/soal/ujian tampak kosong saat mereka berpindah
+    // portal, persis seperti siswa tanpa enrollment.
+    if (actor.permissions?.includes(PERMISSION_CODES.PEOPLE_VIEW)) return null;
+    // TUTOR yang juga SISWA: scope tutor-nya sudah membatasi konten yang
+    // dia ampu — menumpuk scope siswa (intersect) membuat daftar praktis
+    // kosong. Tutor tetap dibatasi scope mengajarnya, bukan scope belajarnya.
+    if (actor.roles.includes('TUTOR')) return null;
     const student = await this.prisma.student.findUnique({
       where: { userId: actor.id },
       select: { id: true },
